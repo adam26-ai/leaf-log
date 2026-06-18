@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/*
+  Leaf Log design tokens — see DESIGN.md ("same DNA as leafvario.com, warmer room").
+  Anchors: monochrome base, signature amber #ffb459 accent, Roboto / Roboto Condensed.
+*/
+@theme {
+  /* Brand palette */
+  --color-ink: #000000;        /* primary text / strong structure */
+  --color-ink-soft: #272727;   /* near-black secondary surfaces */
+  --color-paper: #ffffff;      /* background */
+  --color-amber: #ffb459;      /* signature accent — accent bar, CTAs, highlights */
+  --color-amber-strong: #f59e2c;
+  --color-leaf: #6fae5e;       /* provisional secondary — success / milestones (DESIGN.md) */
+  --color-leaf-strong: #558a47;
+
+  /* Neutral gray scale (borders, muted text, surfaces) */
+  --color-gray-50: #f7f7f7;
+  --color-gray-100: #ededed;
+  --color-gray-200: #e0e0e0;
+  --color-gray-300: #cfcfcf;
+  --color-gray-400: #a8a8a8;
+  --color-gray-500: #7a7a7a;
+  --color-gray-600: #555555;
+  --color-gray-700: #3a3a3a;
+  --color-gray-800: #272727;
+  --color-gray-900: #141414;
+
+  /* Typography — wired in lib/fonts.ts via next/font */
+  --font-sans: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  --font-condensed: var(--font-roboto-condensed), var(--font-roboto), sans-serif;
+  --font-mono: var(--font-roboto-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Soft corners (DESIGN.md: ~4–6px, not the hardware site's 0) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Subtle elevation (the "warmer room" — hardware site is flat) */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.05);
+  --shadow-pop: 0 2px 6px rgb(0 0 0 / 0.08), 0 10px 30px rgb(0 0 0 / 0.10);
+}
+
+:root {
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings lean on Roboto Condensed for the technical-yet-approachable signage feel. */
+h1, h2, h3, h4, .font-condensed {
+  font-family: var(--font-condensed);
+}
