@@ -61,6 +61,8 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   const flightUrl = page.url();
   await expect(page.getByText("Airtime")).toBeVisible();
   await expect(page.getByText("Max altitude")).toBeVisible();
+  // Named-site reverse lookup: the seeded launch is identified.
+  await expect(page.getByRole("heading", { name: "Mussel Rock" })).toBeVisible();
 
   // 6. Share it publicly.
   await page.getByRole("button", { name: /share flight/i }).click();

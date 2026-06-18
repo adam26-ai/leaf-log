@@ -68,8 +68,9 @@ export function makeIgc(opts: {
  */
 export function makeRealisticFlight() {
   const fixes: SynthFix[] = [];
-  const startLat = 37.8;
-  const startLon = -122.5;
+  // Mussel Rock, CA — a seeded site, so reverse lookup names the launch.
+  const startLat = 37.6685;
+  const startLon = -122.4936;
   let t = 36000; // 10:00:00 UTC
   let alt = 500;
 

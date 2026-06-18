@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
+import { findSite } from "@/lib/sites/lookup";
 import { sha256Hex } from "./dedupe";
 
 export const PARSER_VERSION = "1";
@@ -119,6 +120,16 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
       });
     }
 
+    // 4b. Locate named sites (best-effort; "Unknown site" when nothing is close).
+    let takeoffSite = null as Awaited<ReturnType<typeof findSite>>;
+    let landingSite = null as Awaited<ReturnType<typeof findSite>>;
+    if (metrics) {
+      [takeoffSite, landingSite] = await Promise.all([
+        findSite(supabase, metrics.takeoff.lat, metrics.takeoff.lon, "takeoff"),
+        findSite(supabase, metrics.landing.lat, metrics.landing.lon, "landing"),
+      ]);
+    }
+
     // 5. Persist the flight row.
     const status: "ready" | "failed" = metrics ? "ready" : "failed";
     const flightDateMs =
@@ -154,6 +165,10 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
       bounds: metrics?.bounds ?? null,
       local_tz: metrics?.localTz ?? null,
       local_utc_offset_minutes: metrics?.localUtcOffsetMinutes ?? null,
+      takeoff_site_id: takeoffSite?.id ?? null,
+      takeoff_site_name: takeoffSite?.name ?? null,
+      landing_site_id: landingSite?.id ?? null,
+      landing_site_name: landingSite?.name ?? null,
     });
     if (flightErr) throw flightErr;
 

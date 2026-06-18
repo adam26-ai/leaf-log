@@ -627,6 +627,20 @@ export type Database = {
       geomfromewkt: { Args: { "": string }; Returns: unknown }
       gettransactionid: { Args: never; Returns: unknown }
       longtransactionsenabled: { Args: never; Returns: boolean }
+      nearest_site: {
+        Args: {
+          in_kind?: string
+          in_lat: number
+          in_lon: number
+          max_m: number
+        }
+        Returns: {
+          dist_m: number
+          id: string
+          kind: string
+          name: string
+        }[]
+      }
       populate_geometry_columns:
         | { Args: { tbl_oid: unknown; use_typmod?: boolean }; Returns: number }
         | { Args: { use_typmod?: boolean }; Returns: string }
