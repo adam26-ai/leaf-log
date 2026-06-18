@@ -1,0 +1,58 @@
+/** Human formatting for flight metrics — beginner-friendly, plain language. */
+
+export function formatDuration(seconds: number | null): string {
+  if (seconds == null) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.round((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m.toString().padStart(2, "0")}m`;
+  return `${m}m`;
+}
+
+export function formatAltitude(m: number | null): string {
+  return m == null ? "—" : `${m.toLocaleString()} m`;
+}
+
+export function formatDistance(m: number | null): string {
+  if (m == null) return "—";
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m / 1000).toFixed(1)} km`;
+}
+
+export function formatVario(ms: number | null): string {
+  if (ms == null) return "—";
+  const sign = ms > 0 ? "+" : "";
+  return `${sign}${ms.toFixed(1)} m/s`;
+}
+
+/**
+ * Local clock time for an instant, using the flight's stored UTC offset so it
+ * reads the way the pilot experienced it — independent of the viewer's timezone.
+ */
+export function formatLocalTime(
+  iso: string | null,
+  offsetMinutes: number | null,
+): string {
+  if (!iso) return "—";
+  const ms = Date.parse(iso);
+  const off = offsetMinutes ?? 0;
+  const shifted = new Date(ms + off * 60_000);
+  const hh = shifted.getUTCHours().toString().padStart(2, "0");
+  const mm = shifted.getUTCMinutes().toString().padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+export function formatLocalDate(
+  iso: string | null,
+  offsetMinutes: number | null,
+): string {
+  if (!iso) return "—";
+  const ms = Date.parse(iso);
+  const shifted = new Date(ms + (offsetMinutes ?? 0) * 60_000);
+  return shifted.toLocaleDateString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
