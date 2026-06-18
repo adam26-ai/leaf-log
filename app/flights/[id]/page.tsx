@@ -5,6 +5,7 @@ import { Wordmark } from "@/components/brand/wordmark";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { MetricTiles } from "@/components/flight/metric-tiles";
 import { FlightViz } from "@/components/flight/flight-viz";
+import { ShareToggle } from "@/components/flight/share-toggle";
 import { Card, CardBody } from "@/components/ui/card";
 
 export default async function FlightPage({
@@ -38,7 +39,15 @@ export default async function FlightPage({
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <FlightHeader flight={flight} />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <FlightHeader flight={flight} />
+          {isOwner && (
+            <ShareToggle
+              flightId={flight.id}
+              visibility={flight.visibility as "private" | "public"}
+            />
+          )}
+        </div>
 
         {flight.status === "failed" ? (
           <Card className="mt-8">

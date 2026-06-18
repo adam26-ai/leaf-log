@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Wordmark } from "@/components/brand/wordmark";
+import { StatsBar } from "@/components/logbook/stats-bar";
+import { FlightRow } from "@/components/logbook/flight-row";
 import Link from "next/link";
 
 /**
@@ -31,13 +33,25 @@ export default async function ProfilePage({
 
   if (!profile) notFound();
 
-  // RLS returns only this owner's public flights to a visitor.
-  const { data: flights } = await supabase
+  // RLS returns only this owner's public flights to a visitor. We additionally
+  // filter to public so the owner viewing their own profile sees the public view.
+  const { data: flightsRaw } = await supabase
     .from("flights")
-    .select("id, flight_date, takeoff_site_name, duration_s, max_alt_m")
+    .select(
+      "id, flight_date, takeoff_at, takeoff_site_name, takeoff_site_id, duration_s, max_alt_m, visibility, status, local_utc_offset_minutes",
+    )
     .eq("owner_id", profile.id)
     .eq("visibility", "public")
+    .eq("status", "ready")
     .order("flight_date", { ascending: false });
+
+  const flights = flightsRaw ?? [];
+  // Public stats are computed from PUBLIC flights only — never leak private totals.
+  const publicStats = {
+    totalSeconds: flights.reduce((s, f) => s + (f.duration_s ?? 0), 0),
+    flightCount: flights.length,
+    siteCount: new Set(flights.map((f) => f.takeoff_site_id).filter(Boolean)).size,
+  };
 
   return (
     <div className="flex flex-1 flex-col">
@@ -55,23 +69,21 @@ export default async function ProfilePage({
         </div>
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
 
+        {flights.length > 0 && (
+          <div className="mt-8">
+            <StatsBar stats={publicStats} />
+          </div>
+        )}
+
         <div className="mt-10">
           <SectionHeading>Public flights</SectionHeading>
-          {!flights || flights.length === 0 ? (
-            <p className="mt-6 text-gray-600">
-              No public flights yet.
-            </p>
+          {flights.length === 0 ? (
+            <p className="mt-6 text-gray-600">No public flights yet.</p>
           ) : (
             <ul className="mt-6 flex flex-col gap-2">
               {flights.map((f) => (
                 <li key={f.id}>
-                  <Link
-                    href={`/flights/${f.id}`}
-                    className="block rounded-md border border-gray-200 px-4 py-3 hover:bg-gray-50"
-                  >
-                    {f.takeoff_site_name ?? "Unknown site"} —{" "}
-                    {f.flight_date ?? "—"}
-                  </Link>
+                  <FlightRow flight={f} />
                 </li>
               ))}
             </ul>

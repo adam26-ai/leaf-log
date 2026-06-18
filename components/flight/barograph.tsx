@@ -32,7 +32,7 @@ export function Barograph({
 
   return (
     <div className="h-[220px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={180}>
         <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
           <defs>
             <linearGradient id="baroFill" x1="0" y1="0" x2="0" y2="1">
