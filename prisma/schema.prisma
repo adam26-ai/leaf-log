@@ -1,0 +1,147 @@
+// Leaf Log — data model. Postgres on Railway via Prisma.
+// Privacy is enforced at the application/query layer (no RLS); see lib/flights/repo.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Auth.js (NextAuth) adapter models ----------
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  accounts      Account[]
+  sessions      Session[]
+  profile       Profile?
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ---------- Application models ----------
+model Profile {
+  id          String   @id // == User.id (1:1)
+  user        User     @relation(fields: [id], references: [id], onDelete: Cascade)
+  handle      String   @unique
+  displayName String
+  bio         String?
+  homeSiteId  String?
+  homeSite    Site?    @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
+  flights     Flight[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Flight {
+  id                    String      @id @default(cuid())
+  ownerId               String
+  owner                 Profile     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  visibility            String      @default("private") // private | public
+  source                String      @default("web_upload") // web_upload | device_push
+  status                String      @default("uploaded") // uploaded | processing | ready | failed
+  igcSha256             String
+  parserVersion         String      @default("1")
+  parseWarnings         Json        @default("[]")
+  failureReason         String?
+  // header facts
+  flightDate            DateTime?   @db.Date
+  takeoffAt             DateTime?
+  landingAt             DateTime?
+  localTz               String?
+  localUtcOffsetMinutes Int?
+  glider                String?
+  recorder              String?
+  // derived metrics
+  durationS             Int?
+  maxAltM               Int?
+  altGainM              Int?
+  maxClimbMs            Float?
+  maxSinkMs             Float?
+  altSource             String?
+  trackDistM            Int?
+  straightDistM         Int?
+  takeoffLat            Float?
+  takeoffLon            Float?
+  landingLat            Float?
+  landingLon            Float?
+  bounds                Json?
+  // located sites (denormalized name kept for history)
+  takeoffSiteId         String?
+  takeoffSite           Site?       @relation("TakeoffSite", fields: [takeoffSiteId], references: [id], onDelete: SetNull)
+  takeoffSiteName       String?
+  landingSiteId         String?
+  landingSite           Site?       @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
+  landingSiteName       String?
+  data                  FlightData?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@unique([ownerId, igcSha256])
+  @@index([ownerId, flightDate])
+}
+
+// Heavy payloads kept off the Flight row so logbook/profile lists stay fast.
+model FlightData {
+  flightId String @id
+  flight   Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  rawIgc   Bytes // original .igc bytes (source of truth)
+  track    Json? // derived render artifact (line + barograph)
+}
+
+model Site {
+  id          String    @id @default(cuid())
+  name        String
+  kind        String    @default("unknown") // takeoff | landing | both | unknown
+  lat         Float
+  lon         Float
+  countryCode String?
+  region      String?
+  source      String    @default("manual")
+  sourceId    String?
+  sourceUrl   String?
+  license     String?
+  createdAt   DateTime  @default(now())
+  takeoffFlights Flight[]  @relation("TakeoffSite")
+  landingFlights Flight[]  @relation("LandingSite")
+  homeProfiles   Profile[] @relation("HomeSite")
+
+  @@index([lat, lon])
+}

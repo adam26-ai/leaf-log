@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { ingestFlight } from "@/lib/ingest/ingest-flight";
 
 export const runtime = "nodejs";
@@ -7,25 +8,18 @@ export const runtime = "nodejs";
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
- * Authenticated IGC upload. This route is a THIN caller of the shared
- * ingestFlight() core — the future Leaf device-push API (POST /api/ingest) will
- * call the same core with source='device_push'.
+ * Authenticated IGC upload. A THIN caller of the shared ingestFlight() core —
+ * the future Leaf device-push API (POST /api/ingest) will call the same core
+ * with source='device_push'.
  */
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  // Must be onboarded (have a profile) before uploading.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const profile = await prisma.profile.findUnique({ where: { id: userId } });
   if (!profile) {
     return NextResponse.json({ error: "Complete onboarding first" }, { status: 403 });
   }
@@ -60,7 +54,7 @@ export async function POST(request: Request) {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const r = await ingestFlight({
-        ownerId: user.id,
+        ownerId: userId,
         bytes,
         source: "web_upload",
         filename: name,

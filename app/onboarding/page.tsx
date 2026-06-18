@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, getCurrentProfile } from "@/lib/profile";
+import { getCurrentUserId, getCurrentProfile } from "@/lib/profile";
 import { OnboardingForm } from "./onboarding-form";
 
 export default async function OnboardingPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/sign-in");
+  const userId = await getCurrentUserId();
+  if (!userId) redirect("/sign-in");
 
   const profile = await getCurrentProfile();
   if (profile) redirect("/logbook");

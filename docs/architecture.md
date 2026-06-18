@@ -1,5 +1,9 @@
 # Leaf Log — Architecture (Milestone 1)
 
+Deployed on **Railway**: Next.js app + a Railway **Postgres** plugin, accessed via
+**Prisma**. Auth is **NextAuth v5** (email magic-link via Resend). There is no
+Supabase and no DB RLS — privacy is enforced at the application layer.
+
 ## The ingestion seam
 
 There is exactly one ingestion path: `ingestFlight({ source, ownerId, bytes })`
@@ -13,40 +17,41 @@ client drag-drop ─┐
                   ├─► POST /api/upload ─┐
 (future) device ──┘   (authn, guards)   ├─► ingestFlight()
                        POST /api/ingest ┘        │
-   1. sha256 + dedupe (owner_id, hash)           │
-   2. store raw IGC  ──────────────► Storage: igc/{owner}/{hash}.igc   (private)
-   3. parseIgc(bytes)        (tolerant; never throws)
-   4. deriveMetrics()        (smoothed climb/sink, gain threshold, baro→gps, tz)
-   4b. findSite(takeoff/landing)  ── PostGIS KNN ──► sites
-   5. buildTrackArtifact() ─────────► Storage: tracks/{flightId}.json  (private)
-   6. INSERT flight (+ flight_assets), status ready|failed
-   on failure → delete row + remove uploaded objects (no orphans)
+   1. sha256 + dedupe (ownerId, hash)            │
+   2. parseIgc(bytes)        (tolerant; never throws)
+   3. deriveMetrics()        (smoothed climb/sink, gain threshold, baro→gps, tz)
+   4. findSite(takeoff/landing)  ── bbox + haversine ──► Site
+   5. buildTrackArtifact()
+   6. ONE transaction: Flight (scalars + site refs) + FlightData (rawIgc bytea,
+      track jsonb). Atomic — a failure rolls back; no orphans.
 ```
 
-## Privacy model (data-layer)
+Files live **in Postgres**: raw IGC as `bytea`, the derived track artifact as
+`jsonb`, both on `FlightData` (kept off the `Flight` row so logbook/profile lists
+stay fast).
 
-- Flights default to `private` **in the schema**, not the app.
-- **RLS is the authoritative floor**: a flight is readable iff
-  `owner_id = auth.uid() OR visibility = 'public'`; writes require ownership.
-- User-facing reads/writes go through the **RLS-respecting Supabase client**
-  (forwards the user JWT). The **service-role client is confined to the ingest
-  core and the authorizing artifact route** — never used to render user data
-  without its own check.
-- Storage buckets are private. Raw IGC is **never** served publicly. The derived
-  track is served by `GET /api/flights/[id]/track`, which first confirms the
-  viewer may read the flight (RLS) and only then reads the private object via the
-  service role — so a private→public→private toggle can't leak a stale link.
+## Privacy model (application layer)
+
+This app has **no RLS** — the **viewer-scoped repo** (`lib/flights/repo.ts`) IS the
+enforcement, and every flight read goes through it:
+
+- `getFlightForViewer(id, viewerId)` returns a flight only if it is public OR owned
+  by the viewer. Used by the flight page and the track route.
+- `listPublicFlights(ownerId)` powers public profiles (public + ready only).
+- `listOwnFlights(ownerId)` powers the owner's logbook.
 - Public profile aggregate stats are computed from **public flights only**.
+- The track route (`GET /api/flights/[id]/track`) calls `getFlightForViewer` before
+  returning the artifact. Raw IGC is never served.
 
-Proven by: SQL role tests, `test/privacy.integration.test.ts` (real client
-paths), and the Playwright happy-path.
+Proven by `test/privacy.integration.test.ts` (anon / non-owner / owner) and the
+Playwright happy-path.
 
-## Data model
+## Auth
 
-`profiles` (1:1 auth.users) · `flights` (scalars + visibility + status + site
-refs) · `flight_assets` (storage metadata) · `sites` (PostGIS geography + GiST).
-Heavy point arrays live in the `track.json` artifact in object storage, not in
-Postgres — so logbook/profile lists are a single fast indexed query.
+NextAuth v5 with the Prisma adapter and a custom email magic-link provider. JWT
+sessions so the edge `proxy.ts` can read auth without a DB call (it imports only
+the edge-safe `lib/auth.config.ts`, never Prisma). In production the link is sent
+via Resend; in dev it's written to `/tmp/leaf-magic-link.txt` + logged.
 
 ## IGC correctness notes
 
@@ -63,4 +68,5 @@ Postgres — so logbook/profile lists are a single fast indexed query.
 - Launch-coordinate privacy zones (obfuscation on public flights).
 - Community feed / following / kudos.
 - Device-push API + device-auth model.
-- Fuzzy near-duplicate detection; background-job ingestion.
+- Fuzzy near-duplicate detection; moving large blobs to object storage if they
+  outgrow Postgres.

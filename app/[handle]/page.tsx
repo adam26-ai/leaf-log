@@ -1,18 +1,15 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { listPublicFlights, statsFrom } from "@/lib/flights/repo";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Wordmark } from "@/components/brand/wordmark";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
-import Link from "next/link";
 
 /**
  * Public pilot profile at /@handle. The leading "@" is required (Strava-style);
- * a bare segment without it 404s. Static routes (/logbook, /upload, …) take
- * precedence over this dynamic segment.
- *
- * Visibility is enforced by RLS: an anonymous visitor's Supabase client can only
- * read this pilot's PUBLIC flights.
+ * a bare segment without it 404s. Static routes take precedence.
  */
 export default async function ProfilePage({
   params,
@@ -24,34 +21,12 @@ export default async function ProfilePage({
   if (!decoded.startsWith("@")) notFound();
   const handle = decoded.slice(1).toLowerCase();
 
-  const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, handle, display_name, bio")
-    .eq("handle", handle)
-    .maybeSingle();
-
+  const profile = await prisma.profile.findUnique({ where: { handle } });
   if (!profile) notFound();
 
-  // RLS returns only this owner's public flights to a visitor. We additionally
-  // filter to public so the owner viewing their own profile sees the public view.
-  const { data: flightsRaw } = await supabase
-    .from("flights")
-    .select(
-      "id, flight_date, takeoff_at, takeoff_site_name, takeoff_site_id, duration_s, max_alt_m, visibility, status, local_utc_offset_minutes",
-    )
-    .eq("owner_id", profile.id)
-    .eq("visibility", "public")
-    .eq("status", "ready")
-    .order("flight_date", { ascending: false });
-
-  const flights = flightsRaw ?? [];
-  // Public stats are computed from PUBLIC flights only — never leak private totals.
-  const publicStats = {
-    totalSeconds: flights.reduce((s, f) => s + (f.duration_s ?? 0), 0),
-    flightCount: flights.length,
-    siteCount: new Set(flights.map((f) => f.takeoff_site_id).filter(Boolean)).size,
-  };
+  // Only this pilot's PUBLIC, ready flights — never their private totals.
+  const flights = await listPublicFlights(profile.id);
+  const stats = statsFrom(flights);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -63,7 +38,7 @@ export default async function ProfilePage({
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <div className="flex flex-col gap-1">
           <h1 className="font-condensed text-4xl font-bold tracking-tight text-ink">
-            {profile.display_name}
+            {profile.displayName}
           </h1>
           <p className="font-mono text-gray-500">@{profile.handle}</p>
         </div>
@@ -71,7 +46,7 @@ export default async function ProfilePage({
 
         {flights.length > 0 && (
           <div className="mt-8">
-            <StatsBar stats={publicStats} />
+            <StatsBar stats={stats} />
           </div>
         )}
 

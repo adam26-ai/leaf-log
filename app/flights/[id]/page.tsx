@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUserId } from "@/lib/profile";
+import { getFlightForViewer } from "@/lib/flights/repo";
 import { Wordmark } from "@/components/brand/wordmark";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { MetricTiles } from "@/components/flight/metric-tiles";
@@ -14,21 +15,15 @@ export default async function FlightPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
+  const viewerId = await getCurrentUserId();
 
-  // RLS: returns the row only if the viewer owns it or it is public.
-  const { data: flight } = await supabase
-    .from("flights")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const flight = await getFlightForViewer(id, viewerId);
   if (!flight) notFound();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const isOwner = user?.id === flight.owner_id;
-  const warnings = (flight.parse_warnings as string[] | null) ?? [];
+  const isOwner = viewerId === flight.ownerId;
+  const warnings = Array.isArray(flight.parseWarnings)
+    ? (flight.parseWarnings as string[])
+    : [];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -56,7 +51,7 @@ export default async function FlightPage({
                 We couldn&apos;t read this flight
               </p>
               <p className="text-gray-600">
-                {flight.failure_reason ?? "The file didn't contain a usable track."}
+                {flight.failureReason ?? "The file didn't contain a usable track."}
               </p>
             </CardBody>
           </Card>
@@ -68,8 +63,8 @@ export default async function FlightPage({
             <div className="mt-8">
               <FlightViz
                 flightId={flight.id}
-                takeoffMs={flight.takeoff_at ? Date.parse(flight.takeoff_at) : 0}
-                offsetMin={flight.local_utc_offset_minutes ?? 0}
+                takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
+                offsetMin={flight.localUtcOffsetMinutes ?? 0}
               />
             </div>
           </>

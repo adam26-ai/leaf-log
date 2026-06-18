@@ -1,12 +1,12 @@
 import { AccentBar } from "@/components/ui/accent-bar";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
-import type { Tables } from "@/lib/database.types";
+import type { Flight } from "@prisma/client";
 
-export function FlightHeader({ flight }: { flight: Tables<"flights"> }) {
-  const offset = flight.local_utc_offset_minutes;
-  const site = flight.takeoff_site_name ?? "Unknown site";
-  const takeoff = formatLocalTime(flight.takeoff_at, offset);
-  const landing = formatLocalTime(flight.landing_at, offset);
+export function FlightHeader({ flight }: { flight: Flight }) {
+  const offset = flight.localUtcOffsetMinutes;
+  const site = flight.takeoffSiteName ?? "Unknown site";
+  const takeoff = formatLocalTime(flight.takeoffAt, offset);
+  const landing = formatLocalTime(flight.landingAt, offset);
 
   return (
     <div className="flex flex-col gap-3">
@@ -17,10 +17,10 @@ export function FlightHeader({ flight }: { flight: Tables<"flights"> }) {
         <AccentBar width="3rem" />
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-gray-600">
-        <span>{formatLocalDate(flight.takeoff_at ?? flight.flight_date, offset)}</span>
+        <span>{formatLocalDate(flight.takeoffAt ?? flight.flightDate, offset)}</span>
         <span className="font-mono">
           {takeoff} – {landing}
-          {flight.local_tz ? ` (${flight.local_tz})` : ""}
+          {flight.localTz ? ` (${flight.localTz})` : ""}
         </span>
         {flight.glider && <span>{flight.glider}</span>}
       </div>

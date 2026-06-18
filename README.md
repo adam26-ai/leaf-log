@@ -5,44 +5,46 @@ official companion to the **Leaf vario**. Upload an IGC file, see your flight
 come to life (track map, barograph, metrics, named site), and share only what you
 choose. See [`VISION.md`](./VISION.md) and [`DESIGN.md`](./DESIGN.md).
 
-Milestone 1 is built per [`docs/sprints/SPRINT-001.md`](./docs/sprints/SPRINT-001.md).
+Milestone 1 was built per [`docs/sprints/SPRINT-001.md`](./docs/sprints/SPRINT-001.md).
 
 ## Stack
 
 - **Next.js 16** (App Router, TypeScript) + **Tailwind v4** + shadcn-style primitives
-- **Supabase** — Postgres + PostGIS, Auth (email magic-link), private Storage
+- **Postgres** via **Prisma** (deployed on **Railway**)
+- **NextAuth v5** — email magic-link (via **Resend** in production)
 - **MapLibre GL JS** (keyless OpenFreeMap basemap) + **Recharts** barograph
 - In-house tolerant IGC parser behind a source-agnostic `ingestFlight()` core
-- Privacy enforced at the data layer with **Row-Level Security**
+- Raw IGC + derived track stored in Postgres; **privacy enforced at the
+  application/query layer** (the viewer-scoped repo in `lib/flights/repo.ts`)
 
 ## Prerequisites
 
 - Node 20+ and `pnpm`
-- Docker (for local Supabase)
-- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- Docker (for local Postgres)
 
 ## Local development
 
 ```bash
 pnpm install
 
-# 1. Start the local Supabase stack (Postgres+PostGIS+Auth+Storage+Mailpit).
-#    This project runs on ports 5532x to avoid clashing with other projects.
-supabase start
+# 1. Start local Postgres (docker-compose, port 5437).
+pnpm db:up
 
-# 2. Apply migrations + seed sites into a fresh local DB.
-supabase db reset
-
-# 3. Write .env.local from the local stack's values.
+# 2. Configure env.
 cp .env.example .env.local
-supabase status -o env   # copy ANON_KEY / API_URL / SERVICE_ROLE_KEY in
+#   - set DATABASE_URL to the local Postgres (already correct in the example)
+#   - set AUTH_SECRET to any 32+ char string
+
+# 3. Apply migrations + seed sites.
+pnpm db:migrate      # prisma migrate dev
+pnpm db:seed         # 12 curated sites
 
 # 4. Run the app.
-pnpm dev                 # http://localhost:3000
+pnpm dev             # http://localhost:3000
 ```
 
-Magic-link emails are captured by **Mailpit** (the URL is printed by
-`supabase status`) — no real email is sent locally.
+In dev, **no real email is sent** — the magic-link URL is logged to the server
+console and written to `/tmp/leaf-magic-link.txt`.
 
 ## Testing
 
@@ -50,32 +52,32 @@ Magic-link emails are captured by **Mailpit** (the URL is printed by
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
-pnpm e2e         # Playwright happy-path (needs the local stack running)
+pnpm e2e         # Playwright happy-path (needs local Postgres running)
 ```
 
 Integration tests (`*.integration.test.ts`, `lib/sites/lookup.test.ts`) auto-skip
-when no local Supabase env is present.
+when `DATABASE_URL` is unset.
 
 ## Sites data
 
-Named-site reverse lookup uses a PostGIS KNN function (`nearest_site`) over the
-`sites` table. M1 ships a **curated manual seed** (see
-`supabase/migrations/*_sites_seed.sql`) — the documented Plan B while
-ParaglidingEarth bulk-redistribution terms are unconfirmed. When a licensed
-dataset is cleared, import it with `source`/`source_url`/`license` set and run
-`scripts/backfill-sites.ts` to name existing flights.
+Named-site reverse lookup is a bounding-box + haversine search over the `Site`
+table. M1 ships a **curated manual seed** (`prisma/seed.ts`) — the documented
+Plan B while ParaglidingEarth bulk-redistribution terms are unconfirmed. When a
+licensed dataset is cleared, import it with `source`/`sourceUrl`/`license` set and
+run `scripts/backfill-sites.ts` to name existing flights.
 
-## Deployment (production)
+## Deployment (Railway)
 
-1. Create a **Supabase** cloud project; push the schema (`supabase db push`) and
-   seed sites.
-2. Deploy the web app to **Vercel**.
-3. Set env vars in Vercel: `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server-only),
-   `NEXT_PUBLIC_SITE_URL`, and optionally `NEXT_PUBLIC_MAPTILER_KEY` (otherwise
-   the keyless OpenFreeMap basemap is used).
-4. In Supabase Auth settings, set the Site URL + redirect allow-list to your
-   production domain (`https://your-domain/**`).
+Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
+`prisma migrate deploy` as the pre-deploy step, `/api/health` health check).
+
+1. Create a Railway project; add a **Postgres** plugin (provides `DATABASE_URL`).
+2. Add the web service from this repo.
+3. Set env vars: `DATABASE_URL` (from the Postgres plugin), `AUTH_SECRET`,
+   `AUTH_URL`/`NEXTAUTH_URL` (your Railway URL), `AUTH_EMAIL_FROM`,
+   `RESEND_API_KEY`, and optionally `NEXT_PUBLIC_MAPTILER_KEY`.
+4. Deploy — `prisma migrate deploy` runs automatically before each release. Seed
+   sites once with `pnpm db:seed` against the production `DATABASE_URL`.
 
 ## Project structure
 
@@ -84,13 +86,12 @@ app/                     routes (auth, onboarding, logbook, flights, profile, ap
 components/              UI: brand primitives, flight viz, logbook, upload
 lib/igc/                 tolerant parser, derivation, detection, track artifact
 lib/ingest/              ingestFlight() — the shared, source-agnostic ingestion core
-lib/sites/               PostGIS KNN named-site lookup
-lib/supabase/            RLS-respecting clients + service-role admin + proxy session
-supabase/migrations/     schema, RLS, storage buckets, sites + KNN function
-docs/sprints/            the sprint plan this milestone was built from
+lib/flights/repo.ts      viewer-scoped reads (app-layer privacy)
+lib/sites/               haversine named-site lookup
+lib/auth*.ts, lib/email  NextAuth v5 config + magic-link sender
+prisma/                  schema, migrations, seed
+docs/                    sprint plan + architecture
 ```
 
-## Architecture
-
-See [`docs/architecture.md`](./docs/architecture.md) for the ingestion seam, the
-privacy model, and the data flow.
+See [`docs/architecture.md`](./docs/architecture.md) for the ingestion seam,
+privacy model, and data flow.

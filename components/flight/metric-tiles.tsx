@@ -6,7 +6,7 @@ import {
   formatDistance,
   formatVario,
 } from "@/lib/flights/format";
-import type { Tables } from "@/lib/database.types";
+import type { Flight } from "@prisma/client";
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
@@ -23,15 +23,15 @@ function Tile({ label, value }: { label: string; value: string }) {
 }
 
 /** The beginner-friendly metric grid (plain labels, not competition jargon). */
-export function MetricTiles({ flight }: { flight: Tables<"flights"> }) {
+export function MetricTiles({ flight }: { flight: Flight }) {
   const tiles: [string, string][] = [
-    ["Airtime", formatDuration(flight.duration_s)],
-    ["Max altitude", formatAltitude(flight.max_alt_m)],
-    ["Height gained", formatAltitude(flight.alt_gain_m)],
-    ["Best climb", formatVario(flight.max_climb_ms)],
-    ["Strongest sink", formatVario(flight.max_sink_ms)],
-    ["Track distance", formatDistance(flight.track_dist_m)],
-    ["Straight line", formatDistance(flight.straight_dist_m)],
+    ["Airtime", formatDuration(flight.durationS)],
+    ["Max altitude", formatAltitude(flight.maxAltM)],
+    ["Height gained", formatAltitude(flight.altGainM)],
+    ["Best climb", formatVario(flight.maxClimbMs)],
+    ["Strongest sink", formatVario(flight.maxSinkMs)],
+    ["Track distance", formatDistance(flight.trackDistM)],
+    ["Straight line", formatDistance(flight.straightDistM)],
   ];
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

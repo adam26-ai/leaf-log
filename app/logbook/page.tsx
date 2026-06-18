@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/profile";
-import { createClient } from "@/lib/supabase/server";
+import { listOwnFlights, statsFrom } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
@@ -9,24 +9,8 @@ import { FlightRow } from "@/components/logbook/flight-row";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
-  const supabase = await createClient();
-
-  const { data: flights } = await supabase
-    .from("flights")
-    .select(
-      "id, flight_date, takeoff_at, takeoff_site_name, takeoff_site_id, duration_s, max_alt_m, visibility, status, local_utc_offset_minutes",
-    )
-    .eq("owner_id", profile.id)
-    .order("flight_date", { ascending: false })
-    .order("takeoff_at", { ascending: false });
-
-  const list = flights ?? [];
-  const ready = list.filter((f) => f.status === "ready");
-  const stats = {
-    totalSeconds: ready.reduce((s, f) => s + (f.duration_s ?? 0), 0),
-    flightCount: ready.length,
-    siteCount: new Set(ready.map((f) => f.takeoff_site_id).filter(Boolean)).size,
-  };
+  const flights = await listOwnFlights(profile.id);
+  const stats = statsFrom(flights);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -34,14 +18,14 @@ export default async function LogbookPage() {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <div className="flex items-end justify-between">
           <h1 className="font-condensed text-3xl font-bold tracking-tight text-ink">
-            {profile.display_name}&apos;s logbook
+            {profile.displayName}&apos;s logbook
           </h1>
           <Button asChild size="sm">
             <Link href="/upload">Upload flight</Link>
           </Button>
         </div>
 
-        {list.length === 0 ? (
+        {flights.length === 0 ? (
           <Card className="mt-8">
             <CardBody className="flex flex-col items-center gap-4 py-14 text-center">
               <p className="font-condensed text-2xl font-bold text-ink">
@@ -61,7 +45,7 @@ export default async function LogbookPage() {
               <StatsBar stats={stats} />
             </div>
             <ul className="mt-8 flex flex-col gap-2">
-              {list.map((f) => (
+              {flights.map((f) => (
                 <li key={f.id}>
                   <FlightRow flight={f} />
                 </li>

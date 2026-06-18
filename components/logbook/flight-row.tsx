@@ -4,22 +4,9 @@ import {
   formatAltitude,
   formatLocalDate,
 } from "@/lib/flights/format";
-import type { Tables } from "@/lib/database.types";
+import type { FlightListItem } from "@/lib/flights/repo";
 
-type FlightRowData = Pick<
-  Tables<"flights">,
-  | "id"
-  | "flight_date"
-  | "takeoff_at"
-  | "takeoff_site_name"
-  | "duration_s"
-  | "max_alt_m"
-  | "visibility"
-  | "status"
-  | "local_utc_offset_minutes"
->;
-
-export function FlightRow({ flight }: { flight: FlightRowData }) {
+export function FlightRow({ flight }: { flight: FlightListItem }) {
   const isPublic = flight.visibility === "public";
   return (
     <Link
@@ -28,12 +15,12 @@ export function FlightRow({ flight }: { flight: FlightRowData }) {
     >
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-condensed text-lg font-bold text-ink">
-          {flight.takeoff_site_name ?? "Unknown site"}
+          {flight.takeoffSiteName ?? "Unknown site"}
         </span>
         <span className="text-sm text-gray-500">
           {formatLocalDate(
-            flight.takeoff_at ?? flight.flight_date,
-            flight.local_utc_offset_minutes,
+            flight.takeoffAt ?? flight.flightDate,
+            flight.localUtcOffsetMinutes,
           )}
         </span>
       </div>
@@ -41,9 +28,9 @@ export function FlightRow({ flight }: { flight: FlightRowData }) {
         <span className="text-sm text-amber-strong">Unreadable</span>
       ) : (
         <div className="flex items-center gap-6 text-sm text-gray-700">
-          <span className="tabular-nums">{formatDuration(flight.duration_s)}</span>
+          <span className="tabular-nums">{formatDuration(flight.durationS)}</span>
           <span className="hidden tabular-nums sm:inline">
-            {formatAltitude(flight.max_alt_m)}
+            {formatAltitude(flight.maxAltM)}
           </span>
         </div>
       )}

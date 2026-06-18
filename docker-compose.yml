@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: leaf-log-db
+    ports:
+      - "5437:5432"
+    environment:
+      POSTGRES_USER: leaflog
+      POSTGRES_PASSWORD: leaflog
+      POSTGRES_DB: leaf_log_dev
+    volumes:
+      - leaf-log-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leaflog -d leaf_log_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  leaf-log-db:

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Button } from "@/components/ui/button";
+import { signOutAction } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
 
 /** Top nav for authenticated pages. */
@@ -27,7 +28,7 @@ export function AppHeader({ profile }: { profile: Profile }) {
         <Button asChild size="sm" variant="primary">
           <Link href="/upload">Upload flight</Link>
         </Button>
-        <form action="/auth/sign-out" method="post">
+        <form action={signOutAction}>
           <Button size="sm" variant="ghost" type="submit">
             Sign out
           </Button>
