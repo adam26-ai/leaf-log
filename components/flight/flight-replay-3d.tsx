@@ -116,9 +116,12 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
           data: segmentsRef.current,
           getPath: (s) => s.path as [number, number, number][],
           getColor: (s) => s.color,
-          getWidth: 3,
+          getWidth: 4,
           widthUnits: "pixels",
-          widthMinPixels: 2,
+          widthMinPixels: 3,
+          // Face the camera so the line keeps its width when the view is tilted
+          // (a flat ribbon goes edge-on and disappears at high pitch).
+          billboard: true,
           capRounded: true,
           jointRounded: true,
         }),
