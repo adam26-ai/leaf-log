@@ -14,6 +14,7 @@ const buttonVariants = cva(
         outline: "border border-gray-300 bg-paper text-ink hover:bg-gray-50",
         ghost: "text-ink hover:bg-gray-100",
         leaf: "bg-leaf text-paper hover:bg-leaf-strong",
+        danger: "bg-red-600 text-paper hover:bg-red-700",
       },
       size: {
         sm: "h-8 px-3 text-sm",

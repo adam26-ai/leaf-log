@@ -69,4 +69,16 @@ d("privacy invariant (app-layer repo)", () => {
     const own = await repo.listOwnFlights(ownerId);
     expect(own).toHaveLength(2);
   });
+
+  it("a pilot can only delete their own flight (owner-scoped)", async () => {
+    const f = await prisma.flight.create({
+      data: { ownerId, visibility: "private", status: "ready", igcSha256: `del${suffix}` },
+    });
+    // A non-owner's scoped delete affects nothing.
+    const a = await prisma.flight.deleteMany({ where: { id: f.id, ownerId: otherId } });
+    expect(a.count).toBe(0);
+    // The owner's scoped delete removes it.
+    const b = await prisma.flight.deleteMany({ where: { id: f.id, ownerId } });
+    expect(b.count).toBe(1);
+  });
 });
