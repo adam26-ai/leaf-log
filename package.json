@@ -16,7 +16,8 @@
     "db:down": "docker compose down",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:backfill-short-ids": "tsx scripts/backfill-short-ids.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

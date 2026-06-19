@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Db } from "@/lib/prisma";
 import { haversineM } from "@/lib/geo/distance";
 
 // Match radii (metres): launches are tighter than landing zones.
@@ -16,7 +16,7 @@ export interface SiteMatch {
  * Returns null when nothing is close enough — we show an honest "Unknown site".
  */
 export async function findSite(
-  db: Pick<PrismaClient, "site">,
+  db: Pick<Db, "site">,
   lat: number,
   lon: number,
   kind: "takeoff" | "landing",
