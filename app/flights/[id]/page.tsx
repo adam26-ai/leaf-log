@@ -7,6 +7,7 @@ import { FlightHeader } from "@/components/flight/flight-header";
 import { MetricTiles } from "@/components/flight/metric-tiles";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
+import { DeleteFlightButton } from "@/components/flight/delete-flight-button";
 import { Card, CardBody } from "@/components/ui/card";
 
 export default async function FlightPage({
@@ -83,6 +84,12 @@ export default async function FlightPage({
               </ul>
             </CardBody>
           </Card>
+        )}
+
+        {isOwner && (
+          <div className="mt-12 flex justify-end border-t border-gray-200 pt-6">
+            <DeleteFlightButton flightId={flight.id} />
+          </div>
         )}
       </main>
     </div>
