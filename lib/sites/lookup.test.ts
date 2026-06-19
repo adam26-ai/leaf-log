@@ -11,10 +11,9 @@ const enabled = Boolean(process.env.DATABASE_URL);
 const d = enabled ? describe : describe.skip;
 
 d("findSite (haversine)", () => {
-  let prisma: import("@prisma/client").PrismaClient;
+  let prisma: import("@/lib/prisma").Db;
   beforeAll(async () => {
-    const { PrismaClient } = await import("@prisma/client");
-    prisma = new PrismaClient();
+    ({ prisma } = await import("@/lib/prisma"));
   });
   afterAll(async () => {
     await prisma?.$disconnect();
