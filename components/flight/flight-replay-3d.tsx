@@ -168,7 +168,41 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         tileSize: 256,
         maxzoom: 13,
       });
-      map.setTerrain({ source: "dem", exaggeration: 1.3 });
+      map.setTerrain({ source: "dem", exaggeration: 1.5 });
+
+      // Hillshade so slopes read against the pale basemap (the 3D mesh alone is
+      // hard to see on positron). Insert below labels.
+      const firstSymbol = map
+        .getStyle()
+        .layers?.find((l) => l.type === "symbol")?.id;
+      if (!map.getLayer("hillshade")) {
+        map.addLayer(
+          {
+            id: "hillshade",
+            type: "hillshade",
+            source: "dem",
+            paint: {
+              "hillshade-exaggeration": 0.6,
+              "hillshade-shadow-color": "#4a4a4a",
+              "hillshade-highlight-color": "#ffffff",
+            },
+          },
+          firstSymbol,
+        );
+      }
+
+      // Sky for a sense of horizon/atmosphere in the tilted 3D view.
+      try {
+        map.setSky({
+          "sky-color": "#9ec3e6",
+          "horizon-color": "#e8eef5",
+          "fog-color": "#ffffff",
+          "horizon-fog-blend": 0.5,
+          "fog-ground-blend": 0.2,
+        });
+      } catch {
+        /* older style: sky unsupported — ignore */
+      }
 
       const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
       map.addControl(overlay);
