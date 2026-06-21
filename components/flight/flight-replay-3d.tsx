@@ -20,6 +20,12 @@ interface ReplayData {
   offsetMin: number;
 }
 
+// True vertical scale (1.0): the track's real altitude and the real terrain
+// elevation share one reference, so the flight path sits correctly on/above the
+// ground. Exaggerating terrain would also inflate the track's height-above-ground
+// by the same factor, so it must stay applied to BOTH if ever changed.
+const TERRAIN_EXAGGERATION = 1.0;
+
 const GRAY = [130, 130, 130];
 const GREEN = [90, 200, 110];
 const RED = [225, 80, 80];
@@ -52,6 +58,10 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
   >([]);
   const timeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
+  // IGC baro/GPS reference vs the DEM's sea-level reference).
+  const offsetRef = useRef(0);
+  const anchoredRef = useRef(false);
 
   const [data, setData] = useState<ReplayData | null>(null);
   const [error, setError] = useState(false);
@@ -102,6 +112,13 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
     return [last[0], last[1], last[2]];
   }
 
+  // Map a raw IGC altitude to the scene's vertical space: apply the takeoff
+  // anchor offset, then the terrain exaggeration so the track stays consistent
+  // with the (exaggerated) terrain mesh.
+  function zOf(alt: number) {
+    return (alt + offsetRef.current) * TERRAIN_EXAGGERATION;
+  }
+
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
@@ -114,7 +131,12 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         new PathLayer<SegDatum>({
           id: "track",
           data: segmentsRef.current,
-          getPath: (s) => s.path as [number, number, number][],
+          getPath: (s) =>
+            s.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
+              number,
+              number,
+              number,
+            ][],
           getColor: (s) => s.color,
           getWidth: 4,
           widthUnits: "pixels",
@@ -129,7 +151,7 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         new ScatterplotLayer<[number, number, number]>({
           id: "glider",
           data: [pos],
-          getPosition: (p) => p,
+          getPosition: (p) => [p[0], p[1], zOf(p[2])],
           getFillColor: [255, 180, 89],
           getLineColor: [20, 20, 20],
           lineWidthMinPixels: 1.5,
@@ -168,7 +190,7 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         tileSize: 256,
         maxzoom: 13,
       });
-      map.setTerrain({ source: "dem", exaggeration: 1.5 });
+      map.setTerrain({ source: "dem", exaggeration: TERRAIN_EXAGGERATION });
 
       // Hillshade so slopes read against the pale basemap (the 3D mesh alone is
       // hard to see on positron). Insert below labels.
@@ -219,6 +241,30 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
       map.setPitch(62);
       map.setBearing(-20);
       renderLayers(timeRef.current);
+
+      // Once terrain tiles are loaded, snap the takeoff to the ground so the
+      // whole track sits correctly on the terrain (corrects baro/GPS-vs-DEM
+      // reference). Retries on each idle until the DEM is queryable.
+      const anchorToTerrain = () => {
+        if (anchoredRef.current || !dataRef.current) return;
+        const s0 = dataRef.current.samples[0];
+        // queryTerrainElevation returns the EXAGGERATED elevation — divide it
+        // back out to recover the raw ground elevation.
+        let exaggerated: number | null = null;
+        try {
+          exaggerated = map.queryTerrainElevation([s0[0], s0[1]]);
+        } catch {
+          exaggerated = null;
+        }
+        if (exaggerated == null) return;
+        const rawGround = exaggerated / TERRAIN_EXAGGERATION;
+        const off = rawGround - s0[2];
+        if (Math.abs(off) <= 400) offsetRef.current = off; // sanity clamp
+        anchoredRef.current = true;
+        renderLayers(timeRef.current);
+      };
+      map.on("idle", anchorToTerrain);
+      anchorToTerrain();
     });
 
     return () => {
