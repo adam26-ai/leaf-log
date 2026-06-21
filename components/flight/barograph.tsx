@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
 } from "recharts";
 
 function localClock(tOffsetS: number, takeoffMs: number, offsetMin: number) {
@@ -22,18 +23,32 @@ export function Barograph({
   takeoffMs,
   offsetMin,
   altSource,
+  activeTime = null,
+  onHoverTime,
 }: {
   baro: [number, number][];
   takeoffMs: number;
   offsetMin: number;
   altSource: "baro" | "gps";
+  /** Linked-cursor time (s from takeoff) — draws a reference line. */
+  activeTime?: number | null;
+  /** Report the hovered time (or null on leave) for linked highlighting. */
+  onHoverTime?: (t: number | null) => void;
 }) {
   const data = baro.map(([t, alt]) => ({ t, alt }));
 
   return (
     <div className="h-[220px] w-full">
       <ResponsiveContainer width="100%" height="100%" minHeight={180}>
-        <AreaChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
+        <AreaChart
+          data={data}
+          margin={{ top: 8, right: 12, bottom: 4, left: 4 }}
+          onMouseMove={(s) => {
+            const label = (s as { activeLabel?: number | string })?.activeLabel;
+            if (label != null) onHoverTime?.(Number(label));
+          }}
+          onMouseLeave={() => onHoverTime?.(null)}
+        >
           <defs>
             <linearGradient id="baroFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#ffb459" stopOpacity={0.35} />
@@ -65,7 +80,11 @@ export function Barograph({
             stroke="#f59e2c"
             strokeWidth={2}
             fill="url(#baroFill)"
+            isAnimationActive={false}
           />
+          {activeTime != null && (
+            <ReferenceLine x={activeTime} stroke="#272727" strokeDasharray="3 3" />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </div>

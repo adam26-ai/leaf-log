@@ -2,6 +2,12 @@ import type { ParsedIgc, DerivedMetrics } from "./types";
 
 const MAX_SAMPLES = 1500;
 
+/** The /api/flights/[id]/replay response (the replay path + timing context). */
+export interface ReplayResponse extends ReplayPath {
+  takeoffMs: number;
+  offsetMin: number;
+}
+
 export interface ReplayPath {
   /** Time-aligned samples: [lon, lat, altMetres, tOffsetSeconds]. */
   samples: [number, number, number, number][];

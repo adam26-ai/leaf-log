@@ -49,7 +49,17 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
     .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
 }
 
-export function FlightReplay3D({ flightId }: { flightId: string }) {
+export function FlightReplay3D({
+  flightId,
+  externalTime = null,
+  onHoverTime,
+}: {
+  flightId: string;
+  /** Linked-cursor time (s) from the barograph — overrides the glider position. */
+  externalTime?: number | null;
+  /** Report the hovered time (or null) when pointing at the 3D track. */
+  onHoverTime?: (t: number | null) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const dataRef = useRef<ReplayData | null>(null);
@@ -58,6 +68,11 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
   >([]);
   const timeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const externalTimeRef = useRef<number | null>(externalTime);
+  const onHoverRef = useRef(onHoverTime);
+  useEffect(() => {
+    onHoverRef.current = onHoverTime;
+  });
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
   const offsetRef = useRef(0);
@@ -123,7 +138,8 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
     if (!overlay || !d) return;
-    const pos = positionAt(t);
+    // A linked cursor from the barograph (externalTime) wins over playback time.
+    const pos = positionAt(externalTimeRef.current ?? t);
     type SegDatum = { path: number[][]; t: number; color: [number, number, number] };
     overlay.setProps({
       layers: [
@@ -131,6 +147,11 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         new PathLayer<SegDatum>({
           id: "track",
           data: segmentsRef.current,
+          pickable: true,
+          onHover: (info) =>
+            onHoverRef.current?.(
+              (info.object as SegDatum | null)?.t ?? null,
+            ),
           getPath: (s) =>
             s.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
               number,
@@ -294,6 +315,13 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, data]);
+
+  // Linked cursor from the barograph: move the glider to the hovered time.
+  useEffect(() => {
+    externalTimeRef.current = externalTime;
+    renderLayers(timeRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalTime]);
 
   function scrub(t: number) {
     timeRef.current = t;
