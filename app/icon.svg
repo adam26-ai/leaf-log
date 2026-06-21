@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="7" fill="#141414"/>
+  <g transform="rotate(18 16 16)">
+    <!-- leaf body -->
+    <path d="M16 4.2C23.6 10.4 23.6 21.6 16 27.8C8.4 21.6 8.4 10.4 16 4.2Z" fill="#ffb459"/>
+    <!-- midrib, cut in the background colour -->
+    <path d="M16 6.4 16 25.6" stroke="#141414" stroke-width="1.7" stroke-linecap="round"/>
+  </g>
+</svg>

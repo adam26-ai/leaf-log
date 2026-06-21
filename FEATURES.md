@@ -18,17 +18,6 @@ Track potential feature ideas for future sprints.
   (avionics rewrote long cuids in a maintenance-mode script) or accept that old long-id
   bookmarks 404 — fine at this early stage.
 
-## Custom Leaf Log Favicon
-- **Area:** Branding / app shell
-- **Description:** Replace the default create-next-app favicon with a Leaf Log–branded
-  favicon (and matching app icons) so the browser tab, bookmarks, and PWA/home-screen
-  shortcuts reflect the brand instead of the Next.js default.
-- **Priority:** Low
-- **Notes:** Today `app/favicon.ico` is the stock Next.js icon. Provide a brand mark
-  (leaf motif / amber `#ffb459` per DESIGN.md) as `favicon.ico` plus an SVG and PNG set
-  (`icon`, `apple-touch-icon`), wired through Next's metadata `icons` / file-based
-  `app/icon.*` conventions. Keep it legible at 16px.
-
 ## 3D Flight Visualization
 - **Area:** Flight detail page (flight viz)
 - **Description:** Let pilots view a flight in 3D, not just the current 2D map track. So
