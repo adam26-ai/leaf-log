@@ -4,9 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { PathLayer } from "@deck.gl/layers";
+import { SimpleMeshLayer } from "@deck.gl/mesh-layers";
+import {
+  LightingEffect,
+  AmbientLight,
+  DirectionalLight,
+} from "@deck.gl/core";
+import { SphereGeometry } from "@luma.gl/engine";
 import { basemapStyleUrl } from "./map-style";
 import { Card } from "@/components/ui/card";
+
+// A light so the 3D glider sphere is actually shaded (not a flat disc).
+const lightingEffect = new LightingEffect({
+  ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.0 }),
+  sun: new DirectionalLight({
+    color: [255, 255, 255],
+    intensity: 2.0,
+    direction: [-1, -3, -1],
+  }),
+});
 
 type Sample = [number, number, number, number]; // lon, lat, alt, tSec
 
@@ -25,6 +42,9 @@ interface ReplayData {
 // ground. Exaggerating terrain would also inflate the track's height-above-ground
 // by the same factor, so it must stay applied to BOTH if ever changed.
 const TERRAIN_EXAGGERATION = 1.0;
+
+// A unit sphere for the 3D glider marker (sized in metres via sizeScale).
+const GLIDER_MESH = new SphereGeometry({ radius: 1, nlat: 18, nlong: 36 });
 
 const GRAY = [130, 130, 130];
 const GREEN = [90, 200, 110];
@@ -168,17 +188,20 @@ export function FlightReplay3D({
           capRounded: true,
           jointRounded: true,
         }),
-        // Glider marker at the current replay time.
-        new ScatterplotLayer<[number, number, number]>({
+        // 3D glider marker (a shaded sphere) at the current replay time.
+        new SimpleMeshLayer<[number, number, number]>({
           id: "glider",
           data: [pos],
+          mesh: GLIDER_MESH,
           getPosition: (p) => [p[0], p[1], zOf(p[2])],
-          getFillColor: [255, 180, 89],
-          getLineColor: [20, 20, 20],
-          lineWidthMinPixels: 1.5,
-          stroked: true,
-          getRadius: 7,
-          radiusUnits: "pixels",
+          getColor: [255, 180, 89],
+          sizeScale: 140, // metres
+          material: {
+            ambient: 0.5,
+            diffuse: 0.6,
+            shininess: 32,
+            specularColor: [255, 255, 255],
+          },
         }),
       ],
     });
@@ -247,7 +270,11 @@ export function FlightReplay3D({
         /* older style: sky unsupported — ignore */
       }
 
-      const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
+      const overlay = new MapboxOverlay({
+        interleaved: true,
+        layers: [],
+        effects: [lightingEffect],
+      });
       map.addControl(overlay);
       overlayRef.current = overlay;
 
@@ -358,12 +385,14 @@ export function FlightReplay3D({
             min={0}
             max={data?.durationS ?? 100}
             step={1}
-            value={Math.round(time)}
+            value={Math.round(externalTime ?? time)}
             onChange={(e) => scrub(Number(e.target.value))}
             className="flex-1 accent-amber"
           />
           <span className="w-20 text-right font-mono text-sm text-gray-600">
-            {data ? clock(time, data.takeoffMs, data.offsetMin) : "--:--:--"}
+            {data
+              ? clock(externalTime ?? time, data.takeoffMs, data.offsetMin)
+              : "--:--:--"}
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
