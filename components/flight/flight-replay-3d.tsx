@@ -12,7 +12,7 @@ import {
   DirectionalLight,
 } from "@deck.gl/core";
 import { SphereGeometry } from "@luma.gl/engine";
-import { basemapStyleUrl } from "./map-style";
+import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { Card } from "@/components/ui/card";
 
 // A light so the 3D glider sphere is actually shaded (not a flat disc).
@@ -71,10 +71,12 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
 
 export function FlightReplay3D({
   flightId,
+  basemap = "monochrome",
   externalTime = null,
   onHoverTime,
 }: {
   flightId: string;
+  basemap?: BasemapId;
   /** Linked-cursor time (s) from the barograph — overrides the glider position. */
   externalTime?: number | null;
   /** Report the hovered time (or null) when pointing at the 3D track. */
@@ -91,8 +93,11 @@ export function FlightReplay3D({
   const rafRef = useRef<number | null>(null);
   const externalTimeRef = useRef<number | null>(externalTime);
   const onHoverRef = useRef(onHoverTime);
+  const basemapRef = useRef(basemap);
+  const didInitBasemap = useRef(false);
   useEffect(() => {
     onHoverRef.current = onHoverTime;
+    basemapRef.current = basemap;
   });
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
@@ -230,12 +235,62 @@ export function FlightReplay3D({
     });
   }
 
+  // (Re)apply our DEM terrain + hillshade + sky. Needed on first load and after
+  // every basemap setStyle (which resets terrain and wipes custom layers).
+  function setupTerrain(map: maplibregl.Map) {
+    if (!map.getSource("dem")) {
+      map.addSource("dem", {
+        type: "raster-dem",
+        tiles: [
+          "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+        ],
+        encoding: "terrarium",
+        tileSize: 256,
+        maxzoom: 13,
+      });
+    }
+    map.setTerrain({ source: "dem", exaggeration: TERRAIN_EXAGGERATION });
+
+    // Hillshade helps slopes read on a pale basemap; satellite/hybrid already
+    // show natural shading, so skip it there.
+    if (!isImagery(basemapRef.current) && !map.getLayer("hillshade")) {
+      const firstSymbol = map
+        .getStyle()
+        .layers?.find((l) => l.type === "symbol")?.id;
+      map.addLayer(
+        {
+          id: "hillshade",
+          type: "hillshade",
+          source: "dem",
+          paint: {
+            "hillshade-exaggeration": 0.6,
+            "hillshade-shadow-color": "#4a4a4a",
+            "hillshade-highlight-color": "#ffffff",
+          },
+        },
+        firstSymbol,
+      );
+    }
+
+    try {
+      map.setSky({
+        "sky-color": "#9ec3e6",
+        "horizon-color": "#e8eef5",
+        "fog-color": "#ffffff",
+        "horizon-fog-blend": 0.5,
+        "fog-ground-blend": 0.2,
+      });
+    } catch {
+      /* older style: sky unsupported — ignore */
+    }
+  }
+
   // Build the map once we have data.
   useEffect(() => {
     if (!containerRef.current || !data) return;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: basemapStyleUrl(),
+      style: styleFor(basemapRef.current),
       pitch: 62,
       bearing: -20,
       maxPitch: 85,
@@ -250,51 +305,7 @@ export function FlightReplay3D({
     map.on("move", () => renderLayers(externalTimeRef.current ?? timeRef.current));
 
     map.on("load", () => {
-      // Keyless terrain (AWS terrarium DEM).
-      map.addSource("dem", {
-        type: "raster-dem",
-        tiles: [
-          "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
-        ],
-        encoding: "terrarium",
-        tileSize: 256,
-        maxzoom: 13,
-      });
-      map.setTerrain({ source: "dem", exaggeration: TERRAIN_EXAGGERATION });
-
-      // Hillshade so slopes read against the pale basemap (the 3D mesh alone is
-      // hard to see on positron). Insert below labels.
-      const firstSymbol = map
-        .getStyle()
-        .layers?.find((l) => l.type === "symbol")?.id;
-      if (!map.getLayer("hillshade")) {
-        map.addLayer(
-          {
-            id: "hillshade",
-            type: "hillshade",
-            source: "dem",
-            paint: {
-              "hillshade-exaggeration": 0.6,
-              "hillshade-shadow-color": "#4a4a4a",
-              "hillshade-highlight-color": "#ffffff",
-            },
-          },
-          firstSymbol,
-        );
-      }
-
-      // Sky for a sense of horizon/atmosphere in the tilted 3D view.
-      try {
-        map.setSky({
-          "sky-color": "#9ec3e6",
-          "horizon-color": "#e8eef5",
-          "fog-color": "#ffffff",
-          "horizon-fog-blend": 0.5,
-          "fog-ground-blend": 0.2,
-        });
-      } catch {
-        /* older style: sky unsupported — ignore */
-      }
+      setupTerrain(map);
 
       const overlay = new MapboxOverlay({
         interleaved: true,
@@ -348,6 +359,28 @@ export function FlightReplay3D({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Swap basemap style, then re-apply terrain + re-render the deck overlay
+  // (setStyle preserves the camera but resets terrain and custom layers).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!didInitBasemap.current) {
+      didInitBasemap.current = true;
+      return; // initial style already set at build time
+    }
+    const reAdd = () => {
+      setupTerrain(map);
+      renderLayers(externalTimeRef.current ?? timeRef.current);
+    };
+    const swap = () => {
+      map.setStyle(styleFor(basemap));
+      map.once("style.load", reAdd);
+    };
+    if (map.isStyleLoaded()) swap();
+    else map.once("load", swap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basemap]);
 
   // Animation loop.
   useEffect(() => {

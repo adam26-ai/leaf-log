@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { basemapStyleUrl } from "./map-style";
+import { styleFor, type BasemapId } from "./basemaps";
 
 type LngLat = [number, number];
 type Sample = [number, number, number, number]; // lon, lat, alt, t
@@ -11,15 +11,15 @@ type Sample = [number, number, number, number]; // lon, lat, alt, t
 export function TrackMap({
   line,
   bounds,
+  basemap = "monochrome",
   cursor = null,
   samples = null,
   onHoverTime,
 }: {
   line: LngLat[];
   bounds: [number, number, number, number];
-  /** Position [lon,lat] of the linked cursor, or null. */
+  basemap?: BasemapId;
   cursor?: LngLat | null;
-  /** Time-aligned samples for hover→time lookup. */
   samples?: Sample[] | null;
   onHoverTime?: (t: number | null) => void;
 }) {
@@ -27,33 +27,42 @@ export function TrackMap({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const samplesRef = useRef(samples);
   const onHoverRef = useRef(onHoverTime);
-  // Keep the imperative handlers pointed at the latest props.
+  const cursorRef = useRef(cursor);
+  const basemapRef = useRef(basemap);
+  const didInit = useRef(false);
   useEffect(() => {
     samplesRef.current = samples;
     onHoverRef.current = onHoverTime;
+    cursorRef.current = cursor;
+    basemapRef.current = basemap;
   });
 
-  // Build the map once per track.
-  useEffect(() => {
-    if (!ref.current || line.length < 2) return;
+  function applyCursor(map: maplibregl.Map) {
+    const src = map.getSource("cursor") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    const c = cursorRef.current;
+    src.setData(
+      c
+        ? {
+            type: "FeatureCollection",
+            features: [
+              { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: c } },
+            ],
+          }
+        : { type: "FeatureCollection", features: [] },
+    );
+  }
 
-    const map = new maplibregl.Map({
-      container: ref.current,
-      style: basemapStyleUrl(),
-      attributionControl: { compact: true },
-    });
-    mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-
-    map.on("load", () => {
+  // (Re)add the track + cursor sources/layers — needed on first load and after
+  // every basemap setStyle (which wipes custom sources/layers).
+  function addTrackLayers(map: maplibregl.Map) {
+    if (!map.getSource("track")) {
       map.addSource("track", {
         type: "geojson",
-        data: {
-          type: "Feature",
-          properties: {},
-          geometry: { type: "LineString", coordinates: line },
-        },
+        data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: line } },
       });
+    }
+    if (!map.getLayer("track-line")) {
       map.addLayer({
         id: "track-line",
         type: "line",
@@ -61,12 +70,11 @@ export function TrackMap({
         layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": "#ffb459", "line-width": 3 },
       });
-
-      // Linked-cursor marker (driven by the barograph / replay).
-      map.addSource("cursor", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
+    }
+    if (!map.getSource("cursor")) {
+      map.addSource("cursor", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    }
+    if (!map.getLayer("cursor")) {
       map.addLayer({
         id: "cursor",
         type: "circle",
@@ -78,12 +86,26 @@ export function TrackMap({
           "circle-stroke-width": 2,
         },
       });
+    }
+    applyCursor(map);
+  }
 
+  // Build the map once per track.
+  useEffect(() => {
+    if (!ref.current || line.length < 2) return;
+
+    const map = new maplibregl.Map({
+      container: ref.current,
+      style: styleFor(basemapRef.current),
+      attributionControl: { compact: true },
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    map.on("load", () => {
+      addTrackLayers(map);
       new maplibregl.Marker({ color: "#6fae5e" }).setLngLat(line[0]).addTo(map);
-      new maplibregl.Marker({ color: "#272727" })
-        .setLngLat(line[line.length - 1])
-        .addTo(map);
-
+      new maplibregl.Marker({ color: "#272727" }).setLngLat(line[line.length - 1]).addTo(map);
       map.fitBounds(
         [
           [bounds[0], bounds[1]],
@@ -93,7 +115,6 @@ export function TrackMap({
       );
     });
 
-    // Hover → nearest sample (by screen distance) → report its time.
     const onMove = (e: maplibregl.MapMouseEvent) => {
       const s = samplesRef.current;
       const cb = onHoverRef.current;
@@ -119,32 +140,33 @@ export function TrackMap({
       map.remove();
       mapRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [line, bounds]);
+
+  // Swap basemap style (preserve camera; re-add custom layers afterward).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!didInit.current) {
+      didInit.current = true;
+      return; // initial style already set at build time
+    }
+    const reAdd = () => addTrackLayers(map);
+    const swap = () => {
+      map.setStyle(styleFor(basemap));
+      map.once("style.load", reAdd);
+    };
+    if (map.isStyleLoaded()) swap();
+    else map.once("load", swap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basemap]);
 
   // Update the cursor marker when the linked time changes.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const apply = () => {
-      const src = map.getSource("cursor") as maplibregl.GeoJSONSource | undefined;
-      if (!src) return;
-      src.setData(
-        cursor
-          ? {
-              type: "FeatureCollection",
-              features: [
-                {
-                  type: "Feature",
-                  properties: {},
-                  geometry: { type: "Point", coordinates: cursor },
-                },
-              ],
-            }
-          : { type: "FeatureCollection", features: [] },
-      );
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
+    if (map.isStyleLoaded()) applyCursor(map);
+    else map.once("load", () => applyCursor(map));
   }, [cursor]);
 
   return <div ref={ref} className="h-[420px] w-full rounded-lg" />;
