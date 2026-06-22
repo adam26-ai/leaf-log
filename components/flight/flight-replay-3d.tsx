@@ -81,6 +81,7 @@ export function FlightReplay3D({
   onHoverTime?: (t: number | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const dataRef = useRef<ReplayData | null>(null);
   const segmentsRef = useRef<
@@ -154,6 +155,18 @@ export function FlightReplay3D({
     return (alt + offsetRef.current) * TERRAIN_EXAGGERATION;
   }
 
+  // World-size (metres) for the glider sphere that renders at a roughly constant
+  // ~9px radius regardless of zoom (a world-sized mesh has no pixel-size prop).
+  function gliderSizeMeters() {
+    const map = mapRef.current;
+    if (!map) return 40;
+    const lat = map.getCenter().lat;
+    const metersPerPixel =
+      (2 * Math.PI * 6378137 * Math.cos((lat * Math.PI) / 180)) /
+      (512 * 2 ** map.getZoom());
+    return Math.max(6, 9 * metersPerPixel);
+  }
+
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
@@ -195,7 +208,7 @@ export function FlightReplay3D({
           mesh: GLIDER_MESH,
           getPosition: (p) => [p[0], p[1], zOf(p[2])],
           getColor: [255, 180, 89],
-          sizeScale: 140, // metres
+          sizeScale: gliderSizeMeters(),
           material: {
             ambient: 0.5,
             diffuse: 0.6,
@@ -218,10 +231,13 @@ export function FlightReplay3D({
       maxPitch: 85,
       attributionControl: { compact: true },
     });
+    mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
       "top-right",
     );
+    // Keep the glider sphere a constant on-screen size as the user zooms/pans.
+    map.on("move", () => renderLayers(externalTimeRef.current ?? timeRef.current));
 
     map.on("load", () => {
       // Keyless terrain (AWS terrarium DEM).
@@ -317,6 +333,7 @@ export function FlightReplay3D({
 
     return () => {
       overlayRef.current = null;
+      mapRef.current = null;
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
