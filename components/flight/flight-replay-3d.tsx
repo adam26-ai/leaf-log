@@ -4,9 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { PathLayer } from "@deck.gl/layers";
+import { SimpleMeshLayer } from "@deck.gl/mesh-layers";
+import {
+  LightingEffect,
+  AmbientLight,
+  DirectionalLight,
+} from "@deck.gl/core";
+import { SphereGeometry } from "@luma.gl/engine";
 import { basemapStyleUrl } from "./map-style";
 import { Card } from "@/components/ui/card";
+
+// A light so the 3D glider sphere is actually shaded (not a flat disc).
+const lightingEffect = new LightingEffect({
+  ambient: new AmbientLight({ color: [255, 255, 255], intensity: 1.0 }),
+  sun: new DirectionalLight({
+    color: [255, 255, 255],
+    intensity: 2.0,
+    direction: [-1, -3, -1],
+  }),
+});
 
 type Sample = [number, number, number, number]; // lon, lat, alt, tSec
 
@@ -25,6 +42,9 @@ interface ReplayData {
 // ground. Exaggerating terrain would also inflate the track's height-above-ground
 // by the same factor, so it must stay applied to BOTH if ever changed.
 const TERRAIN_EXAGGERATION = 1.0;
+
+// A unit sphere for the 3D glider marker (sized in metres via sizeScale).
+const GLIDER_MESH = new SphereGeometry({ radius: 1, nlat: 18, nlong: 36 });
 
 const GRAY = [130, 130, 130];
 const GREEN = [90, 200, 110];
@@ -49,8 +69,19 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
     .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
 }
 
-export function FlightReplay3D({ flightId }: { flightId: string }) {
+export function FlightReplay3D({
+  flightId,
+  externalTime = null,
+  onHoverTime,
+}: {
+  flightId: string;
+  /** Linked-cursor time (s) from the barograph — overrides the glider position. */
+  externalTime?: number | null;
+  /** Report the hovered time (or null) when pointing at the 3D track. */
+  onHoverTime?: (t: number | null) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const dataRef = useRef<ReplayData | null>(null);
   const segmentsRef = useRef<
@@ -58,6 +89,11 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
   >([]);
   const timeRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const externalTimeRef = useRef<number | null>(externalTime);
+  const onHoverRef = useRef(onHoverTime);
+  useEffect(() => {
+    onHoverRef.current = onHoverTime;
+  });
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
   const offsetRef = useRef(0);
@@ -119,11 +155,34 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
     return (alt + offsetRef.current) * TERRAIN_EXAGGERATION;
   }
 
+  // World-size (metres) for the glider sphere that renders at a roughly constant
+  // ~9px radius regardless of zoom (a world-sized mesh has no pixel-size prop).
+  function gliderSizeMeters() {
+    const map = mapRef.current;
+    if (!map) return 40;
+    const lat = map.getCenter().lat;
+    const metersPerPixel =
+      (2 * Math.PI * 6378137 * Math.cos((lat * Math.PI) / 180)) /
+      (512 * 2 ** map.getZoom());
+    return Math.max(6, 9 * metersPerPixel);
+  }
+
+  // Keep the map centred on the glider while scrubbing/playing (preserves the
+  // user's zoom/tilt/bearing — only the centre follows). setCenter fires "move",
+  // which re-renders the layers.
+  function centerOnGlider() {
+    const map = mapRef.current;
+    if (!map || !dataRef.current) return;
+    const p = positionAt(externalTimeRef.current ?? timeRef.current);
+    map.setCenter([p[0], p[1]]);
+  }
+
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
     if (!overlay || !d) return;
-    const pos = positionAt(t);
+    // A linked cursor from the barograph (externalTime) wins over playback time.
+    const pos = positionAt(externalTimeRef.current ?? t);
     type SegDatum = { path: number[][]; t: number; color: [number, number, number] };
     overlay.setProps({
       layers: [
@@ -131,6 +190,11 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         new PathLayer<SegDatum>({
           id: "track",
           data: segmentsRef.current,
+          pickable: true,
+          onHover: (info) =>
+            onHoverRef.current?.(
+              (info.object as SegDatum | null)?.t ?? null,
+            ),
           getPath: (s) =>
             s.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
               number,
@@ -147,17 +211,20 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
           capRounded: true,
           jointRounded: true,
         }),
-        // Glider marker at the current replay time.
-        new ScatterplotLayer<[number, number, number]>({
+        // 3D glider marker (a shaded sphere) at the current replay time.
+        new SimpleMeshLayer<[number, number, number]>({
           id: "glider",
           data: [pos],
+          mesh: GLIDER_MESH,
           getPosition: (p) => [p[0], p[1], zOf(p[2])],
-          getFillColor: [255, 180, 89],
-          getLineColor: [20, 20, 20],
-          lineWidthMinPixels: 1.5,
-          stroked: true,
-          getRadius: 7,
-          radiusUnits: "pixels",
+          getColor: [255, 180, 89],
+          sizeScale: gliderSizeMeters(),
+          material: {
+            ambient: 0.5,
+            diffuse: 0.6,
+            shininess: 32,
+            specularColor: [255, 255, 255],
+          },
         }),
       ],
     });
@@ -174,10 +241,13 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
       maxPitch: 85,
       attributionControl: { compact: true },
     });
+    mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
       "top-right",
     );
+    // Keep the glider sphere a constant on-screen size as the user zooms/pans.
+    map.on("move", () => renderLayers(externalTimeRef.current ?? timeRef.current));
 
     map.on("load", () => {
       // Keyless terrain (AWS terrarium DEM).
@@ -226,7 +296,11 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
         /* older style: sky unsupported — ignore */
       }
 
-      const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
+      const overlay = new MapboxOverlay({
+        interleaved: true,
+        layers: [],
+        effects: [lightingEffect],
+      });
       map.addControl(overlay);
       overlayRef.current = overlay;
 
@@ -269,6 +343,7 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
 
     return () => {
       overlayRef.current = null;
+      mapRef.current = null;
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,6 +360,7 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
       if (t >= data.durationS) t = 0; // loop
       timeRef.current = t;
       setTime(t);
+      centerOnGlider();
       renderLayers(t);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -295,9 +371,29 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, data]);
 
+  // Linked cursor from the barograph: move the glider to the hovered time and
+  // follow it. On release, leave the glider where it was last scrubbed (commit
+  // the last hovered time to the playback position) rather than snapping back.
+  useEffect(() => {
+    if (externalTime == null) {
+      if (externalTimeRef.current != null) {
+        timeRef.current = externalTimeRef.current;
+        setTime(externalTimeRef.current);
+      }
+      externalTimeRef.current = null;
+      renderLayers(timeRef.current); // no recenter on release/mount
+    } else {
+      externalTimeRef.current = externalTime;
+      centerOnGlider();
+      renderLayers(timeRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalTime]);
+
   function scrub(t: number) {
     timeRef.current = t;
     setTime(t);
+    centerOnGlider();
     renderLayers(t);
   }
 
@@ -330,12 +426,14 @@ export function FlightReplay3D({ flightId }: { flightId: string }) {
             min={0}
             max={data?.durationS ?? 100}
             step={1}
-            value={Math.round(time)}
+            value={Math.round(externalTime ?? time)}
             onChange={(e) => scrub(Number(e.target.value))}
             className="flex-1 accent-amber"
           />
           <span className="w-20 text-right font-mono text-sm text-gray-600">
-            {data ? clock(time, data.takeoffMs, data.offsetMin) : "--:--:--"}
+            {data
+              ? clock(externalTime ?? time, data.takeoffMs, data.offsetMin)
+              : "--:--:--"}
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
