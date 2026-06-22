@@ -74,3 +74,16 @@ Track potential feature ideas for future sprints.
   derive ground speed from consecutive sample positions/time. Render a compact readout
   panel/overlay near the map (mirror the metric-tile styling) that updates on hover and
   during 3D playback. While playing the replay it doubles as a live instrument display.
+
+## Compact Flight Summary Header
+- **Area:** Flight detail page (metric tiles)
+- **Description:** Tighten the summary metric cards at the top of the flight page so all the
+  stats fit on a single row instead of wrapping to multiple rows. Keep the existing card
+  style (amber accent bar, Roboto Condensed numbers) — just denser, so it takes up less
+  vertical space and leaves more room for the map/3D view.
+- **Priority:** Low
+- **Notes:** `components/flight/metric-tiles.tsx` currently renders 7 tiles in a
+  2/3/4-column grid (wraps to 2–3 rows). Make them a single horizontal row of smaller chips
+  (e.g. compact label-over-value cells, optionally horizontally scrollable on narrow
+  screens, or drop to a denser grid on mobile). Preserve the accent-bar styling at a smaller
+  scale. Shrinking the header gives the linked map/barograph/3D more above-the-fold room.
