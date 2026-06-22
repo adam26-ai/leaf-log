@@ -167,6 +167,16 @@ export function FlightReplay3D({
     return Math.max(6, 9 * metersPerPixel);
   }
 
+  // Keep the map centred on the glider while scrubbing/playing (preserves the
+  // user's zoom/tilt/bearing — only the centre follows). setCenter fires "move",
+  // which re-renders the layers.
+  function centerOnGlider() {
+    const map = mapRef.current;
+    if (!map || !dataRef.current) return;
+    const p = positionAt(externalTimeRef.current ?? timeRef.current);
+    map.setCenter([p[0], p[1]]);
+  }
+
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
@@ -350,6 +360,7 @@ export function FlightReplay3D({
       if (t >= data.durationS) t = 0; // loop
       timeRef.current = t;
       setTime(t);
+      centerOnGlider();
       renderLayers(t);
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -360,16 +371,29 @@ export function FlightReplay3D({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, speed, data]);
 
-  // Linked cursor from the barograph: move the glider to the hovered time.
+  // Linked cursor from the barograph: move the glider to the hovered time and
+  // follow it. On release, leave the glider where it was last scrubbed (commit
+  // the last hovered time to the playback position) rather than snapping back.
   useEffect(() => {
-    externalTimeRef.current = externalTime;
-    renderLayers(timeRef.current);
+    if (externalTime == null) {
+      if (externalTimeRef.current != null) {
+        timeRef.current = externalTimeRef.current;
+        setTime(externalTimeRef.current);
+      }
+      externalTimeRef.current = null;
+      renderLayers(timeRef.current); // no recenter on release/mount
+    } else {
+      externalTimeRef.current = externalTime;
+      centerOnGlider();
+      renderLayers(timeRef.current);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalTime]);
 
   function scrub(t: number) {
     timeRef.current = t;
     setTime(t);
+    centerOnGlider();
     renderLayers(t);
   }
 
