@@ -87,3 +87,18 @@ Track potential feature ideas for future sprints.
   (e.g. compact label-over-value cells, optionally horizontally scrollable on narrow
   screens, or drop to a denser grid on mobile). Preserve the accent-bar styling at a smaller
   scale. Shrinking the header gives the linked map/barograph/3D more above-the-fold room.
+
+## Leaf Device Auto-Upload (pairing + ingest API)
+- **Area:** Ingestion / device integration / Account settings
+- **Description:** Let a Leaf vario push recorded IGC flights straight into the owner's Leaf
+  Log account — no manual export/upload. A short pairing-code flow authenticates the device
+  (the vario can't do magic-link login), then flights arrive automatically via a token-authed
+  ingest API. This is the headline "seamless Leaf auto-upload" hook from VISION.md.
+- **Priority:** High
+- **Notes:** Full leaf-log-side plan in `docs/device-upload-plan.md` (the firmware side —
+  on-device config + upload — is planned in the `leaf` repo). Reuses the existing
+  source-agnostic `ingestFlight({ source: 'device_push' })` seam, so parse/derive/dedupe/
+  persist already work. Adds Prisma models `DevicePairing` + `DeviceToken`; routes
+  `/api/devices/pair/{start,poll,claim}` and `POST /api/ingest` (Bearer); an Account → Devices
+  UI to claim/name/revoke. Pairing codes are short-lived/single-use/rate-limited; tokens
+  stored hashed. Fully testable without firmware via curl.
