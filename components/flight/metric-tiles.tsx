@@ -10,19 +10,22 @@ import type { Flight } from "@prisma/client";
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <Card className="flex flex-col gap-2 p-4">
-      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+    <div className="flex shrink-0 flex-col gap-1 px-3 py-2">
+      <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-wide text-gray-500">
         {label}
       </span>
-      <span className="font-condensed text-3xl font-bold tabular-nums text-ink">
+      <span className="whitespace-nowrap font-condensed text-xl font-bold tabular-nums text-ink">
         {value}
       </span>
-      <AccentBar width="1.75rem" />
-    </Card>
+      <AccentBar width="1.25rem" />
+    </div>
   );
 }
 
-/** The beginner-friendly metric grid (plain labels, not competition jargon). */
+/**
+ * Compact summary strip — all the flight's headline numbers on one row (scrolls
+ * horizontally on narrow screens), keeping the map/3D more above-the-fold.
+ */
 export function MetricTiles({ flight }: { flight: Flight }) {
   const tiles: [string, string][] = [
     ["Airtime", formatDuration(flight.durationS)],
@@ -34,10 +37,12 @@ export function MetricTiles({ flight }: { flight: Flight }) {
     ["Straight line", formatDistance(flight.straightDistM)],
   ];
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {tiles.map(([label, value]) => (
-        <Tile key={label} label={label} value={value} />
-      ))}
-    </div>
+    <Card className="overflow-hidden">
+      <div className="flex gap-1 divide-x divide-gray-100 overflow-x-auto">
+        {tiles.map(([label, value]) => (
+          <Tile key={label} label={label} value={value} />
+        ))}
+      </div>
+    </Card>
   );
 }
