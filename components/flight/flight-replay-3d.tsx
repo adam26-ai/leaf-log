@@ -74,6 +74,7 @@ export function FlightReplay3D({
   basemap = "monochrome",
   externalTime = null,
   onHoverTime,
+  onTimeChange,
 }: {
   flightId: string;
   basemap?: BasemapId;
@@ -81,6 +82,8 @@ export function FlightReplay3D({
   externalTime?: number | null;
   /** Report the hovered time (or null) when pointing at the 3D track. */
   onHoverTime?: (t: number | null) => void;
+  /** Report the current display time (playback/scrub/hover) for the instrument readout. */
+  onTimeChange?: (t: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -95,10 +98,23 @@ export function FlightReplay3D({
   const onHoverRef = useRef(onHoverTime);
   const basemapRef = useRef(basemap);
   const didInitBasemap = useRef(false);
+  const onTimeChangeRef = useRef(onTimeChange);
+  const lastReportRef = useRef(0);
   useEffect(() => {
     onHoverRef.current = onHoverTime;
+    onTimeChangeRef.current = onTimeChange;
     basemapRef.current = basemap;
   });
+
+  // Report the effective display time (hover wins over playback) for the readout.
+  function reportTime(force = false) {
+    const cb = onTimeChangeRef.current;
+    if (!cb) return;
+    const now = performance.now();
+    if (!force && now - lastReportRef.current < 100) return; // ~10/s during playback
+    lastReportRef.current = now;
+    cb(externalTimeRef.current ?? timeRef.current);
+  }
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
   const offsetRef = useRef(0);
@@ -326,6 +342,7 @@ export function FlightReplay3D({
       map.setPitch(62);
       map.setBearing(-20);
       renderLayers(timeRef.current);
+      reportTime(true); // seed the instrument readout (takeoff)
 
       // Once terrain tiles are loaded, snap the takeoff to the ground so the
       // whole track sits correctly on the terrain (corrects baro/GPS-vs-DEM
@@ -395,6 +412,7 @@ export function FlightReplay3D({
       setTime(t);
       centerOnGlider();
       renderLayers(t);
+      reportTime();
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -420,6 +438,7 @@ export function FlightReplay3D({
       centerOnGlider();
       renderLayers(timeRef.current);
     }
+    reportTime(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalTime]);
 
@@ -428,6 +447,7 @@ export function FlightReplay3D({
     setTime(t);
     centerOnGlider();
     renderLayers(t);
+    reportTime(true);
   }
 
   if (error) {

@@ -7,6 +7,8 @@ import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
 import { FlightReplay3D } from "./flight-replay-3d";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
+import { InstrumentReadout } from "./instrument-readout";
+import { instrumentAt } from "@/lib/flights/instruments";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +41,8 @@ export function FlightViz({
   });
   // Shared linked-cursor time (seconds from takeoff), or null.
   const [activeTime, setActiveTime] = useState<number | null>(null);
+  // Current 3D replay time (playback/scrub/hover) for the instrument readout.
+  const [replay3dTime, setReplay3dTime] = useState<number | null>(null);
 
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
@@ -104,6 +108,10 @@ export function FlightViz({
   }
 
   const cursor = activeTime != null ? posAt(activeTime) : null;
+  // The instrument readout follows the hover in 2D, and the replay/hover in 3D.
+  const readoutTime = mode === "3d" ? replay3dTime : activeTime;
+  const reading =
+    replay && readoutTime != null ? instrumentAt(replay, readoutTime) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -145,6 +153,8 @@ export function FlightViz({
           </label>
         </div>
 
+        <InstrumentReadout reading={reading} />
+
         {mode === "2d" ? (
           <Card className="overflow-hidden">
             <TrackMap
@@ -162,6 +172,7 @@ export function FlightViz({
             basemap={basemap}
             externalTime={activeTime}
             onHoverTime={setActiveTime}
+            onTimeChange={setReplay3dTime}
           />
         )}
       </div>
