@@ -6,6 +6,7 @@ import type { ReplayResponse } from "@/lib/igc/replay";
 import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
 import { FlightReplay3D } from "./flight-replay-3d";
+import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -27,8 +28,26 @@ export function FlightViz({
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
   const [error, setError] = useState(false);
   const [mode, setMode] = useState<"2d" | "3d">("2d");
+  // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
+  // as a lazy initializer — the basemap UI only renders client-side once the
+  // track has loaded, so there's no SSR/hydration mismatch.
+  const [basemap, setBasemap] = useState<BasemapId>(() => {
+    if (typeof window === "undefined") return "monochrome";
+    const saved = localStorage.getItem("leaf-basemap") as BasemapId | null;
+    const def = saved && BASEMAPS.find((b) => b.id === saved);
+    return def && !(def.needsKey && !hasMapTiler()) ? def.id : "monochrome";
+  });
   // Shared linked-cursor time (seconds from takeoff), or null.
   const [activeTime, setActiveTime] = useState<number | null>(null);
+
+  function changeBasemap(id: BasemapId) {
+    setBasemap(id);
+    try {
+      localStorage.setItem("leaf-basemap", id);
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -89,20 +108,41 @@ export function FlightViz({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <div className="inline-flex w-fit rounded-md border border-gray-200 p-0.5">
-          {(["2d", "3d"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={cn(
-                "rounded px-3 py-1 font-condensed text-sm font-bold transition-colors",
-                mode === m ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
-              )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex w-fit rounded-md border border-gray-200 p-0.5">
+            {(["2d", "3d"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={cn(
+                  "rounded px-3 py-1 font-condensed text-sm font-bold transition-colors",
+                  mode === m ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
+                )}
+              >
+                {m === "2d" ? "Map" : "3D replay"}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="font-condensed font-bold">Basemap</span>
+            <select
+              value={basemap}
+              onChange={(e) => changeBasemap(e.target.value as BasemapId)}
+              className="h-8 rounded-md border border-gray-300 bg-paper px-2 text-ink outline-none focus:border-amber"
             >
-              {m === "2d" ? "Map" : "3D replay"}
-            </button>
-          ))}
+              {BASEMAPS.map((b) => {
+                const locked = b.needsKey && !hasMapTiler();
+                return (
+                  <option key={b.id} value={b.id} disabled={locked}>
+                    {b.label}
+                    {locked ? " (needs key)" : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
         </div>
 
         {mode === "2d" ? (
@@ -110,6 +150,7 @@ export function FlightViz({
             <TrackMap
               line={track.line}
               bounds={track.bounds}
+              basemap={basemap}
               cursor={cursor}
               samples={replay?.samples ?? null}
               onHoverTime={setActiveTime}
@@ -118,6 +159,7 @@ export function FlightViz({
         ) : (
           <FlightReplay3D
             flightId={flightId}
+            basemap={basemap}
             externalTime={activeTime}
             onHoverTime={setActiveTime}
           />
