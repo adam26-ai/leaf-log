@@ -247,33 +247,37 @@ export function FlightViz({
           </div>
         </div>
 
-        <InstrumentReadout reading={reading} />
-
-        {mode === "2d" ? (
-          <Card className="overflow-hidden">
-            <TrackMap
-              line={track.line}
-              bounds={track.bounds}
-              basemap={basemap}
-              cursor={cursor}
+        <div className="relative">
+          {mode === "2d" ? (
+            <Card className="overflow-hidden">
+              <TrackMap
+                line={track.line}
+                bounds={track.bounds}
+                basemap={basemap}
+                cursor={cursor}
+                flightId={flightId}
+                photos={photos}
+                onClear={clearSelection}
+                onPhotoHover={scrubTo}
+                onPhotoOpen={(id, t) => {
+                  setOpenPhotoId(id);
+                  if (t != null) scrubTo(t);
+                }}
+              />
+            </Card>
+          ) : (
+            <FlightReplay3D
               flightId={flightId}
-              photos={photos}
-              onClear={clearSelection}
-              onPhotoHover={scrubTo}
-              onPhotoOpen={(id, t) => {
-                setOpenPhotoId(id);
-                if (t != null) scrubTo(t);
-              }}
+              basemap={basemap}
+              time={time}
+              cameraFollow={cameraFollow}
             />
-          </Card>
-        ) : (
-          <FlightReplay3D
-            flightId={flightId}
-            basemap={basemap}
-            time={time}
-            cameraFollow={cameraFollow}
-          />
-        )}
+          )}
+          {/* Live instrument panel, overlaid on the map (top-centre). */}
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
+            <InstrumentReadout reading={reading} />
+          </div>
+        </div>
 
         <PlaybackBar
           playing={playing}

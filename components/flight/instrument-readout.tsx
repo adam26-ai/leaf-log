@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { formatVario } from "@/lib/flights/format";
 import type { InstrumentReading } from "@/lib/flights/instruments";
 
 function clock(timeMs: number, offsetMin: number) {
@@ -13,50 +12,53 @@ function clock(timeMs: number, offsetMin: number) {
 function Cell({
   label,
   value,
+  unit,
   tone,
 }: {
   label: string;
   value: string;
+  unit?: string;
   tone?: "climb" | "sink";
 }) {
   return (
-    <span className="flex items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500">{label}</span>
-      <span
-        className={cn(
-          "font-condensed font-bold tabular-nums",
-          tone === "climb" ? "text-leaf-strong" : tone === "sink" ? "text-red-600" : "text-ink",
-        )}
-      >
-        {value}
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+        {label}
       </span>
-    </span>
+      <span className="flex items-baseline gap-1">
+        <span
+          className={cn(
+            "font-condensed text-2xl font-bold leading-none tabular-nums",
+            tone === "climb" ? "text-leaf-strong" : tone === "sink" ? "text-red-400" : "text-white",
+          )}
+        >
+          {value}
+        </span>
+        {unit && <span className="text-xs font-medium text-gray-400">{unit}</span>}
+      </span>
+    </div>
   );
 }
 
 /**
- * Live instrument panel for the point under the cursor (hover) or the 3D replay
- * position — a mini vario/altimeter for the selected moment.
+ * Live instrument panel for the point under the cursor / 3D replay position — a
+ * sleek dark glass overlay (time / altitude / vario / speed). Renders nothing
+ * until there's a selected point.
  */
 export function InstrumentReadout({ reading }: { reading: InstrumentReading | null }) {
+  if (!reading) return null;
+  const v = reading.varioMs;
   return (
-    <div className="flex min-h-9 flex-wrap items-center gap-x-5 gap-y-1 rounded-md border border-gray-200 bg-paper px-3 py-1.5 text-sm">
-      {reading ? (
-        <>
-          <Cell label="Time" value={clock(reading.timeMs, reading.offsetMin)} />
-          <Cell label="Altitude" value={`${reading.altM.toLocaleString()} m`} />
-          <Cell
-            label="Vario"
-            value={formatVario(reading.varioMs)}
-            tone={reading.varioMs > 0.1 ? "climb" : reading.varioMs < -0.1 ? "sink" : undefined}
-          />
-          <Cell label="Speed" value={`${reading.speedKmh} km/h`} />
-        </>
-      ) : (
-        <span className="text-gray-400">
-          Hover the profile or play the replay to read the instruments at any point.
-        </span>
-      )}
+    <div className="inline-flex items-center gap-6 rounded-2xl bg-ink/85 px-5 py-2.5 shadow-lg backdrop-blur-sm sm:gap-8">
+      <Cell label="Time" value={clock(reading.timeMs, reading.offsetMin)} />
+      <Cell label="Altitude" value={reading.altM.toLocaleString()} unit="m" />
+      <Cell
+        label="Vario"
+        value={`${v > 0 ? "+" : ""}${v.toFixed(1)}`}
+        unit="m/s"
+        tone={v > 0.1 ? "climb" : v < -0.1 ? "sink" : undefined}
+      />
+      <Cell label="Speed" value={String(reading.speedKmh)} unit="km/h" />
     </div>
   );
 }
