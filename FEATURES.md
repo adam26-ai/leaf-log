@@ -66,6 +66,28 @@ Track potential feature ideas for future sprints.
 - **Notes:** One-line change in `components/flight/flight-viz.tsx` — the mode toggle
   currently renders `m === "2d" ? "Map" : "3D replay"`.
 
+## Geotagged Flight Photos
+- **Area:** Flight detail page / media uploads
+- **Description:** Let pilots upload photos from a flight and have them tagged onto the flight
+  route on the map (placed at the spot they were taken). Hovering a tag pops up the photo, and
+  all the photos also show up in a little album/gallery somewhere on the flight page.
+- **Priority:** Medium
+- **Notes:** **Placement is timestamp-first:** phone cameras often drop GPS (confirmed — a
+  Pixel 10 Pro test shot had EXIF but no GPS), so match each photo's **capture time**
+  (`DateTimeOriginal`) to the IGC track and interpolate the lon/lat at that moment (reuse the
+  replay `samples`/`posAt`); use **EXIF GPS** only as a more precise override when it's actually
+  present. ⚠️ EXIF `DateTimeOriginal` is **local time with no zone** (the test photo had no
+  `OffsetTimeOriginal`) while the IGC is **UTC** — apply the flight's already-derived
+  `localUtcOffsetMinutes` to line them up before matching. New `Photo` model (`flightId`, image
+  bytes or URL, `lat`/`lon`, `takenAt`, optional caption).
+  **Storage decision:** the app currently keeps files in Postgres (`bytea`) — photos are much
+  larger than IGC, so this likely wants a size/count cap or external object storage (revisit the
+  Postgres-files pattern). **Privacy:** photos inherit the flight's visibility (private-flight
+  photos only to the owner) — go through the viewer-scoped repo. Owner-only upload; strip EXIF
+  from public-served images except the coords we use. UI: markers on the 2D `TrackMap` (and
+  ideally the 3D replay) with a hover popover, plus a thumbnail gallery component. Parse EXIF
+  with a lib like `exifr`.
+
 ---
 
 ## Shipped
