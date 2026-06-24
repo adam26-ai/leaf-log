@@ -88,6 +88,27 @@ Track potential feature ideas for future sprints.
   ideally the 3D replay) with a hover popover, plus a thumbnail gallery component. Parse EXIF
   with a lib like `exifr`.
 
+## Logbook-Level Batch Photo Upload + Auto-Associate to Flights
+- **Area:** Logbook / photo ingestion / placement
+- **Description:** A photo-upload entry point at the **logbook (flights list)** level, not just
+  per-flight. Drop a whole batch (an end-of-day or whole-vacation dump spanning multiple flights)
+  and the app **auto-routes each photo to the correct flight** by capture timestamp (and/or GPS),
+  then places it on that flight's track. Solves the common real case where you upload everything at
+  once and shouldn't have to open each flight and upload by hand. (Motivated by a real upload that
+  landed `out_of_window` because it was attached to the wrong day's flight.)
+- **Priority:** High
+- **Notes:** Reuses the SPRINT-002 placement engine (`lib/photos` `parsePhotoMeta`, the local→UTC
+  bridge, `placePhoto`). **Routing:** build a per-owner index of flight windows once; for each
+  photo find the flight whose `[takeoffAt, landingAt]` contains the photo's UTC instant. **Timezone
+  catch:** a photo's EXIF time is *local with no zone*, and each candidate flight has its own
+  `localUtcOffsetMinutes` — bridge per-candidate (or use EXIF `OffsetTimeOriginal` when present);
+  prefer GPS-in-bounds to disambiguate. No match (between flights, no time, no GPS) → an
+  **"unassigned"** bucket the user can manually assign, plus a "move photo to another flight"
+  action. Add a **review/confirm step** showing the proposed flight per photo before committing.
+  Implementation: a routing layer that picks `flightId` per photo, then calls the existing
+  owner-only `addPhotos({ flightId, … })` core per flight (no change to the write seam). New UI at
+  `/logbook` or `/upload` (multi-flight). Surfaces the just-added unpinned/unassigned reasons.
+
 ---
 
 ## Shipped
