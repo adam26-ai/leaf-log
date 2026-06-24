@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -8,7 +9,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  ReferenceLine,
 } from "recharts";
 
 function localClock(tOffsetS: number, takeoffMs: number, offsetMin: number) {
@@ -17,6 +17,11 @@ function localClock(tOffsetS: number, takeoffMs: number, offsetMin: number) {
   const mm = shifted.getUTCMinutes().toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
+
+// Recharts plot insets (YAxis width + left margin; right margin) so the overlay
+// cursor line can be positioned over the plot area without re-rendering the chart.
+const LEFT_INSET = 48;
+const RIGHT_INSET = 12;
 
 export function Barograph({
   baro,
@@ -32,22 +37,25 @@ export function Barograph({
   altSource: "baro" | "gps";
   /** Linked-cursor time (s from takeoff) — draws a reference line. */
   activeTime?: number | null;
-  /** Report the hovered time (or null on leave) for linked highlighting. */
-  onHoverTime?: (t: number | null) => void;
+  /** Report the hovered time for linked highlighting (not called on leave). */
+  onHoverTime?: (t: number) => void;
 }) {
-  const data = baro.map(([t, alt]) => ({ t, alt }));
+  const data = useMemo(() => baro.map(([t, alt]) => ({ t, alt })), [baro]);
+  const tMin = data[0]?.t ?? 0;
+  const tMax = data[data.length - 1]?.t ?? 1;
 
-  return (
-    <div className="h-[220px] w-full">
+  // The chart doesn't depend on activeTime (the cursor is a lightweight overlay),
+  // so memoize it — otherwise Recharts re-renders on every playback frame.
+  const chart = useMemo(
+    () => (
       <ResponsiveContainer width="100%" height="100%" minHeight={180}>
         <AreaChart
           data={data}
-          margin={{ top: 8, right: 12, bottom: 4, left: 4 }}
+          margin={{ top: 8, right: RIGHT_INSET, bottom: 4, left: 4 }}
           onMouseMove={(s) => {
             const label = (s as { activeLabel?: number | string })?.activeLabel;
             if (label != null) onHoverTime?.(Number(label));
           }}
-          onMouseLeave={() => onHoverTime?.(null)}
         >
           <defs>
             <linearGradient id="baroFill" x1="0" y1="0" x2="0" y2="1">
@@ -82,11 +90,27 @@ export function Barograph({
             fill="url(#baroFill)"
             isAnimationActive={false}
           />
-          {activeTime != null && (
-            <ReferenceLine x={activeTime} stroke="#272727" strokeDasharray="3 3" />
-          )}
         </AreaChart>
       </ResponsiveContainer>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, takeoffMs, offsetMin, altSource],
+  );
+
+  const frac =
+    activeTime != null && tMax > tMin
+      ? Math.max(0, Math.min(1, (activeTime - tMin) / (tMax - tMin)))
+      : null;
+
+  return (
+    <div className="relative h-[220px] w-full">
+      {chart}
+      {frac != null && (
+        <div
+          className="pointer-events-none absolute top-2 bottom-6 w-px border-l border-dashed border-ink"
+          style={{ left: `calc(${LEFT_INSET}px + (100% - ${LEFT_INSET + RIGHT_INSET}px) * ${frac})` }}
+        />
+      )}
     </div>
   );
 }

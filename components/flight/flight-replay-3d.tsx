@@ -61,29 +61,18 @@ function varioColor(v: number): [number, number, number] {
   ];
 }
 
-function clock(tSec: number, takeoffMs: number, offsetMin: number) {
-  const d = new Date(takeoffMs + tSec * 1000 + offsetMin * 60_000);
-  return `${d.getUTCHours().toString().padStart(2, "0")}:${d
-    .getUTCMinutes()
-    .toString()
-    .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
-}
-
 export function FlightReplay3D({
   flightId,
   basemap = "monochrome",
-  externalTime = null,
-  onHoverTime,
-  onTimeChange,
+  time,
+  cameraFollow = true,
 }: {
   flightId: string;
   basemap?: BasemapId;
-  /** Linked-cursor time (s) from the barograph — overrides the glider position. */
-  externalTime?: number | null;
-  /** Report the hovered time (or null) when pointing at the 3D track. */
-  onHoverTime?: (t: number | null) => void;
-  /** Report the current display time (playback/scrub/hover) for the instrument readout. */
-  onTimeChange?: (t: number) => void;
+  /** Shared replay time (s from takeoff) — drives the glider position. */
+  time: number;
+  /** Keep the camera centred on the glider (vs a free/fixed camera). */
+  cameraFollow?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -92,39 +81,18 @@ export function FlightReplay3D({
   const segmentsRef = useRef<
     { path: number[][]; t: number; color: [number, number, number] }[]
   >([]);
-  const timeRef = useRef(0);
-  const rafRef = useRef<number | null>(null);
-  const externalTimeRef = useRef<number | null>(externalTime);
-  const onHoverRef = useRef(onHoverTime);
+  const timeRef = useRef(time);
   const basemapRef = useRef(basemap);
+  const cameraFollowRef = useRef(cameraFollow);
   const didInitBasemap = useRef(false);
-  const onTimeChangeRef = useRef(onTimeChange);
-  const lastReportRef = useRef(0);
-  useEffect(() => {
-    onHoverRef.current = onHoverTime;
-    onTimeChangeRef.current = onTimeChange;
-    basemapRef.current = basemap;
-  });
-
-  // Report the effective display time (hover wins over playback) for the readout.
-  function reportTime(force = false) {
-    const cb = onTimeChangeRef.current;
-    if (!cb) return;
-    const now = performance.now();
-    if (!force && now - lastReportRef.current < 100) return; // ~10/s during playback
-    lastReportRef.current = now;
-    cb(externalTimeRef.current ?? timeRef.current);
-  }
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
   const offsetRef = useRef(0);
   const anchoredRef = useRef(false);
+  const anchorTimerRef = useRef<number | null>(null);
 
   const [data, setData] = useState<ReplayData | null>(null);
   const [error, setError] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(8);
-  const [time, setTime] = useState(0);
 
   // Fetch the replay path.
   useEffect(() => {
@@ -169,9 +137,8 @@ export function FlightReplay3D({
     return [last[0], last[1], last[2]];
   }
 
-  // Map a raw IGC altitude to the scene's vertical space: apply the takeoff
-  // anchor offset, then the terrain exaggeration so the track stays consistent
-  // with the (exaggerated) terrain mesh.
+  // Map a raw IGC altitude to the scene's vertical space (takeoff anchor offset,
+  // then terrain exaggeration so the track stays consistent with the mesh).
   function zOf(alt: number) {
     return (alt + offsetRef.current) * TERRAIN_EXAGGERATION;
   }
@@ -188,22 +155,25 @@ export function FlightReplay3D({
     return Math.max(6, 9 * metersPerPixel);
   }
 
-  // Keep the map centred on the glider while scrubbing/playing (preserves the
-  // user's zoom/tilt/bearing — only the centre follows). setCenter fires "move",
-  // which re-renders the layers.
-  function centerOnGlider() {
+  // Chase camera: make the glider itself (at its altitude) the camera's look-at
+  // point, so the distance (zoom), tilt (pitch) and azimuth (bearing) all stay
+  // constant as it flies — the world moves under a fixed sphere. jumpTo only
+  // updates the centre + its elevation, leaving zoom/pitch/bearing as the user
+  // set them (drag still rotates/tilts, scroll still changes distance). Needs
+  // setCenterClampedToGround(false) so the centre can sit above the terrain.
+  function centerOnGlider(t: number) {
     const map = mapRef.current;
     if (!map || !dataRef.current) return;
-    const p = positionAt(externalTimeRef.current ?? timeRef.current);
-    map.setCenter([p[0], p[1]]);
+    if (map.getCenterClampedToGround()) map.setCenterClampedToGround(false);
+    const p = positionAt(t);
+    map.jumpTo({ center: [p[0], p[1]], elevation: zOf(p[2]) });
   }
 
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
     if (!overlay || !d) return;
-    // A linked cursor from the barograph (externalTime) wins over playback time.
-    const pos = positionAt(externalTimeRef.current ?? t);
+    const pos = positionAt(t);
     type SegDatum = { path: number[][]; t: number; color: [number, number, number] };
     overlay.setProps({
       layers: [
@@ -211,11 +181,6 @@ export function FlightReplay3D({
         new PathLayer<SegDatum>({
           id: "track",
           data: segmentsRef.current,
-          pickable: true,
-          onHover: (info) =>
-            onHoverRef.current?.(
-              (info.object as SegDatum | null)?.t ?? null,
-            ),
           getPath: (s) =>
             s.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
               number,
@@ -231,6 +196,10 @@ export function FlightReplay3D({
           billboard: true,
           capRounded: true,
           jointRounded: true,
+          // segmentsRef is a stable reference, so without this deck.gl caches the
+          // path geometry and the track wouldn't move when the terrain anchor
+          // changes the altitude offset — leaving the glider off the line.
+          updateTriggers: { getPath: offsetRef.current },
         }),
         // 3D glider marker (a shaded sphere) at the current replay time.
         new SimpleMeshLayer<[number, number, number]>({
@@ -318,7 +287,7 @@ export function FlightReplay3D({
       "top-right",
     );
     // Keep the glider sphere a constant on-screen size as the user zooms/pans.
-    map.on("move", () => renderLayers(externalTimeRef.current ?? timeRef.current));
+    map.on("move", () => renderLayers(timeRef.current));
 
     map.on("load", () => {
       setupTerrain(map);
@@ -342,7 +311,11 @@ export function FlightReplay3D({
       map.setPitch(62);
       map.setBearing(-20);
       renderLayers(timeRef.current);
-      reportTime(true); // seed the instrument readout (takeoff)
+      // Entering 3D mid-flight with follow on: centre on the glider (a fresh
+      // load sits at takeoff t=0, where the fitBounds overview is preferred).
+      if (cameraFollowRef.current && timeRef.current > 0) {
+        centerOnGlider(timeRef.current);
+      }
 
       // Once terrain tiles are loaded, snap the takeoff to the ground so the
       // whole track sits correctly on the terrain (corrects baro/GPS-vs-DEM
@@ -351,14 +324,19 @@ export function FlightReplay3D({
         if (anchoredRef.current || !dataRef.current) return;
         const s0 = dataRef.current.samples[0];
         // queryTerrainElevation returns the EXAGGERATED elevation — divide it
-        // back out to recover the raw ground elevation.
+        // back out to recover the raw ground elevation. It returns 0 (not null)
+        // before the DEM tile at this point is cached, so treat 0/non-finite as
+        // "not ready yet" and retry on the next idle — otherwise we'd anchor to a
+        // bogus 0 m ground and sink the whole track underground.
         let exaggerated: number | null = null;
         try {
           exaggerated = map.queryTerrainElevation([s0[0], s0[1]]);
         } catch {
           exaggerated = null;
         }
-        if (exaggerated == null) return;
+        if (exaggerated == null || !Number.isFinite(exaggerated) || exaggerated === 0) {
+          return;
+        }
         const rawGround = exaggerated / TERRAIN_EXAGGERATION;
         const off = rawGround - s0[2];
         if (Math.abs(off) <= 400) offsetRef.current = off; // sanity clamp
@@ -367,9 +345,21 @@ export function FlightReplay3D({
       };
       map.on("idle", anchorToTerrain);
       anchorToTerrain();
+      // 'idle' can fire before the DEM at takeoff is queryable, so also poll for
+      // a few seconds until the elevation reads (then stop).
+      let tries = 0;
+      anchorTimerRef.current = window.setInterval(() => {
+        if (anchoredRef.current || tries++ > 40) {
+          if (anchorTimerRef.current) window.clearInterval(anchorTimerRef.current);
+          anchorTimerRef.current = null;
+          return;
+        }
+        anchorToTerrain();
+      }, 250);
     });
 
     return () => {
+      if (anchorTimerRef.current) window.clearInterval(anchorTimerRef.current);
       overlayRef.current = null;
       mapRef.current = null;
       map.remove();
@@ -388,7 +378,7 @@ export function FlightReplay3D({
     }
     const reAdd = () => {
       setupTerrain(map);
-      renderLayers(externalTimeRef.current ?? timeRef.current);
+      renderLayers(timeRef.current);
     };
     const swap = () => {
       map.setStyle(styleFor(basemap));
@@ -399,56 +389,20 @@ export function FlightReplay3D({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
-  // Animation loop.
+  // Following looks at the glider above the terrain (unclamped centre); fixed
+  // returns the centre to the ground for normal map interaction.
   useEffect(() => {
-    if (!playing || !data) return;
-    let last = performance.now();
-    const tick = (now: number) => {
-      const dt = (now - last) / 1000;
-      last = now;
-      let t = timeRef.current + dt * speed;
-      if (t >= data.durationS) t = 0; // loop
-      timeRef.current = t;
-      setTime(t);
-      centerOnGlider();
-      renderLayers(t);
-      reportTime();
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, speed, data]);
+    mapRef.current?.setCenterClampedToGround(!cameraFollow);
+  }, [cameraFollow]);
 
-  // Linked cursor from the barograph: move the glider to the hovered time and
-  // follow it. On release, leave the glider where it was last scrubbed (commit
-  // the last hovered time to the playback position) rather than snapping back.
+  // Render the glider at the shared time; follow it with the camera if enabled.
   useEffect(() => {
-    if (externalTime == null) {
-      if (externalTimeRef.current != null) {
-        timeRef.current = externalTimeRef.current;
-        setTime(externalTimeRef.current);
-      }
-      externalTimeRef.current = null;
-      renderLayers(timeRef.current); // no recenter on release/mount
-    } else {
-      externalTimeRef.current = externalTime;
-      centerOnGlider();
-      renderLayers(timeRef.current);
-    }
-    reportTime(true);
+    timeRef.current = time;
+    cameraFollowRef.current = cameraFollow;
+    if (cameraFollow) centerOnGlider(time);
+    renderLayers(time);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [externalTime]);
-
-  function scrub(t: number) {
-    timeRef.current = t;
-    setTime(t);
-    centerOnGlider();
-    renderLayers(t);
-    reportTime(true);
-  }
+  }, [time, cameraFollow]);
 
   if (error) {
     return (
@@ -459,54 +413,8 @@ export function FlightReplay3D({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <Card className="overflow-hidden">
-        <div ref={containerRef} className="h-[460px] w-full" />
-      </Card>
-
-      <Card className="flex flex-col gap-3 p-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setPlaying((p) => !p)}
-            className="h-9 w-16 rounded-md bg-amber font-condensed font-bold text-ink hover:bg-amber-strong"
-            disabled={!data}
-          >
-            {playing ? "Pause" : "Play"}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={data?.durationS ?? 100}
-            step={1}
-            value={Math.round(externalTime ?? time)}
-            onChange={(e) => scrub(Number(e.target.value))}
-            className="flex-1 accent-amber"
-          />
-          <span className="w-20 text-right font-mono text-sm text-gray-600">
-            {data
-              ? clock(externalTime ?? time, data.takeoffMs, data.offsetMin)
-              : "--:--:--"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span>Speed</span>
-          {[4, 8, 16, 32].map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSpeed(s)}
-              className={
-                "rounded px-2 py-0.5 " +
-                (speed === s ? "bg-ink text-paper" : "bg-gray-100 text-gray-600")
-              }
-            >
-              {s}×
-            </button>
-          ))}
-          <span className="ml-auto">Drag to tilt &amp; rotate · green = climb, red = sink</span>
-        </div>
-      </Card>
-    </div>
+    <Card className="overflow-hidden">
+      <div ref={containerRef} className="h-[460px] w-full" />
+    </Card>
   );
 }
