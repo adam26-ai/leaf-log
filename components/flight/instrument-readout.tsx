@@ -54,8 +54,7 @@ export function InstrumentReadout({ reading }: { reading: InstrumentReading | nu
         </>
       ) : (
         <span className="text-gray-400">
-          Hover the profile or map — or play the 3D replay — to read the instruments at any
-          point.
+          Hover the profile or play the replay to read the instruments at any point.
         </span>
       )}
     </div>
