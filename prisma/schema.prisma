@@ -111,6 +111,7 @@ model Flight {
   landingSite           Site?       @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
   landingSiteName       String?
   data                  FlightData?
+  photos                Photo[]
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
@@ -124,6 +125,49 @@ model FlightData {
   flight   Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
   rawIgc   Bytes // original .igc bytes (source of truth)
   track    Json? // derived render artifact (line + barograph)
+}
+
+// A photo attached to a flight. Light metadata row (no image bytes) so the
+// gallery list stays fast; bytes live in PhotoData (mirrors Flight/FlightData).
+model Photo {
+  id                     String     @id @default(cuid())
+  flightId               String
+  flight                 Flight     @relation(fields: [flightId], references: [id], onDelete: Cascade)
+
+  originalFilename       String?
+  contentType            String     @default("image/jpeg") // output type (jpeg in v1)
+  displayWidth           Int
+  displayHeight          Int
+  displayBytes           Int
+  thumbWidth             Int
+  thumbHeight            Int
+  thumbBytes             Int
+
+  takenAt                DateTime? // UTC instant of capture
+  tSec                   Float? // seconds from takeoff (timeline link) when time-placed
+  exifOffsetMinutes      Int? // diagnostic only; the flight offset is used for placement
+  lat                    Float?
+  lon                    Float?
+  altM                   Int?
+  placementSource        String     @default("unpinned") // exif_gps | interpolated_time | unpinned
+  placementFailureReason String? // no_time | out_of_window | missing_flight_offset | bad_gps
+
+  sha256                 String // over the ORIGINAL bytes — exact-dupe guard
+  data                   PhotoData?
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  @@unique([flightId, sha256])
+  @@index([flightId, takenAt])
+}
+
+// Sanitized, downscaled image bytes (no originals, no EXIF). Fetched on demand
+// via the per-photo serve route, kept off the Photo row.
+model PhotoData {
+  photoId String @id
+  photo   Photo  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  display Bytes // JPEG, <=2048px long edge
+  thumb   Bytes // JPEG, <=420px long edge
 }
 
 model Site {

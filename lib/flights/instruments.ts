@@ -1,5 +1,6 @@
 import type { ReplayResponse } from "@/lib/igc/replay";
 import { haversineM } from "@/lib/geo/distance";
+import { locateSample } from "@/lib/igc/interpolate";
 
 export interface InstrumentReading {
   /** Seconds from takeoff. */
@@ -26,15 +27,10 @@ export function instrumentAt(
   const s = replay.samples;
   if (!s || s.length === 0) return null;
 
-  const tt = Math.max(s[0][3], Math.min(s[s.length - 1][3], t));
-  let i = 1;
-  while (i < s.length && s[i][3] < tt) i++;
-  if (i >= s.length) i = s.length - 1;
-
+  const { i, f, tt } = locateSample(s, t);
   const a = s[i - 1];
   const b = s[i];
   const span = b[3] - a[3] || 1;
-  const f = (tt - a[3]) / span;
 
   const lon = a[0] + (b[0] - a[0]) * f;
   const lat = a[1] + (b[1] - a[1]) * f;
