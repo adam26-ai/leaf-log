@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { photoUrl, type FlightPhoto } from "./photos";
+import { photoUrl, unpinnedReason, type FlightPhoto } from "./photos";
 
 /**
  * Thumbnail grid + lightbox (prev/next, keyboard). Owners can delete. Clicking a
@@ -67,7 +67,7 @@ export function PhotoGallery({
               if (p.tSec != null) onSelect?.(p.tSec);
             }}
             className="group relative h-20 w-20 overflow-hidden rounded-md border border-gray-200 bg-gray-100"
-            title={p.placementSource === "unpinned" ? "Not placed on the map" : undefined}
+            title={p.placementSource === "unpinned" ? `Unpinned — ${unpinnedReason(p)}` : undefined}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -125,6 +125,11 @@ export function PhotoGallery({
                 <NavButton side="left" onClick={() => step(-1)} />
                 <NavButton side="right" onClick={() => step(1)} />
               </>
+            )}
+            {open.placementSource === "unpinned" && (
+              <div className="absolute bottom-0 left-0 right-0 bg-ink/70 px-3 py-1.5 text-center text-xs text-paper">
+                Not on the map — {unpinnedReason(open)}
+              </div>
             )}
           </div>
         </div>
