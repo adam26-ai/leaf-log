@@ -155,39 +155,18 @@ export function FlightReplay3D({
     return Math.max(6, 9 * metersPerPixel);
   }
 
-  // Keep the glider pinned at the same spot on screen (preserves the user's
-  // zoom/tilt/bearing — only the centre follows). The glider is elevated, so
-  // under a tilted camera centring its GROUND point would let it drift up/down
-  // the screen as altitude changes. The screen-centre view ray, at height H,
-  // sits H·tan(pitch) ahead (along bearing) of the centre ground point — so
-  // shift the look-at point forward by that amount to put the glider itself at
-  // centre. setCenter fires "move", which re-renders the layers.
+  // Chase camera: make the glider itself (at its altitude) the camera's look-at
+  // point, so the distance (zoom), tilt (pitch) and azimuth (bearing) all stay
+  // constant as it flies — the world moves under a fixed sphere. jumpTo only
+  // updates the centre + its elevation, leaving zoom/pitch/bearing as the user
+  // set them (drag still rotates/tilts, scroll still changes distance). Needs
+  // setCenterClampedToGround(false) so the centre can sit above the terrain.
   function centerOnGlider(t: number) {
     const map = mapRef.current;
-    const d = dataRef.current;
-    if (!map || !d) return;
+    if (!map || !dataRef.current) return;
+    if (map.getCenterClampedToGround()) map.setCenterClampedToGround(false);
     const p = positionAt(t);
-    const sceneAlt = zOf(p[2]);
-
-    // Ground (terrain) elevation under the glider; fall back to the anchored
-    // takeoff ground if the DEM isn't queryable (returns 0 before tiles load).
-    let ground: number;
-    try {
-      const q = map.queryTerrainElevation([p[0], p[1]]);
-      ground = q != null && Number.isFinite(q) && q !== 0 ? q : zOf(d.samples[0][2]);
-    } catch {
-      ground = zOf(d.samples[0][2]);
-    }
-
-    const h = Math.max(0, sceneAlt - ground); // height above ground
-    const pitch = (map.getPitch() * Math.PI) / 180;
-    const bearing = (map.getBearing() * Math.PI) / 180;
-    const shift = h * Math.tan(pitch); // metres, forward along the bearing
-    const dLat = (shift * Math.cos(bearing)) / 111_320;
-    const dLon =
-      (shift * Math.sin(bearing)) /
-      (111_320 * Math.cos((p[1] * Math.PI) / 180));
-    map.setCenter([p[0] + dLon, p[1] + dLat]);
+    map.jumpTo({ center: [p[0], p[1]], elevation: zOf(p[2]) });
   }
 
   function renderLayers(t: number) {
@@ -409,6 +388,12 @@ export function FlightReplay3D({
     else map.once("load", swap);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
+
+  // Following looks at the glider above the terrain (unclamped centre); fixed
+  // returns the centre to the ground for normal map interaction.
+  useEffect(() => {
+    mapRef.current?.setCenterClampedToGround(!cameraFollow);
+  }, [cameraFollow]);
 
   // Render the glider at the shared time; follow it with the camera if enabled.
   useEffect(() => {
