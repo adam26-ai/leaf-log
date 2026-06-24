@@ -42,6 +42,30 @@ Track potential feature ideas for future sprints.
   inserting. Optional later: moderation/merge for public sites, and seeding from a
   licensed gazetteer (ParaglidingEarth) once redistribution terms are cleared.
 
+## 3D Track Ground Shadow (height projection)
+- **Area:** Flight detail page (3D replay)
+- **Description:** In the 3D replay, project the flight track straight down onto the terrain
+  below it — a "ground shadow" footprint draped on the surface — and optionally vertical drop
+  lines (a curtain) connecting the airborne track to its ground projection. This makes
+  height-above-ground legible at a glance (you can see how high each thermal and glide was over
+  the terrain), like the Google Earth flight view.
+- **Priority:** Medium
+- **Notes:** deck.gl — add a second `PathLayer` that drapes the track's `[lon,lat]` onto the
+  terrain (z = DEM elevation at each point; the terrarium DEM is already loaded), styled as a
+  faint shadow line. Optionally add periodic vertical `LineLayer` segments (or a `PolygonLayer`
+  wall/curtain) from track points down to their ground projection for the height effect. Reuse
+  the existing replay `samples`. Keep it subtle so it doesn't fight the climb/sink-coloured main
+  track; a toggle (like the camera-follow toggle) would be ideal. Pairs well with the
+  center-on-sphere / fixed-camera work.
+
+## Rename 2D / 3D Toggle Labels
+- **Area:** Flight detail page (view-mode toggle)
+- **Description:** Rename the flight-view toggle buttons from "Map" and "3D replay" to
+  "2D" and "3D" for a tighter, clearer pair of labels.
+- **Priority:** Low
+- **Notes:** One-line change in `components/flight/flight-viz.tsx` — the mode toggle
+  currently renders `m === "2d" ? "Map" : "3D replay"`.
+
 ---
 
 ## Shipped
