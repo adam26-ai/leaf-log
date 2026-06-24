@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
 import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
 import { FlightReplay3D } from "./flight-replay-3d";
 import { PlaybackBar } from "./playback-bar";
+import { PhotoGallery } from "./photo-gallery";
+import { PhotoUpload } from "./photo-upload";
+import type { FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout } from "./instrument-readout";
 import { instrumentAt } from "@/lib/flights/instruments";
@@ -23,13 +26,16 @@ export function FlightViz({
   flightId,
   takeoffMs,
   offsetMin,
+  isOwner = false,
 }: {
   flightId: string;
   takeoffMs: number;
   offsetMin: number;
+  isOwner?: boolean;
 }) {
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
+  const [photos, setPhotos] = useState<FlightPhoto[]>([]);
   const [error, setError] = useState(false);
   const [mode, setMode] = useState<"2d" | "3d">("2d");
   // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
@@ -74,6 +80,16 @@ export function FlightViz({
       on = false;
     };
   }, [flightId]);
+
+  const loadPhotos = useCallback(() => {
+    fetch(`/api/flights/${flightId}/photos`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setPhotos(d.photos ?? []))
+      .catch(() => {});
+  }, [flightId]);
+  useEffect(() => {
+    loadPhotos();
+  }, [loadPhotos]);
 
   // Playback loop — advances the shared time while playing.
   useEffect(() => {
@@ -238,7 +254,10 @@ export function FlightViz({
               bounds={track.bounds}
               basemap={basemap}
               cursor={cursor}
+              flightId={flightId}
+              photos={photos}
               onClear={clearSelection}
+              onPhotoSelect={scrubTo}
             />
           </Card>
         ) : (
@@ -279,6 +298,21 @@ export function FlightViz({
           onHoverTime={onHover}
         />
       </Card>
+
+      {(photos.length > 0 || isOwner) && (
+        <Card className="flex flex-col gap-3 p-4">
+          {isOwner && <PhotoUpload flightId={flightId} onUploaded={loadPhotos} />}
+          <PhotoGallery
+            flightId={flightId}
+            photos={photos}
+            isOwner={isOwner}
+            onSelect={(t) => {
+              if (mode === "2d") scrubTo(t);
+            }}
+            onChanged={loadPhotos}
+          />
+        </Card>
+      )}
     </div>
   );
 }

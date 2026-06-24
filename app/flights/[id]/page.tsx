@@ -66,6 +66,7 @@ export default async function FlightPage({
                 flightId={flight.id}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}
+                isOwner={isOwner}
               />
             </div>
           </>
