@@ -57,6 +57,8 @@ export function FlightViz({
   const [speed, setSpeed] = useState(8);
   // Whether a point is selected/highlighted (cursor + readout shown).
   const [active, setActive] = useState(false);
+  // The photo whose lightbox is open (controlled so a map pin can open it).
+  const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const timeRef = useRef(0);
 
   useEffect(() => {
@@ -257,7 +259,11 @@ export function FlightViz({
               flightId={flightId}
               photos={photos}
               onClear={clearSelection}
-              onPhotoSelect={scrubTo}
+              onPhotoHover={scrubTo}
+              onPhotoOpen={(id, t) => {
+                setOpenPhotoId(id);
+                if (t != null) scrubTo(t);
+              }}
             />
           </Card>
         ) : (
@@ -306,9 +312,9 @@ export function FlightViz({
             flightId={flightId}
             photos={photos}
             isOwner={isOwner}
-            onSelect={(t) => {
-              if (mode === "2d") scrubTo(t);
-            }}
+            openId={openPhotoId}
+            onOpenChange={setOpenPhotoId}
+            onSelect={scrubTo}
             onChanged={loadPhotos}
           />
         </Card>

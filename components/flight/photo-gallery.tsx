@@ -1,36 +1,44 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { photoUrl, unpinnedReason, type FlightPhoto } from "./photos";
 
 /**
- * Thumbnail grid + lightbox (prev/next, keyboard). Owners can delete. Clicking a
- * thumbnail also scrubs the replay to the photo's moment when it's time-placed.
+ * Thumbnail grid + lightbox (prev/next, keyboard). The open photo is controlled
+ * via `openId` so a map-pin click can open it too. Owners can delete. Selecting
+ * a photo also scrubs the replay to its moment (via onSelect).
  */
 export function PhotoGallery({
   flightId,
   photos,
   isOwner,
+  openId = null,
+  onOpenChange,
   onSelect,
   onChanged,
 }: {
   flightId: string;
   photos: FlightPhoto[];
   isOwner: boolean;
+  openId?: string | null;
+  onOpenChange?: (id: string | null) => void;
   onSelect?: (tSec: number) => void;
   onChanged?: () => void;
 }) {
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const openIdx = openId ? photos.findIndex((p) => p.id === openId) : -1;
+  const open = openIdx >= 0 ? photos[openIdx] : null;
 
-  const close = useCallback(() => setOpenIdx(null), []);
+  const close = useCallback(() => onOpenChange?.(null), [onOpenChange]);
   const step = useCallback(
-    (dir: number) =>
-      setOpenIdx((i) => (i == null ? i : (i + dir + photos.length) % photos.length)),
-    [photos.length],
+    (dir: number) => {
+      if (openIdx < 0 || photos.length === 0) return;
+      onOpenChange?.(photos[(openIdx + dir + photos.length) % photos.length].id);
+    },
+    [openIdx, photos, onOpenChange],
   );
 
   useEffect(() => {
-    if (openIdx == null) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
       else if (e.key === "ArrowRight") step(1);
@@ -38,7 +46,12 @@ export function PhotoGallery({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openIdx, close, step]);
+  }, [open, close, step]);
+
+  function select(p: FlightPhoto) {
+    onOpenChange?.(p.id);
+    if (p.tSec != null) onSelect?.(p.tSec);
+  }
 
   async function del(photoId: string) {
     if (!confirm("Delete this photo?")) return;
@@ -50,7 +63,6 @@ export function PhotoGallery({
   }
 
   if (photos.length === 0) return null;
-  const open = openIdx != null ? photos[openIdx] : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -58,14 +70,11 @@ export function PhotoGallery({
         Photos
       </h2>
       <div className="flex flex-wrap gap-2">
-        {photos.map((p, i) => (
+        {photos.map((p) => (
           <button
             key={p.id}
             type="button"
-            onClick={() => {
-              setOpenIdx(i);
-              if (p.tSec != null) onSelect?.(p.tSec);
-            }}
+            onClick={() => select(p)}
             className="group relative h-20 w-20 overflow-hidden rounded-md border border-gray-200 bg-gray-100"
             title={p.placementSource === "unpinned" ? `Unpinned — ${unpinnedReason(p)}` : undefined}
           >
@@ -99,7 +108,7 @@ export function PhotoGallery({
             />
             <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-2 text-paper">
               <span className="rounded bg-ink/60 px-2 py-0.5 text-xs">
-                {(openIdx ?? 0) + 1} / {photos.length}
+                {openIdx + 1} / {photos.length}
               </span>
               <div className="flex items-center gap-2">
                 {isOwner && (
