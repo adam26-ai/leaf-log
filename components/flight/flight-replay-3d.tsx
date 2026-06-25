@@ -13,7 +13,7 @@ import {
 } from "@deck.gl/core";
 import { SphereGeometry } from "@luma.gl/engine";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
-import { isPinned, type FlightPhoto } from "./photos";
+import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { Card } from "@/components/ui/card";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
@@ -121,6 +121,8 @@ export function FlightReplay3D({
 
   const [data, setData] = useState<ReplayData | null>(null);
   const [error, setError] = useState(false);
+  // Hovered photo thumbnail preview (screen position from deck picking).
+  const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string } | null>(null);
 
   // Fetch the replay path.
   useEffect(() => {
@@ -255,7 +257,12 @@ export function FlightReplay3D({
           updateTriggers: { getPosition: offsetRef.current },
           onHover: (info) => {
             const o = info.object as PhotoIcon | null;
-            if (o && o.tSec >= 0) onPhotoHoverRef.current?.(o.tSec);
+            if (o) {
+              if (o.tSec >= 0) onPhotoHoverRef.current?.(o.tSec);
+              setHoverPhoto({ x: info.x, y: info.y, id: o.id });
+            } else {
+              setHoverPhoto(null);
+            }
           },
           onClick: (info) => {
             const o = info.object as PhotoIcon | null;
@@ -482,7 +489,21 @@ export function FlightReplay3D({
 
   return (
     <Card className="overflow-hidden">
-      <div ref={containerRef} className="h-[460px] w-full" />
+      <div className="relative h-[460px] w-full">
+        <div ref={containerRef} className="absolute inset-0" />
+        {hoverPhoto && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoUrl(flightId, hoverPhoto.id, "thumb")}
+            alt=""
+            className="pointer-events-none absolute z-10 h-[120px] w-[120px] rounded object-cover shadow-lg ring-1 ring-black/20"
+            style={{
+              left: Math.min(hoverPhoto.x + 16, 9999),
+              top: Math.max(hoverPhoto.y - 132, 8),
+            }}
+          />
+        )}
+      </div>
     </Card>
   );
 }
