@@ -489,8 +489,8 @@ export function FlightReplay3D({
 
   return (
     <Card className="overflow-hidden">
-      <div className="relative h-[460px] w-full">
-        <div ref={containerRef} className="absolute inset-0" />
+      <div className="relative">
+        <div ref={containerRef} className="h-[460px] w-full" />
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -498,7 +498,7 @@ export function FlightReplay3D({
             alt=""
             className="pointer-events-none absolute z-10 h-[120px] w-[120px] rounded object-cover shadow-lg ring-1 ring-black/20"
             style={{
-              left: Math.min(hoverPhoto.x + 16, 9999),
+              left: hoverPhoto.x + 16,
               top: Math.max(hoverPhoto.y - 132, 8),
             }}
           />
