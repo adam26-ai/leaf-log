@@ -271,6 +271,12 @@ export function FlightViz({
               basemap={basemap}
               time={time}
               cameraFollow={cameraFollow}
+              photos={photos}
+              onPhotoHover={scrubTo}
+              onPhotoOpen={(id, t) => {
+                setOpenPhotoId(id);
+                if (t != null) scrubTo(t);
+              }}
             />
           )}
           {/* Live instrument panel, overlaid on the map (top-centre). */}
