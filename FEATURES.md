@@ -109,6 +109,23 @@ Track potential feature ideas for future sprints.
   owner-only `addPhotos({ flightId, … })` core per flight (no change to the write seam). New UI at
   `/logbook` or `/upload` (multi-flight). Surfaces the just-added unpinned/unassigned reasons.
 
+## 3D Chase-Cam (Behind-the-Glider) View
+- **Area:** Flight detail page (3D replay camera)
+- **Description:** A "chase" camera mode for the 3D replay that also tracks the glider's **bearing**
+  (direction of travel), keeping the camera positioned **behind and slightly above** the glider and
+  looking forward along the flight path — a true third-person follow-cam. A third option alongside
+  the current **Follow** / **Fixed**.
+- **Priority:** Medium
+- **Notes:** Builds on the existing chase camera (`centerOnGlider` →
+  `setCenterClampedToGround(false)` + `jumpTo({center, elevation})` so the glider is the look-at
+  point). For chase, additionally drive the map **bearing** to the glider's instantaneous heading
+  (compute from the velocity vector between bracketing samples at `tSec` — add a `headingAt()` next
+  to `positionAt()` in `lib/igc/interpolate.ts`) and hold a fixed pitch so the camera sits
+  behind+above. **Key caveat:** thermalling (tight circles) makes raw heading spin wildly — damp it
+  (low-pass / moving-average over a few seconds, or freeze the bearing when turn-rate is high) or it
+  will be nauseating while circling. Distance/pitch reuse the existing chase state. Surface as a
+  third toggle state (Follow / Chase / Fixed).
+
 ---
 
 ## Shipped
