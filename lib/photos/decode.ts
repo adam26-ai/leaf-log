@@ -24,9 +24,22 @@ export async function decodeToSharp(
   mime: string | null | undefined,
   filename?: string | null,
 ): Promise<Sharp> {
+  return sharp(await decodeToBuffer(bytes, mime, filename));
+}
+
+/**
+ * Decode to a sharp-readable buffer (HEIC → JPEG via heic-convert; JPEG/PNG pass
+ * through unchanged). Lets a caller decode HEIC once and then build multiple
+ * derivatives from the result without re-running the WASM decode.
+ */
+export async function decodeToBuffer(
+  bytes: Buffer,
+  mime: string | null | undefined,
+  filename?: string | null,
+): Promise<Buffer> {
   if (isHeic(mime, filename)) {
     const jpeg = await heicConvert({ buffer: bytes, format: "JPEG", quality: 0.92 });
-    return sharp(Buffer.from(jpeg));
+    return Buffer.from(jpeg);
   }
-  return sharp(bytes);
+  return bytes;
 }

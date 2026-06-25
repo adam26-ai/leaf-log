@@ -22,7 +22,8 @@ export type PlacementFailure =
   | "no_time"
   | "out_of_window"
   | "missing_flight_offset"
-  | "bad_gps";
+  | "bad_gps"
+  | "no_track";
 
 /** Result of placing a photo on a flight. */
 export interface Placement {

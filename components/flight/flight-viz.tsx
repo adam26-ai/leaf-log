@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
 import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
 import { FlightReplay3D } from "./flight-replay-3d";
 import { PlaybackBar } from "./playback-bar";
+import { PhotoGallery } from "./photo-gallery";
+import { PhotoUpload } from "./photo-upload";
+import type { FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout } from "./instrument-readout";
 import { instrumentAt } from "@/lib/flights/instruments";
@@ -23,13 +26,16 @@ export function FlightViz({
   flightId,
   takeoffMs,
   offsetMin,
+  isOwner = false,
 }: {
   flightId: string;
   takeoffMs: number;
   offsetMin: number;
+  isOwner?: boolean;
 }) {
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
+  const [photos, setPhotos] = useState<FlightPhoto[]>([]);
   const [error, setError] = useState(false);
   const [mode, setMode] = useState<"2d" | "3d">("2d");
   // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
@@ -51,6 +57,8 @@ export function FlightViz({
   const [speed, setSpeed] = useState(8);
   // Whether a point is selected/highlighted (cursor + readout shown).
   const [active, setActive] = useState(false);
+  // The photo whose lightbox is open (controlled so a map pin can open it).
+  const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const timeRef = useRef(0);
 
   useEffect(() => {
@@ -74,6 +82,16 @@ export function FlightViz({
       on = false;
     };
   }, [flightId]);
+
+  const loadPhotos = useCallback(() => {
+    fetch(`/api/flights/${flightId}/photos`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setPhotos(d.photos ?? []))
+      .catch(() => {});
+  }, [flightId]);
+  useEffect(() => {
+    loadPhotos();
+  }, [loadPhotos]);
 
   // Playback loop — advances the shared time while playing.
   useEffect(() => {
@@ -229,26 +247,37 @@ export function FlightViz({
           </div>
         </div>
 
-        <InstrumentReadout reading={reading} />
-
-        {mode === "2d" ? (
-          <Card className="overflow-hidden">
-            <TrackMap
-              line={track.line}
-              bounds={track.bounds}
+        <div className="relative">
+          {mode === "2d" ? (
+            <Card className="overflow-hidden">
+              <TrackMap
+                line={track.line}
+                bounds={track.bounds}
+                basemap={basemap}
+                cursor={cursor}
+                flightId={flightId}
+                photos={photos}
+                onClear={clearSelection}
+                onPhotoHover={scrubTo}
+                onPhotoOpen={(id, t) => {
+                  setOpenPhotoId(id);
+                  if (t != null) scrubTo(t);
+                }}
+              />
+            </Card>
+          ) : (
+            <FlightReplay3D
+              flightId={flightId}
               basemap={basemap}
-              cursor={cursor}
-              onClear={clearSelection}
+              time={time}
+              cameraFollow={cameraFollow}
             />
-          </Card>
-        ) : (
-          <FlightReplay3D
-            flightId={flightId}
-            basemap={basemap}
-            time={time}
-            cameraFollow={cameraFollow}
-          />
-        )}
+          )}
+          {/* Live instrument panel, overlaid on the map (top-centre). */}
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
+            <InstrumentReadout reading={reading} />
+          </div>
+        </div>
 
         <PlaybackBar
           playing={playing}
@@ -279,6 +308,21 @@ export function FlightViz({
           onHoverTime={onHover}
         />
       </Card>
+
+      {(photos.length > 0 || isOwner) && (
+        <Card className="flex flex-col gap-3 p-4">
+          {isOwner && <PhotoUpload flightId={flightId} onUploaded={loadPhotos} />}
+          <PhotoGallery
+            flightId={flightId}
+            photos={photos}
+            isOwner={isOwner}
+            openId={openPhotoId}
+            onOpenChange={setOpenPhotoId}
+            onSelect={scrubTo}
+            onChanged={loadPhotos}
+          />
+        </Card>
+      )}
     </div>
   );
 }
