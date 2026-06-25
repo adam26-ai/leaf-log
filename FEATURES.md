@@ -126,6 +126,24 @@ Track potential feature ideas for future sprints.
   will be nauseating while circling. Distance/pitch reuse the existing chase state. Surface as a
   third toggle state (Follow / Chase / Fixed).
 
+## Profile Settings Page
+- **Area:** Account / profile / settings
+- **Description:** A profile settings page where a pilot can upload an **avatar**, set their
+  **default privacy for new flights** (public / friends-only / private), and — eventually —
+  generate an **API token for Leaf device auto-upload**.
+- **Priority:** Medium
+- **Notes:** New route (e.g. `/settings`); `Profile` already holds `handle`/`displayName`.
+  **Avatar:** reuse the photo pipeline (`sharp` downscale + EXIF strip, served via an authorizing
+  route) — store as `bytea` (a `ProfileData`-style split, like `Photo`/`PhotoData`) or object
+  storage later; show it on the public profile + flight pages. **Default privacy:** add
+  `defaultVisibility` to `Profile`; `ingestFlight` uses it for new flights (today it defaults to
+  `private`). ⚠️ **"Friends only" is a new visibility tier** that needs a **social/friends model**
+  (follow or mutual-friend relationships) and a viewer-scoped check in `lib/flights/repo.ts` beyond
+  today's public/private — either ship public/private first and add friends-only with that social
+  feature, or treat friends-only as dependent on it. **API token:** overlaps with
+  [[Leaf Device Auto-Upload]] (`DeviceToken` + pairing) — this page is the natural home for
+  generate/name/revoke device tokens.
+
 ---
 
 ## Shipped
