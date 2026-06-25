@@ -113,6 +113,9 @@ export function FlightReplay3D({
   const photosRef = useRef(photos);
   const onPhotoHoverRef = useRef(onPhotoHover);
   const onPhotoOpenRef = useRef(onPhotoOpen);
+  // Suppress the camera-follow recenter for a photo-hover scrub (otherwise the
+  // recenter slides the icon out from under the cursor mid-hover).
+  const suppressFollowRef = useRef(false);
   useEffect(() => {
     photosRef.current = photos;
     onPhotoHoverRef.current = onPhotoHover;
@@ -258,7 +261,14 @@ export function FlightReplay3D({
           onHover: (info) => {
             const o = info.object as PhotoIcon | null;
             if (o) {
-              if (o.tSec >= 0) onPhotoHoverRef.current?.(o.tSec);
+              if (o.tSec >= 0) {
+                // Only suppress when this hover actually changes the time (so the
+                // flag can't go stale when re-hovering the same pin).
+                if (Math.round(o.tSec) !== Math.round(timeRef.current)) {
+                  suppressFollowRef.current = true;
+                }
+                onPhotoHoverRef.current?.(o.tSec);
+              }
               setHoverPhoto({ x: info.x, y: info.y, id: o.id });
             } else {
               setHoverPhoto(null);
@@ -468,7 +478,8 @@ export function FlightReplay3D({
   useEffect(() => {
     timeRef.current = time;
     cameraFollowRef.current = cameraFollow;
-    if (cameraFollow) centerOnGlider(time);
+    if (cameraFollow && !suppressFollowRef.current) centerOnGlider(time);
+    suppressFollowRef.current = false;
     renderLayers(time);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time, cameraFollow]);
