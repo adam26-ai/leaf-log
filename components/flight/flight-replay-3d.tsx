@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PathLayer } from "@deck.gl/layers";
+import { PathLayer, IconLayer } from "@deck.gl/layers";
 import { SimpleMeshLayer } from "@deck.gl/mesh-layers";
 import {
   LightingEffect,
@@ -13,7 +13,18 @@ import {
 } from "@deck.gl/core";
 import { SphereGeometry } from "@luma.gl/engine";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
+import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { Card } from "@/components/ui/card";
+
+// Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
+const CAMERA_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="68" height="68" viewBox="0 0 34 34">' +
+  '<circle cx="17" cy="17" r="14" fill="#272727" stroke="#ffffff" stroke-width="2.5"/>' +
+  '<rect x="14.2" y="11.8" width="5.6" height="3" rx="1" fill="#ffffff"/>' +
+  '<rect x="9.5" y="13.8" width="15" height="10.7" rx="2.2" fill="#ffffff"/>' +
+  '<circle cx="17" cy="19.2" r="3.4" fill="#272727"/>' +
+  '<circle cx="17" cy="19.2" r="1.6" fill="#ffffff"/></svg>';
+const CAMERA_ICON = `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG)}`;
 
 // A light so the 3D glider sphere is actually shaded (not a flat disc).
 const lightingEffect = new LightingEffect({
@@ -66,6 +77,9 @@ export function FlightReplay3D({
   basemap = "monochrome",
   time,
   cameraFollow = true,
+  photos = [],
+  onPhotoHover,
+  onPhotoOpen,
 }: {
   flightId: string;
   basemap?: BasemapId;
@@ -73,6 +87,12 @@ export function FlightReplay3D({
   time: number;
   /** Keep the camera centred on the glider (vs a free/fixed camera). */
   cameraFollow?: boolean;
+  /** Geotagged photos to pin on the 3D track. */
+  photos?: FlightPhoto[];
+  /** Hovering a photo pin moves the scrubber to its time-from-takeoff. */
+  onPhotoHover?: (tSec: number) => void;
+  /** Clicking a photo pin opens it (lightbox) and moves the scrubber. */
+  onPhotoOpen?: (photoId: string, tSec: number | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -90,9 +110,22 @@ export function FlightReplay3D({
   const offsetRef = useRef(0);
   const anchoredRef = useRef(false);
   const anchorTimerRef = useRef<number | null>(null);
+  const photosRef = useRef(photos);
+  const onPhotoHoverRef = useRef(onPhotoHover);
+  const onPhotoOpenRef = useRef(onPhotoOpen);
+  // Suppress the camera-follow recenter for a photo-hover scrub (otherwise the
+  // recenter slides the icon out from under the cursor mid-hover).
+  const suppressFollowRef = useRef(false);
+  useEffect(() => {
+    photosRef.current = photos;
+    onPhotoHoverRef.current = onPhotoHover;
+    onPhotoOpenRef.current = onPhotoOpen;
+  });
 
   const [data, setData] = useState<ReplayData | null>(null);
   const [error, setError] = useState(false);
+  // Hovered photo thumbnail preview (screen position from deck picking).
+  const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string } | null>(null);
 
   // Fetch the replay path.
   useEffect(() => {
@@ -175,6 +208,19 @@ export function FlightReplay3D({
     if (!overlay || !d) return;
     const pos = positionAt(t);
     type SegDatum = { path: number[][]; t: number; color: [number, number, number] };
+    type PhotoIcon = { id: string; tSec: number; position: [number, number, number] };
+    // Place each photo at its position on the track (at altitude).
+    const photoIcons: PhotoIcon[] = photosRef.current.filter(isPinned).map((ph) => {
+      if (ph.tSec != null) {
+        const q = positionAt(ph.tSec);
+        return { id: ph.id, tSec: ph.tSec, position: [q[0], q[1], zOf(q[2])] };
+      }
+      return {
+        id: ph.id,
+        tSec: -1,
+        position: [ph.lon as number, ph.lat as number, zOf(ph.altM ?? 0)],
+      };
+    });
     overlay.setProps({
       layers: [
         // The full 3D track, always visible, coloured by climb/sink.
@@ -200,6 +246,39 @@ export function FlightReplay3D({
           // path geometry and the track wouldn't move when the terrain anchor
           // changes the altitude offset — leaving the glider off the line.
           updateTriggers: { getPath: offsetRef.current },
+        }),
+        // Photo pins (camera icons) at their position on the track.
+        new IconLayer<PhotoIcon>({
+          id: "photo-pins",
+          data: photoIcons,
+          pickable: true,
+          billboard: true,
+          getIcon: () => ({ url: CAMERA_ICON, width: 68, height: 68, anchorX: 34, anchorY: 34 }),
+          getPosition: (d) => d.position,
+          getSize: 30,
+          sizeUnits: "pixels",
+          updateTriggers: { getPosition: offsetRef.current },
+          onHover: (info) => {
+            const o = info.object as PhotoIcon | null;
+            if (o) {
+              if (o.tSec >= 0) {
+                // Only suppress when this hover actually changes the time (so the
+                // flag can't go stale when re-hovering the same pin).
+                if (Math.round(o.tSec) !== Math.round(timeRef.current)) {
+                  suppressFollowRef.current = true;
+                }
+                onPhotoHoverRef.current?.(o.tSec);
+              }
+              setHoverPhoto({ x: info.x, y: info.y, id: o.id });
+            } else {
+              setHoverPhoto(null);
+            }
+          },
+          onClick: (info) => {
+            const o = info.object as PhotoIcon | null;
+            if (o) onPhotoOpenRef.current?.(o.id, o.tSec >= 0 ? o.tSec : null);
+            return true;
+          },
         }),
         // 3D glider marker (a shaded sphere) at the current replay time.
         new SimpleMeshLayer<[number, number, number]>({
@@ -399,10 +478,17 @@ export function FlightReplay3D({
   useEffect(() => {
     timeRef.current = time;
     cameraFollowRef.current = cameraFollow;
-    if (cameraFollow) centerOnGlider(time);
+    if (cameraFollow && !suppressFollowRef.current) centerOnGlider(time);
+    suppressFollowRef.current = false;
     renderLayers(time);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time, cameraFollow]);
+
+  // Re-render the photo pins when the set changes.
+  useEffect(() => {
+    if (overlayRef.current) renderLayers(timeRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos]);
 
   if (error) {
     return (
@@ -414,7 +500,21 @@ export function FlightReplay3D({
 
   return (
     <Card className="overflow-hidden">
-      <div ref={containerRef} className="h-[460px] w-full" />
+      <div className="relative">
+        <div ref={containerRef} className="h-[460px] w-full" />
+        {hoverPhoto && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoUrl(flightId, hoverPhoto.id, "thumb")}
+            alt=""
+            className="pointer-events-none absolute z-10 h-[120px] w-[120px] rounded object-cover shadow-lg ring-1 ring-black/20"
+            style={{
+              left: hoverPhoto.x + 16,
+              top: Math.max(hoverPhoto.y - 132, 8),
+            }}
+          />
+        )}
+      </div>
     </Card>
   );
 }
