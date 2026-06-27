@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
-import { getPhotoBytesForViewer } from "@/lib/photos/repo";
+import { getPhotoBytesWithFlightForViewer } from "@/lib/photos/repo";
 
 export const runtime = "nodejs";
 
@@ -17,15 +17,21 @@ export async function GET(
       ? "display"
       : "thumb";
 
-  const bytes = await getPhotoBytesForViewer(id, photoId, viewerId, variant);
-  if (!bytes) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const result = await getPhotoBytesWithFlightForViewer(
+    id,
+    photoId,
+    viewerId,
+    variant,
+  );
+  if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return new NextResponse(new Uint8Array(bytes), {
+  return new NextResponse(new Uint8Array(result.bytes), {
     status: 200,
     headers: {
       "content-type": "image/jpeg",
       "x-content-type-options": "nosniff",
-      "cache-control": "private, max-age=300",
+      "cache-control":
+        result.flight.visibility === "public" ? "private, max-age=300" : "no-store",
     },
   });
 }

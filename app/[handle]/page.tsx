@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { listPublicFlights, statsFrom } from "@/lib/flights/repo";
+import { listProfileFlightsForViewer, statsFrom } from "@/lib/flights/repo";
 import { getCurrentUserId } from "@/lib/profile";
 import { countFriends, friendStateFor } from "@/lib/social/friends";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -10,6 +10,8 @@ import { Avatar } from "@/components/avatar";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { FriendButton } from "@/components/social/friend-button";
+
+export const dynamic = "force-dynamic";
 
 /**
  * Public pilot profile at /@handle. The leading "@" is required (Strava-style);
@@ -28,10 +30,9 @@ export default async function ProfilePage({
   const profile = await prisma.profile.findUnique({ where: { handle } });
   if (!profile) notFound();
 
-  // Only this pilot's PUBLIC, ready flights — never their private totals.
   const viewerId = await getCurrentUserId();
   const [flights, friendCount, friendState] = await Promise.all([
-    listPublicFlights(profile.id),
+    listProfileFlightsForViewer(profile.id, viewerId),
     countFriends(profile.id),
     viewerId ? friendStateFor(viewerId, profile.id) : Promise.resolve("none" as const),
   ]);
@@ -75,9 +76,9 @@ export default async function ProfilePage({
         )}
 
         <div className="mt-10">
-          <SectionHeading>Public flights</SectionHeading>
+          <SectionHeading>Flights</SectionHeading>
           {flights.length === 0 ? (
-            <p className="mt-6 text-gray-600">No public flights yet.</p>
+            <p className="mt-6 text-gray-600">No visible flights yet.</p>
           ) : (
             <ul className="mt-6 flex flex-col gap-2">
               {flights.map((f) => (

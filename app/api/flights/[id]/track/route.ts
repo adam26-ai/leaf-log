@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 /**
  * Serves a flight's derived track artifact. Authorization is app-layer: the
- * viewer-scoped repo only returns the flight if they own it OR it is public.
+ * viewer-scoped repo only returns the flight if they may see it.
  * Raw IGC is never served here.
  */
 export async function GET(
@@ -31,6 +31,9 @@ export async function GET(
   }
 
   return NextResponse.json(data.track, {
-    headers: { "cache-control": "private, max-age=60" },
+    headers: {
+      "cache-control":
+        flight.visibility === "public" ? "private, max-age=60" : "no-store",
+    },
   });
 }

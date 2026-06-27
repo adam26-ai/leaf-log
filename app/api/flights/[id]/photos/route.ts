@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
-import { listPhotosForViewer } from "@/lib/photos/repo";
+import { listPhotosWithFlightForViewer } from "@/lib/photos/repo";
 import { addPhotos, type PhotoInput } from "@/lib/photos/add-photos";
 
 export const runtime = "nodejs";
@@ -13,11 +13,18 @@ export async function GET(
 ) {
   const { id } = await params;
   const viewerId = await getCurrentUserId();
-  const photos = await listPhotosForViewer(id, viewerId);
-  if (!photos) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const result = await listPhotosWithFlightForViewer(id, viewerId);
+  if (!result) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(
-    { photos },
-    { headers: { "cache-control": "private, max-age=60" } },
+    { photos: result.photos },
+    {
+      headers: {
+        "cache-control":
+          result.flight.visibility === "public"
+            ? "private, max-age=60"
+            : "no-store",
+      },
+    },
   );
 }
 

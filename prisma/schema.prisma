@@ -63,8 +63,7 @@ model Profile {
   handle      String   @unique
   displayName String
   bio         String?
-  // Default visibility applied to newly ingested flights (private | public).
-  // "friends" is intentionally NOT offered yet — it needs a social model first.
+  // Default visibility applied to newly ingested flights (private | friends | public).
   defaultVisibility String @default("private")
   // Set whenever the avatar is (re)uploaded; null = no avatar. Doubles as a
   // cache-busting key for the public avatar serve route.
@@ -111,7 +110,7 @@ model Flight {
   id                    String      @id @default(cuid())
   ownerId               String
   owner                 Profile     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  visibility            String      @default("private") // private | public
+  visibility            String      @default("private") // private | friends | public
   source                String      @default("web_upload") // web_upload | device_push
   status                String      @default("uploaded") // uploaded | processing | ready | failed
   igcSha256             String
