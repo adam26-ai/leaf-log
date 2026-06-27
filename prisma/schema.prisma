@@ -74,6 +74,7 @@ model Profile {
   flights     Flight[]
   sentFriendReqs     Friendship[] @relation("SentFriendRequests")
   receivedFriendReqs Friendship[] @relation("ReceivedFriendRequests")
+  kudos       Kudo[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -94,6 +95,17 @@ model Friendship {
   @@id([requesterId, addresseeId])
   @@index([addresseeId, status])
   @@index([requesterId, status])
+}
+
+model Kudo {
+  flightId  String
+  profileId String
+  flight    Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([flightId, profileId])
+  @@index([flightId, createdAt])
 }
 
 // Sanitized, downscaled, center-cropped square avatar bytes (no originals, no
@@ -148,6 +160,7 @@ model Flight {
   landingSiteName       String?
   data                  FlightData?
   photos                Photo[]
+  kudos                 Kudo[]
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
