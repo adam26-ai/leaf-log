@@ -1,19 +1,18 @@
 // @vitest-environment node
 //
-// Friend graph invariants. Requires a local Postgres; skips only when
-// DATABASE_URL is unset, matching the other integration tests.
+// Friend graph and kudos invariants. Requires a local Postgres and must not skip.
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-const enabled = Boolean(process.env.DATABASE_URL);
-const d = enabled ? describe : describe.skip;
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e5)}`;
 
-d("friend graph", () => {
+describe("friend graph", () => {
   let prisma: import("@prisma/client").PrismaClient;
   let friends: typeof import("@/lib/social/friends");
+  let kudos: typeof import("@/lib/social/kudos");
   const ids: string[] = [];
+  let flightSeq = 0;
 
   async function createPilot(label: string) {
     const handle = `${label}${ids.length}${suffix}`.slice(0, 20).toLowerCase();
@@ -36,13 +35,39 @@ d("friend graph", () => {
     };
   }
 
+  async function createReadyFlight(
+    ownerId: string,
+    visibility: "private" | "friends" | "public",
+    label: string,
+  ) {
+    flightSeq += 1;
+    return prisma.flight.create({
+      data: {
+        ownerId,
+        visibility,
+        status: "ready",
+        igcSha256: `${label}${suffix}${flightSeq}`,
+        flightDate: new Date("2026-06-01T00:00:00.000Z"),
+        takeoffAt: new Date("2026-06-01T10:00:00.000Z"),
+      },
+    });
+  }
+
   beforeAll(async () => {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL is required for social integration tests.");
+    }
+
     const { PrismaClient } = await import("@prisma/client");
     prisma = new PrismaClient();
     friends = await import("@/lib/social/friends");
+    kudos = await import("@/lib/social/kudos");
   });
 
   beforeEach(async () => {
+    await prisma.kudo.deleteMany({
+      where: { profileId: { in: ids } },
+    });
     await prisma.friendship.deleteMany({
       where: {
         OR: [{ requesterId: { in: ids } }, { addresseeId: { in: ids } }],
@@ -52,6 +77,9 @@ d("friend graph", () => {
 
   afterAll(async () => {
     if (!prisma) return;
+    await prisma.kudo.deleteMany({
+      where: { profileId: { in: ids } },
+    });
     await prisma.friendship.deleteMany({
       where: {
         OR: [{ requesterId: { in: ids } }, { addresseeId: { in: ids } }],
@@ -187,5 +215,135 @@ d("friend graph", () => {
         where: pairWhere(a.id, b.id),
       }),
     ).toBe(0);
+  });
+
+  it("toggleKudo on a visible flight toggles on, off, and on with count tracking", async () => {
+    const owner = await createPilot("kudoOwner");
+    const viewer = await createPilot("kudoViewer");
+    const flight = await createReadyFlight(owner.id, "public", "toggle");
+
+    await expect(kudos.toggleKudo(flight.id, viewer.id)).resolves.toEqual({
+      kudoed: true,
+    });
+    expect((await kudos.kudoSummaryForViewer(flight.id, viewer.id)).count).toBe(1);
+
+    await expect(kudos.toggleKudo(flight.id, viewer.id)).resolves.toEqual({
+      kudoed: false,
+    });
+    expect((await kudos.kudoSummaryForViewer(flight.id, viewer.id)).count).toBe(0);
+
+    await expect(kudos.toggleKudo(flight.id, viewer.id)).resolves.toEqual({
+      kudoed: true,
+    });
+    const summary = await kudos.kudoSummaryForViewer(flight.id, viewer.id);
+    expect(summary.count).toBe(1);
+    expect(summary.hasKudoed).toBe(true);
+  });
+
+  it("cannot kudos a private or non-friend friends-only flight", async () => {
+    const owner = await createPilot("hiddenOwner");
+    const viewer = await createPilot("hiddenViewer");
+    const privateFlight = await createReadyFlight(owner.id, "private", "hiddenPriv");
+    const friendsFlight = await createReadyFlight(owner.id, "friends", "hiddenFriends");
+
+    await expect(kudos.toggleKudo(privateFlight.id, viewer.id)).rejects.toThrow(
+      "Flight not found.",
+    );
+    await expect(kudos.toggleKudo(friendsFlight.id, viewer.id)).rejects.toThrow(
+      "Flight not found.",
+    );
+    await expect(kudos.toggleKudo("missing-flight-id", viewer.id)).rejects.toThrow(
+      "Flight not found.",
+    );
+    expect(await prisma.kudo.count({ where: { profileId: viewer.id } })).toBe(0);
+  });
+
+  it("rejects self-kudos", async () => {
+    const owner = await createPilot("selfKudo");
+    const flight = await createReadyFlight(owner.id, "public", "selfKudo");
+
+    await expect(kudos.toggleKudo(flight.id, owner.id)).rejects.toThrow(
+      "You cannot kudos your own flight.",
+    );
+    expect(await prisma.kudo.count({ where: { flightId: flight.id } })).toBe(0);
+  });
+
+  it("kudoSummaryForViewer returns count, hasKudoed, and bounded recent profiles", async () => {
+    const owner = await createPilot("sumOwner");
+    const viewer = await createPilot("sumViewer");
+    const flight = await createReadyFlight(owner.id, "public", "summary");
+    const base = new Date("2026-06-01T00:00:00.000Z").getTime();
+
+    await prisma.kudo.create({
+      data: {
+        flightId: flight.id,
+        profileId: viewer.id,
+        createdAt: new Date(base),
+      },
+    });
+
+    const kudoers = [];
+    for (let i = 0; i < 14; i += 1) {
+      const pilot = await createPilot(`recent${i}`);
+      kudoers.push(pilot);
+      await prisma.kudo.create({
+        data: {
+          flightId: flight.id,
+          profileId: pilot.id,
+          createdAt: new Date(base + (i + 1) * 1000),
+        },
+      });
+    }
+
+    const summary = await kudos.kudoSummaryForViewer(flight.id, viewer.id);
+    expect(summary.count).toBe(15);
+    expect(summary.hasKudoed).toBe(true);
+    expect(summary.recent).toHaveLength(12);
+    expect(summary.recent.map((profile) => profile.id)).toEqual(
+      kudoers
+        .slice(2)
+        .reverse()
+        .map((pilot) => pilot.id),
+    );
+
+    const stranger = await createPilot("sumStranger");
+    const privateFlight = await createReadyFlight(owner.id, "private", "summaryPriv");
+    await expect(
+      kudos.kudoSummaryForViewer(privateFlight.id, stranger.id),
+    ).rejects.toThrow("Flight not found.");
+  });
+
+  it("lets a friend kudos a friends-only flight", async () => {
+    const owner = await createPilot("friendKudoOwner");
+    const viewer = await createPilot("friendKudoViewer");
+    const flight = await createReadyFlight(owner.id, "friends", "friendKudo");
+    await friends.sendRequest(owner.id, viewer.id);
+    await friends.acceptRequest(viewer.id, owner.id);
+
+    await expect(kudos.toggleKudo(flight.id, viewer.id)).resolves.toEqual({
+      kudoed: true,
+    });
+    expect((await kudos.kudoSummaryForViewer(flight.id, viewer.id)).count).toBe(1);
+  });
+
+  it("concurrent double toggles converge without duplicate-key crashes", async () => {
+    const owner = await createPilot("raceOwner");
+    const viewer = await createPilot("raceViewer");
+    const flight = await createReadyFlight(owner.id, "public", "race");
+
+    const firstPair = await Promise.allSettled([
+      kudos.toggleKudo(flight.id, viewer.id),
+      kudos.toggleKudo(flight.id, viewer.id),
+    ]);
+    expect(firstPair.every((result) => result.status === "fulfilled")).toBe(true);
+    expect((await kudos.kudoSummaryForViewer(flight.id, viewer.id)).count).toBe(0);
+
+    await kudos.toggleKudo(flight.id, viewer.id);
+    const secondPair = await Promise.allSettled([
+      kudos.toggleKudo(flight.id, viewer.id),
+      kudos.toggleKudo(flight.id, viewer.id),
+    ]);
+    expect(secondPair.every((result) => result.status === "fulfilled")).toBe(true);
+    expect((await kudos.kudoSummaryForViewer(flight.id, viewer.id)).count).toBe(1);
   });
 });

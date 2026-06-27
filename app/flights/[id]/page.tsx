@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { getCurrentUserId } from "@/lib/profile";
 import { getFlightForViewer } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
+import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { Wordmark } from "@/components/brand/wordmark";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { MetricTiles } from "@/components/flight/metric-tiles";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
+import { KudosButton } from "@/components/flight/kudos-button";
 import { DeleteFlightButton } from "@/components/flight/delete-flight-button";
 import { Card, CardBody } from "@/components/ui/card";
 
@@ -26,6 +28,9 @@ export default async function FlightPage({
   const warnings = Array.isArray(flight.parseWarnings)
     ? (flight.parseWarnings as string[])
     : [];
+  const kudoSummary = viewerId
+    ? await kudoSummaryForViewer(flight.id, viewerId)
+    : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -45,6 +50,21 @@ export default async function FlightPage({
             />
           )}
         </div>
+
+        {kudoSummary && (
+          <div className="mt-6">
+            <KudosButton
+              flightId={flight.id}
+              initialCount={kudoSummary.count}
+              initialKudoed={kudoSummary.hasKudoed}
+              recent={kudoSummary.recent.map((profile) => ({
+                ...profile,
+                avatarUpdatedAt: profile.avatarUpdatedAt?.toISOString() ?? null,
+              }))}
+              canToggle={!isOwner}
+            />
+          </div>
+        )}
 
         {flight.status === "failed" ? (
           <Card className="mt-8">
