@@ -73,8 +73,28 @@ model Profile {
   homeSiteId  String?
   homeSite    Site?    @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
   flights     Flight[]
+  sentFriendReqs     Friendship[] @relation("SentFriendRequests")
+  receivedFriendReqs Friendship[] @relation("ReceivedFriendRequests")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// Explicit friend graph: one directed request row, accepted means friends both ways.
+// Decline/cancel removes the row. The no-self CHECK lives in the raw SQL migration
+// because Prisma v6 cannot represent CHECK constraints in schema.prisma; migrate
+// diff drift for that constraint is expected.
+model Friendship {
+  requesterId String
+  addresseeId String
+  status      String   // "pending" | "accepted"
+  requester   Profile  @relation("SentFriendRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   Profile  @relation("ReceivedFriendRequests", fields: [addresseeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  respondedAt DateTime?
+
+  @@id([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
 }
 
 // Sanitized, downscaled, center-cropped square avatar bytes (no originals, no

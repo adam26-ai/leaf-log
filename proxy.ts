@@ -7,7 +7,14 @@ const { auth } = NextAuth(authConfig);
 
 // Routes requiring a signed-in pilot. Public flight pages (/flights/[id]) and
 // public profiles (/@handle) stay open — visibility is decided server-side.
-const PROTECTED = ["/upload", "/logbook", "/onboarding", "/settings", "/whats-new"];
+const PROTECTED = [
+  "/upload",
+  "/logbook",
+  "/onboarding",
+  "/settings",
+  "/whats-new",
+  "/friends",
+];
 
 // Next 16: the `middleware` file convention is renamed to `proxy`.
 export default auth((req) => {
