@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signIn } from "@/lib/auth";
+import { safeNext } from "@/lib/safe-next";
 import { Button } from "@/components/ui/button";
 import { AccentBar } from "@/components/ui/accent-bar";
 import { Wordmark } from "@/components/brand/wordmark";
@@ -7,8 +8,11 @@ import { Wordmark } from "@/components/brand/wordmark";
 async function sendLink(formData: FormData) {
   "use server";
   const email = String(formData.get("email") ?? "").trim();
-  const next = String(formData.get("next") ?? "/onboarding");
-  await signIn("email", { email, redirectTo: next });
+  const next = safeNext(String(formData.get("next") ?? ""));
+  // Land on the interstitial first so we can ask "keep me signed in?" before
+  // continuing to the real destination.
+  const redirectTo = `/stay-signed-in?next=${encodeURIComponent(next)}`;
+  await signIn("email", { email, redirectTo });
 }
 
 export default async function SignInPage({
