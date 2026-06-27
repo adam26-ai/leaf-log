@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { listPublicFlights, statsFrom } from "@/lib/flights/repo";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Wordmark } from "@/components/brand/wordmark";
+import { Avatar } from "@/components/avatar";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
 
@@ -36,11 +37,20 @@ export default async function ProfilePage({
         </Link>
       </header>
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-condensed text-4xl font-bold tracking-tight text-ink">
-            {profile.displayName}
-          </h1>
-          <p className="font-mono text-gray-500">@{profile.handle}</p>
+        <div className="flex items-center gap-4">
+          <Avatar
+            handle={profile.handle}
+            displayName={profile.displayName}
+            avatarUpdatedAt={profile.avatarUpdatedAt}
+            variant="full"
+            className="h-16 w-16 text-xl sm:h-20 sm:w-20 sm:text-2xl"
+          />
+          <div className="flex flex-col gap-1">
+            <h1 className="font-condensed text-4xl font-bold tracking-tight text-ink">
+              {profile.displayName}
+            </h1>
+            <p className="font-mono text-gray-500">@{profile.handle}</p>
+          </div>
         </div>
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
 
