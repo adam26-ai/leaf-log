@@ -12,6 +12,11 @@ const PROTECTED = ["/upload", "/logbook", "/onboarding", "/settings"];
 // Next 16: the `middleware` file convention is renamed to `proxy`.
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  // A signed-in pilot has no use for the marketing landing — send them straight
+  // to their logbook. (Anonymous visitors still get the static landing page.)
+  if (pathname === "/" && req.auth) {
+    return NextResponse.redirect(new URL("/logbook", req.nextUrl));
+  }
   if (PROTECTED.some((p) => pathname.startsWith(p)) && !req.auth) {
     const url = new URL("/sign-in", req.nextUrl);
     url.searchParams.set("next", pathname);
