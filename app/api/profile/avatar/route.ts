@@ -1,9 +1,28 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getCurrentUserId } from "@/lib/profile";
 import { processAvatar, AvatarError } from "@/lib/avatar/process";
 import { setAvatar, removeAvatar } from "@/lib/avatar/repo";
 
 export const runtime = "nodejs";
+
+const CropSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+});
+
+/** Parse the optional pan/zoom crop field; ignore anything malformed. */
+function parseCrop(raw: FormDataEntryValue | null) {
+  if (typeof raw !== "string") return undefined;
+  try {
+    const parsed = CropSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Owner-only avatar upload (multipart, single file). Decodes, squares, strips EXIF. */
 export async function POST(request: Request) {
@@ -28,6 +47,7 @@ export async function POST(request: Request) {
       Buffer.from(await file.arrayBuffer()),
       file.type || null,
       file.name,
+      parseCrop(form.get("crop")),
     );
     await setAvatar(viewerId, processed, new Date());
   } catch (e) {

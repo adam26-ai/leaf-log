@@ -3,10 +3,16 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/avatar";
+import { AvatarCropper, type AvatarCrop } from "./avatar-cropper";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const ACCEPT_EXT = /\.(jpe?g|png|heic|heif)$/i;
+
+/** HEIC can't be rendered in the browser for cropping — it's center-cropped server-side. */
+function isHeic(file: File) {
+  return /image\/(heic|heif)/i.test(file.type) || /\.(heic|heif)$/i.test(file.name);
+}
 
 /** Owner avatar upload/remove — drag-drop or click, with live preview. */
 export function AvatarUploader({
@@ -23,21 +29,34 @@ export function AvatarUploader({
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cropping, setCropping] = useState<File | null>(null);
   const hasAvatar = !!avatarUpdatedAt;
 
-  async function upload(file: File | undefined) {
+  /** A picked file: HEIC uploads straight away; everything else opens the cropper. */
+  function pick(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/") && !ACCEPT_EXT.test(file.name)) {
       setError("Please choose a JPEG, PNG, or HEIC image.");
       return;
     }
+    setError(null);
+    if (isHeic(file)) {
+      upload(file);
+    } else {
+      setCropping(file);
+    }
+  }
+
+  async function upload(file: File, crop?: AvatarCrop) {
     setBusy(true);
     setError(null);
     try {
       const form = new FormData();
       form.append("file", file);
+      if (crop) form.append("crop", JSON.stringify(crop));
       const res = await fetch("/api/profile/avatar", { method: "POST", body: form });
       if (res.ok) {
+        setCropping(null);
         router.refresh();
       } else {
         const json = await res.json().catch(() => ({}));
@@ -94,7 +113,7 @@ export function AvatarUploader({
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            upload(e.dataTransfer.files?.[0]);
+            pick(e.dataTransfer.files?.[0]);
           }}
           className={cn(
             "flex cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-5 py-3 text-center transition-colors",
@@ -128,8 +147,19 @@ export function AvatarUploader({
         type="file"
         accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
         hidden
-        onChange={(e) => upload(e.target.files?.[0] ?? undefined)}
+        onChange={(e) => pick(e.target.files?.[0] ?? undefined)}
       />
+      {cropping && (
+        <AvatarCropper
+          file={cropping}
+          busy={busy}
+          onCancel={() => {
+            setCropping(null);
+            if (inputRef.current) inputRef.current.value = "";
+          }}
+          onConfirm={(crop) => upload(cropping, crop)}
+        />
+      )}
     </div>
   );
 }

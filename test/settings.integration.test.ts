@@ -21,8 +21,8 @@ d("profile settings", () => {
   let sharp: typeof import("sharp").default;
   let publicOwnerId = "";
   let privateOwnerId = "";
-  let publicHandle = `pub${suffix}`;
-  let privateHandle = `prv${suffix}`;
+  const publicHandle = `pub${suffix}`;
+  const privateHandle = `prv${suffix}`;
 
   beforeAll(async () => {
     const { PrismaClient } = await import("@prisma/client");

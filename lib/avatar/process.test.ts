@@ -24,6 +24,33 @@ describe("processAvatar", () => {
     expect(full.format).toBe("jpeg");
   });
 
+  it("applies a user crop and still emits 512/128 squares", async () => {
+    const { image, thumb } = await processAvatar(
+      await makeJpeg(1000, 800),
+      "image/jpeg",
+      "crop.jpg",
+      { x: 0.25, y: 0.25, w: 0.4, h: 0.5 }, // 400x400 region → square
+    );
+    expect([
+      (await sharp(image).metadata()).width,
+      (await sharp(image).metadata()).height,
+    ]).toEqual([512, 512]);
+    expect([
+      (await sharp(thumb).metadata()).width,
+      (await sharp(thumb).metadata()).height,
+    ]).toEqual([128, 128]);
+  });
+
+  it("clamps an out-of-bounds crop instead of throwing", async () => {
+    const { image } = await processAvatar(
+      await makeJpeg(600, 600),
+      "image/jpeg",
+      "oob.jpg",
+      { x: 0.9, y: 0.9, w: 0.5, h: 0.5 }, // would run past the edge
+    );
+    expect((await sharp(image).metadata()).width).toBe(512);
+  });
+
   it("strips metadata (no EXIF in the output)", async () => {
     const { image } = await processAvatar(
       await makeJpeg(600, 600),
