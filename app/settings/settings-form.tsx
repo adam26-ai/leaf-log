@@ -2,9 +2,29 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  FLIGHT_VISIBILITIES,
+  normalizeVisibility,
+  type FlightVisibility,
+} from "@/lib/flights/visibility";
 import { updateProfile, type SettingsState } from "./actions";
 
 const initial: SettingsState = {};
+
+const VISIBILITY_COPY: Record<FlightVisibility, { label: string; hint: string }> = {
+  private: {
+    label: "Private",
+    hint: "Only you can see new flights until you share them.",
+  },
+  friends: {
+    label: "Friends only",
+    hint: "Visible to pilots you're friends with.",
+  },
+  public: {
+    label: "Public",
+    hint: "New flights are visible to anyone with the link.",
+  },
+};
 
 /** Edit handle, display name, bio, and the default privacy for new flights. */
 export function SettingsForm({
@@ -19,6 +39,7 @@ export function SettingsForm({
   defaultVisibility: string;
 }) {
   const [state, formAction, pending] = useActionState(updateProfile, initial);
+  const normalizedDefaultVisibility = normalizeVisibility(defaultVisibility);
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
@@ -76,36 +97,25 @@ export function SettingsForm({
           New uploads start at this visibility. You can change any flight later.
         </span>
         <div className="mt-1 flex flex-col gap-2">
-          {[
-            {
-              value: "private",
-              label: "Private",
-              hint: "Only you can see new flights until you share them.",
-            },
-            {
-              value: "public",
-              label: "Public",
-              hint: "New flights are visible to anyone with the link.",
-            },
-          ].map((opt) => (
+          {FLIGHT_VISIBILITIES.map((value) => (
             <label
-              key={opt.value}
+              key={value}
               className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-amber has-[:checked]:border-amber has-[:checked]:bg-amber/5"
             >
               <input
                 type="radio"
                 name="default_visibility"
-                value={opt.value}
-                defaultChecked={
-                  (defaultVisibility === "public" ? "public" : "private") === opt.value
-                }
+                value={value}
+                defaultChecked={normalizedDefaultVisibility === value}
                 className="mt-0.5 accent-amber"
               />
               <span className="flex flex-col">
                 <span className="font-condensed text-sm font-bold text-ink">
-                  {opt.label}
+                  {VISIBILITY_COPY[value].label}
                 </span>
-                <span className="text-xs text-gray-500">{opt.hint}</span>
+                <span className="text-xs text-gray-500">
+                  {VISIBILITY_COPY[value].hint}
+                </span>
               </span>
             </label>
           ))}

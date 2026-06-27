@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { normalizeHandle, normalizeDisplayName } from "@/lib/handle";
+import { normalizeVisibility } from "@/lib/flights/visibility";
 
 export type SettingsState = { error?: string; ok?: boolean };
 
@@ -28,10 +29,7 @@ export async function updateProfile(
     return { error: `Bio must be ${MAX_BIO} characters or fewer.` };
   }
 
-  const defaultVisibility =
-    String(formData.get("default_visibility") ?? "") === "public"
-      ? "public"
-      : "private";
+  const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
 
   // Reject changing the handle to one another pilot already owns (the unique
   // constraint catches the race; this gives a friendlier message first).

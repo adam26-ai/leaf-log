@@ -1,10 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { getFlightForViewer } from "@/lib/flights/repo";
+import type { Flight } from "@prisma/client";
 
 /**
  * App-layer privacy for photos: they inherit the parent flight's visibility.
- * Every read goes through `getFlightForViewer` first, so a private flight's
- * photos are only ever returned to its owner. No image bytes in the list.
+ * Every read goes through `getFlightForViewer` first, so photo access follows
+ * the same owner/public/friends decision. No image bytes in the list.
  */
 const PHOTO_LIST_SELECT = {
   id: true,
@@ -40,18 +41,37 @@ export type PhotoListItem = {
   createdAt: Date;
 };
 
+export type VisiblePhotos = {
+  flight: Flight;
+  photos: PhotoListItem[];
+};
+
+export type VisiblePhotoBytes = {
+  flight: Flight;
+  bytes: Buffer;
+};
+
 /** Photos for a flight, only if the viewer may see it (else null → 404). */
 export async function listPhotosForViewer(
   flightId: string,
   viewerId: string | null,
 ): Promise<PhotoListItem[] | null> {
+  const result = await listPhotosWithFlightForViewer(flightId, viewerId);
+  return result?.photos ?? null;
+}
+
+export async function listPhotosWithFlightForViewer(
+  flightId: string,
+  viewerId: string | null,
+): Promise<VisiblePhotos | null> {
   const flight = await getFlightForViewer(flightId, viewerId);
   if (!flight) return null;
-  return prisma.photo.findMany({
+  const photos = await prisma.photo.findMany({
     where: { flightId },
     orderBy: [{ takenAt: "asc" }, { createdAt: "asc" }],
     select: PHOTO_LIST_SELECT,
   });
+  return { flight, photos };
 }
 
 /**
@@ -64,6 +84,21 @@ export async function getPhotoBytesForViewer(
   viewerId: string | null,
   variant: "thumb" | "display",
 ): Promise<Buffer | null> {
+  const result = await getPhotoBytesWithFlightForViewer(
+    flightId,
+    photoId,
+    viewerId,
+    variant,
+  );
+  return result?.bytes ?? null;
+}
+
+export async function getPhotoBytesWithFlightForViewer(
+  flightId: string,
+  photoId: string,
+  viewerId: string | null,
+  variant: "thumb" | "display",
+): Promise<VisiblePhotoBytes | null> {
   const flight = await getFlightForViewer(flightId, viewerId);
   if (!flight) return null;
   const photo = await prisma.photo.findFirst({
@@ -76,5 +111,5 @@ export async function getPhotoBytesForViewer(
   });
   if (!photo?.data) return null;
   const bytes = variant === "display" ? photo.data.display : photo.data.thumb;
-  return bytes ? Buffer.from(bytes) : null;
+  return bytes ? { flight, bytes: Buffer.from(bytes) } : null;
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCurrentUserId } from "@/lib/profile";
 import { getFlightForViewer } from "@/lib/flights/repo";
+import { normalizeVisibility } from "@/lib/flights/visibility";
 import { Wordmark } from "@/components/brand/wordmark";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { MetricTiles } from "@/components/flight/metric-tiles";
@@ -40,7 +41,7 @@ export default async function FlightPage({
           {isOwner && (
             <ShareToggle
               flightId={flight.id}
-              visibility={flight.visibility as "private" | "public"}
+              visibility={normalizeVisibility(flight.visibility)}
             />
           )}
         </div>

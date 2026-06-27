@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 /**
  * Returns the time-aligned 3D replay path for a flight. Authorization is
- * app-layer (owner or public via the viewer-scoped repo). The path is derived
+ * app-layer via the viewer-scoped repo. The path is derived
  * fresh from the stored raw IGC, so it works for every flight regardless of the
  * cached 2D artifact's version.
  */
@@ -47,6 +47,11 @@ export async function GET(
       takeoffMs: metrics.takeoffAtMs,
       offsetMin: metrics.localUtcOffsetMinutes ?? 0,
     },
-    { headers: { "cache-control": "private, max-age=300" } },
+    {
+      headers: {
+        "cache-control":
+          flight.visibility === "public" ? "private, max-age=300" : "no-store",
+      },
+    },
   );
 }

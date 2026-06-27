@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { normalizeHandle, normalizeDisplayName } from "@/lib/handle";
+import { normalizeVisibility } from "@/lib/flights/visibility";
 
 export type OnboardingState = { error?: string };
 
@@ -18,13 +19,14 @@ export async function completeOnboarding(
   if ("error" in d) return { error: d.error };
   const { handle } = h;
   const { displayName } = d;
+  const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
 
   const userId = await getCurrentUserId();
   if (!userId) redirect("/sign-in");
 
   try {
     await prisma.profile.create({
-      data: { id: userId, handle, displayName },
+      data: { id: userId, handle, displayName, defaultVisibility },
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

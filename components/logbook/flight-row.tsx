@@ -7,7 +7,12 @@ import {
 import type { FlightListItem } from "@/lib/flights/repo";
 
 export function FlightRow({ flight }: { flight: FlightListItem }) {
-  const isPublic = flight.visibility === "public";
+  const visibility =
+    flight.visibility === "public"
+      ? { label: "Public", className: "bg-leaf/15 text-leaf-strong" }
+      : flight.visibility === "friends"
+        ? { label: "Friends", className: "bg-amber/15 text-amber-strong" }
+        : { label: "Private", className: "bg-gray-100 text-gray-500" };
   return (
     <Link
       href={`/flights/${flight.id}`}
@@ -35,12 +40,9 @@ export function FlightRow({ flight }: { flight: FlightListItem }) {
         </div>
       )}
       <span
-        className={
-          "rounded-sm px-2 py-0.5 text-xs font-medium " +
-          (isPublic ? "bg-leaf/15 text-leaf-strong" : "bg-gray-100 text-gray-500")
-        }
+        className={"rounded-sm px-2 py-0.5 text-xs font-medium " + visibility.className}
       >
-        {isPublic ? "Public" : "Private"}
+        {visibility.label}
       </span>
     </Link>
   );
