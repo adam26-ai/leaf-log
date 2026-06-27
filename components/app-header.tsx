@@ -29,9 +29,6 @@ export function AppHeader({ profile }: { profile: Profile }) {
         </nav>
       </div>
       <div className="flex items-center gap-3">
-        <Button asChild size="sm" variant="primary">
-          <Link href="/upload">Upload flight</Link>
-        </Button>
         <Link
           href="/settings"
           title="Profile & settings"
