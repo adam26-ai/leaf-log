@@ -66,28 +66,6 @@ Track potential feature ideas for future sprints.
 - **Notes:** One-line change in `components/flight/flight-viz.tsx` — the mode toggle
   currently renders `m === "2d" ? "Map" : "3D replay"`.
 
-## Geotagged Flight Photos
-- **Area:** Flight detail page / media uploads
-- **Description:** Let pilots upload photos from a flight and have them tagged onto the flight
-  route on the map (placed at the spot they were taken). Hovering a tag pops up the photo, and
-  all the photos also show up in a little album/gallery somewhere on the flight page.
-- **Priority:** Medium
-- **Notes:** **Placement is timestamp-first:** phone cameras often drop GPS (confirmed — a
-  Pixel 10 Pro test shot had EXIF but no GPS), so match each photo's **capture time**
-  (`DateTimeOriginal`) to the IGC track and interpolate the lon/lat at that moment (reuse the
-  replay `samples`/`posAt`); use **EXIF GPS** only as a more precise override when it's actually
-  present. ⚠️ EXIF `DateTimeOriginal` is **local time with no zone** (the test photo had no
-  `OffsetTimeOriginal`) while the IGC is **UTC** — apply the flight's already-derived
-  `localUtcOffsetMinutes` to line them up before matching. New `Photo` model (`flightId`, image
-  bytes or URL, `lat`/`lon`, `takenAt`, optional caption).
-  **Storage decision:** the app currently keeps files in Postgres (`bytea`) — photos are much
-  larger than IGC, so this likely wants a size/count cap or external object storage (revisit the
-  Postgres-files pattern). **Privacy:** photos inherit the flight's visibility (private-flight
-  photos only to the owner) — go through the viewer-scoped repo. Owner-only upload; strip EXIF
-  from public-served images except the coords we use. UI: markers on the 2D `TrackMap` (and
-  ideally the 3D replay) with a hover popover, plus a thumbnail gallery component. Parse EXIF
-  with a lib like `exifr`.
-
 ## Logbook-Level Batch Photo Upload + Auto-Associate to Flights
 - **Area:** Logbook / photo ingestion / placement
 - **Description:** A photo-upload entry point at the **logbook (flights list)** level, not just
@@ -126,23 +104,18 @@ Track potential feature ideas for future sprints.
   will be nauseating while circling. Distance/pitch reuse the existing chase state. Surface as a
   third toggle state (Follow / Chase / Fixed).
 
-## Profile Settings Page
-- **Area:** Account / profile / settings
-- **Description:** A profile settings page where a pilot can upload an **avatar**, set their
-  **default privacy for new flights** (public / friends-only / private), and — eventually —
-  generate an **API token for Leaf device auto-upload**.
+## Profile "Friends Only" Visibility + Leaf-Device API Token
+- **Area:** Account / profile / settings (follow-ons deferred from the shipped Profile Settings Page)
+- **Description:** The two pieces of the original Profile Settings idea that were **not** shipped in
+  PR #14: a **"friends only"** flight-visibility tier, and a **profile API token** for Leaf device
+  auto-upload (generate / name / revoke).
 - **Priority:** Medium
-- **Notes:** New route (e.g. `/settings`); `Profile` already holds `handle`/`displayName`.
-  **Avatar:** reuse the photo pipeline (`sharp` downscale + EXIF strip, served via an authorizing
-  route) — store as `bytea` (a `ProfileData`-style split, like `Photo`/`PhotoData`) or object
-  storage later; show it on the public profile + flight pages. **Default privacy:** add
-  `defaultVisibility` to `Profile`; `ingestFlight` uses it for new flights (today it defaults to
-  `private`). ⚠️ **"Friends only" is a new visibility tier** that needs a **social/friends model**
+- **Notes:** **"Friends only" is a new visibility tier** that needs a **social/friends model**
   (follow or mutual-friend relationships) and a viewer-scoped check in `lib/flights/repo.ts` beyond
-  today's public/private — either ship public/private first and add friends-only with that social
-  feature, or treat friends-only as dependent on it. **API token:** overlaps with
-  [[Leaf Device Auto-Upload]] (`DeviceToken` + pairing) — this page is the natural home for
-  generate/name/revoke device tokens.
+  today's public/private — ship the social feature first, then add the tier. **API token:** overlaps
+  with [[Leaf Device Auto-Upload]] (`DeviceToken` + pairing) — `/settings` is the natural home for
+  generate/name/revoke device tokens. (Avatar upload + cropper and default public/private privacy
+  already shipped in PR #14 — see Shipped.)
 
 ---
 
@@ -156,3 +129,18 @@ Completed ideas (see git history / PRs for detail):
 - Linked Hover: Barograph ↔ Map, scrubber-follows-hover, 3D sphere glider + follow-camera + scrub-persist (PR #6)
 - Selectable Map Layers incl. Satellite — basemap switcher (PR #7)
 - Live Instrument Readout + Compact Flight Summary Header (PR #8)
+- Shared Replay Timeline + interaction rework; terrain-anchor track fix (PR #9)
+- Geotagged Flight Photos — HEIC-capable decode seam, EXIF/timestamp placement engine,
+  owner-only upload, viewer-scoped serving, thumbnail gallery + 2D map pins, and 3D pins
+  on the replay track (SPRINT-002: PRs #10–#13)
+- Profile Settings Page — `/settings` to edit handle / display name / bio, upload an avatar
+  with a **pan & zoom cropper** (circular mask; 512²/128² JPEGs, EXIF stripped; HEIC falls back
+  to a smart center-crop), and set **default flight privacy** (public/private) that new uploads
+  inherit. Also removed the redundant header "Upload flight" button. *Deferred: "friends only"
+  visibility (needs a social model) and the Leaf-device API token — see [[Leaf Device Auto-Upload]].*
+  (PR #14)
+- "Keep me signed in?" after magic-link login — a `/stay-signed-in` interstitial offering a
+  1-month persistent session vs. a session-only cookie; signed-in pilots are redirected from
+  `/` to `/logbook` (PR #17)
+- Production deploy — Railway (Nixpacks, `prisma migrate deploy` pre-release, `/api/health`
+  check, pnpm-10 build pin in PR #15), live at <https://leaflog.norcalflight.com>

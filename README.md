@@ -2,10 +2,13 @@
 
 The friendly, private-first flight logbook for the free-flight community — the
 official companion to the **Leaf vario**. Upload an IGC file, see your flight
-come to life (track map, barograph, metrics, named site), and share only what you
-choose. See [`VISION.md`](./VISION.md) and [`DESIGN.md`](./DESIGN.md).
+come to life (track map, barograph, metrics, named site, geotagged photos), and
+share only what you choose. See [`VISION.md`](./VISION.md) and [`DESIGN.md`](./DESIGN.md).
+
+**Live:** <https://leaflog.norcalflight.com>
 
 Milestone 1 was built per [`docs/sprints/SPRINT-001.md`](./docs/sprints/SPRINT-001.md).
+A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ## Stack
 
