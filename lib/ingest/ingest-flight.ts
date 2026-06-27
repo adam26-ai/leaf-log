@@ -53,6 +53,14 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
     };
   }
 
+  // New flights inherit the owner's default visibility (private unless they've
+  // opted otherwise in settings). Only "public" widens it; anything else → private.
+  const owner = await prisma.profile.findUnique({
+    where: { id: ownerId },
+    select: { defaultVisibility: true },
+  });
+  const visibility = owner?.defaultVisibility === "public" ? "public" : "private";
+
   const parsed = parseIgc(bytes);
   const metrics = deriveMetrics(parsed);
 
@@ -72,7 +80,7 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
       ownerId,
       source,
       status,
-      visibility: "private",
+      visibility,
       igcSha256: hash,
       parserVersion: PARSER_VERSION,
       parseWarnings: parsed.warnings,
