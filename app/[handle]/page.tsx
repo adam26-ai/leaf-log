@@ -2,11 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { listPublicFlights, statsFrom } from "@/lib/flights/repo";
+import { getCurrentUserId } from "@/lib/profile";
+import { countFriends, friendStateFor } from "@/lib/social/friends";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Avatar } from "@/components/avatar";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
+import { FriendButton } from "@/components/social/friend-button";
 
 /**
  * Public pilot profile at /@handle. The leading "@" is required (Strava-style);
@@ -26,7 +29,12 @@ export default async function ProfilePage({
   if (!profile) notFound();
 
   // Only this pilot's PUBLIC, ready flights — never their private totals.
-  const flights = await listPublicFlights(profile.id);
+  const viewerId = await getCurrentUserId();
+  const [flights, friendCount, friendState] = await Promise.all([
+    listPublicFlights(profile.id),
+    countFriends(profile.id),
+    viewerId ? friendStateFor(viewerId, profile.id) : Promise.resolve("none" as const),
+  ]);
   const stats = statsFrom(flights);
 
   return (
@@ -45,12 +53,18 @@ export default async function ProfilePage({
             variant="full"
             className="h-16 w-16 text-xl sm:h-20 sm:w-20 sm:text-2xl"
           />
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
             <h1 className="font-condensed text-4xl font-bold tracking-tight text-ink">
               {profile.displayName}
             </h1>
             <p className="font-mono text-gray-500">@{profile.handle}</p>
+            <p className="text-sm text-gray-600">
+              {friendCount} {friendCount === 1 ? "friend" : "friends"}
+            </p>
           </div>
+          {viewerId && viewerId !== profile.id && (
+            <FriendButton targetHandle={profile.handle} initialState={friendState} />
+          )}
         </div>
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
 

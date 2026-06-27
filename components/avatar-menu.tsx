@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Sparkles, Settings, LogOut } from "lucide-react";
+import { Sparkles, Settings, LogOut, Users } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { signOutAction } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
@@ -60,6 +60,9 @@ export function AvatarMenu({ profile }: { profile: Profile }) {
 
           <MenuLink href="/whats-new" icon={<Sparkles className="h-4 w-4" />} onSelect={() => setOpen(false)}>
             What&apos;s new
+          </MenuLink>
+          <MenuLink href="/friends" icon={<Users className="h-4 w-4" />} onSelect={() => setOpen(false)}>
+            Friends
           </MenuLink>
           <MenuLink href="/settings" icon={<Settings className="h-4 w-4" />} onSelect={() => setOpen(false)}>
             Settings
