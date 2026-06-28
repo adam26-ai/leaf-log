@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-06-28",
+    title: "Find your friends",
+    body: "Searching for pilots is easy now — on the Friends page, start typing a name or @handle and matching pilots appear as you type, ready to add with a tap.",
+  },
+  {
+    date: "2026-06-28",
     title: "Fly with friends",
     body: "Leaf Log is social now. Send a friend request and, once it's accepted, you're connected both ways. Share flights just with your circle by setting any flight — or your upload default — to \"Friends only.\" Give a thumbs-up to flights you can see, and follow along in a new Feed of your friends' latest flights.",
   },
