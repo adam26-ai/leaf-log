@@ -43,6 +43,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma migrate deploy
+      # Seed the curated named sites — lookup.test.ts and the e2e happy-path
+      # (named-site heading) depend on them being present.
+      - run: pnpm db:seed
       - run: pnpm typecheck
       - run: pnpm lint
       # Guard against a false green: assert the DB-backed privacy suite actually
@@ -75,6 +78,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma migrate deploy
+      # Seed the curated named sites — lookup.test.ts and the e2e happy-path
+      # (named-site heading) depend on them being present.
+      - run: pnpm db:seed
       - run: pnpm exec playwright install --with-deps chromium
       # `pnpm e2e` generates the IGC fixture and starts its own dev server
       # (playwright webServer). The dev magic-link is written to /tmp.
