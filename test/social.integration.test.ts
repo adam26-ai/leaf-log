@@ -14,12 +14,12 @@ describe("friend graph", () => {
   const ids: string[] = [];
   let flightSeq = 0;
 
-  async function createPilot(label: string) {
+  async function createPilot(label: string, displayName = label) {
     const handle = `${label}${ids.length}${suffix}`.slice(0, 20).toLowerCase();
     const user = await prisma.user.create({
       data: {
         email: `${handle}@test.local`,
-        profile: { create: { handle, displayName: label } },
+        profile: { create: { handle, displayName } },
       },
     });
     ids.push(user.id);
@@ -200,6 +200,71 @@ describe("friend graph", () => {
     await friends.acceptRequest(b.id, a.id);
     expect(await friends.friendStateFor(a.id, b.id)).toBe("friends");
     expect(await friends.areFriends(a.id, b.id)).toBe(true);
+  });
+
+  it("searchPilots matches handle prefixes and display name substrings case-insensitively", async () => {
+    const viewer = await createPilot("searchViewer");
+    const handleMatch = await createPilot("findHandle");
+    const nameMatch = await createPilot("findName", "Big Thermaling Ace");
+
+    const byHandle = await friends.searchPilots(
+      viewer.id,
+      handleMatch.handle.slice(0, 6).toUpperCase(),
+    );
+    expect(byHandle.map((profile) => profile.id)).toContain(handleMatch.id);
+
+    const byAtHandle = await friends.searchPilots(
+      viewer.id,
+      `@${handleMatch.handle.slice(0, 6).toUpperCase()}`,
+    );
+    expect(byAtHandle.map((profile) => profile.id)).toContain(handleMatch.id);
+
+    const byDisplayName = await friends.searchPilots(viewer.id, "THERMALING");
+    expect(byDisplayName.map((profile) => profile.id)).toContain(nameMatch.id);
+  });
+
+  it("searchPilots excludes the viewer's own profile", async () => {
+    const viewer = await createPilot("selfSearch");
+
+    const results = await friends.searchPilots(
+      viewer.id,
+      viewer.handle.slice(0, 6),
+    );
+
+    expect(results.map((profile) => profile.id)).not.toContain(viewer.id);
+  });
+
+  it("searchPilots returns relationship state for none, outgoing, incoming, and friends", async () => {
+    const viewer = await createPilot("searchStateViewer");
+    const none = await createPilot("searchStateNone", "State Target None");
+    const outgoing = await createPilot("searchStateOut", "State Target Outgoing");
+    const incoming = await createPilot("searchStateIn", "State Target Incoming");
+    const friend = await createPilot("searchStateFriend", "State Target Friend");
+    await friends.sendRequest(viewer.id, outgoing.id);
+    await friends.sendRequest(incoming.id, viewer.id);
+    await friends.sendRequest(viewer.id, friend.id);
+    await friends.acceptRequest(friend.id, viewer.id);
+
+    const results = await friends.searchPilots(viewer.id, "state target", 10);
+    const states = new Map(results.map((profile) => [profile.id, profile.state]));
+
+    expect(states.get(none.id)).toBe("none");
+    expect(states.get(outgoing.id)).toBe("outgoing");
+    expect(states.get(incoming.id)).toBe("incoming");
+    expect(states.get(friend.id)).toBe("friends");
+  });
+
+  it("searchPilots respects the limit and returns empty results for short queries", async () => {
+    const viewer = await createPilot("limitViewer");
+    await createPilot("limitOne", "Limit Pilot One");
+    await createPilot("limitTwo", "Limit Pilot Two");
+    await createPilot("limitThree", "Limit Pilot Three");
+
+    await expect(friends.searchPilots(viewer.id, "l")).resolves.toEqual([]);
+    await expect(friends.searchPilots(viewer.id, "   ")).resolves.toEqual([]);
+    await expect(friends.searchPilots(viewer.id, "limit pilot", 2)).resolves.toHaveLength(
+      2,
+    );
   });
 
   it("deleting a Profile cascades friendship rows", async () => {

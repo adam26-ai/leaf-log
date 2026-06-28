@@ -2,6 +2,15 @@ import { prisma } from "@/lib/prisma";
 import type { Friendship, Profile } from "@prisma/client";
 
 export type FriendState = "self" | "none" | "outgoing" | "incoming" | "friends";
+export type SearchPilotState = Exclude<FriendState, "self">;
+
+export type SearchPilotResult = {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUpdatedAt: Date | null;
+  state: SearchPilotState;
+};
 
 export type FriendshipWithRequester = Friendship & { requester: Profile };
 export type FriendshipWithAddressee = Friendship & { addressee: Profile };
@@ -185,4 +194,99 @@ export async function friendStateFor(
     return "incoming";
   }
   return "none";
+}
+
+export async function searchPilots(
+  viewerId: string,
+  query: string,
+  limit = 8,
+): Promise<SearchPilotResult[]> {
+  const trimmed = query.trim();
+  const normalized = trimmed.startsWith("@") ? trimmed.slice(1).trimStart() : trimmed;
+  const take = Math.max(0, Math.floor(limit));
+  if (normalized.length < 2 || take === 0) return [];
+
+  // `contains` is currently an unindexed ILIKE scan. That is fine for the
+  // current user base; a trigram index is the likely future optimization.
+  const prefixMatches = await prisma.profile.findMany({
+    where: {
+      id: { not: viewerId },
+      OR: [
+        { handle: { startsWith: normalized, mode: "insensitive" } },
+        { displayName: { startsWith: normalized, mode: "insensitive" } },
+      ],
+    },
+    select: {
+      id: true,
+      handle: true,
+      displayName: true,
+      avatarUpdatedAt: true,
+    },
+    orderBy: { handle: "asc" },
+    take,
+  });
+
+  const substringMatches =
+    prefixMatches.length >= take
+      ? []
+      : await prisma.profile.findMany({
+          where: {
+            id: { notIn: [viewerId, ...prefixMatches.map((profile) => profile.id)] },
+            OR: [
+              { handle: { contains: normalized, mode: "insensitive" } },
+              { displayName: { contains: normalized, mode: "insensitive" } },
+            ],
+          },
+          select: {
+            id: true,
+            handle: true,
+            displayName: true,
+            avatarUpdatedAt: true,
+          },
+          orderBy: { handle: "asc" },
+          take: take - prefixMatches.length,
+        });
+
+  const profiles = [...prefixMatches, ...substringMatches];
+
+  const ids = profiles.map((profile) => profile.id);
+  const rows =
+    ids.length === 0
+      ? []
+      : await prisma.friendship.findMany({
+          where: {
+            OR: [
+              { requesterId: viewerId, addresseeId: { in: ids } },
+              { requesterId: { in: ids }, addresseeId: viewerId },
+            ],
+          },
+        });
+
+  const states = new Map<string, SearchPilotState>();
+  for (const row of rows) {
+    const profileId = row.requesterId === viewerId ? row.addresseeId : row.requesterId;
+    if (row.status === "accepted") {
+      states.set(profileId, "friends");
+    } else if (states.get(profileId) !== "friends") {
+      states.set(profileId, row.requesterId === viewerId ? "outgoing" : "incoming");
+    }
+  }
+
+  const needle = normalized.toLowerCase();
+  return profiles
+    .map((profile) => ({
+      ...profile,
+      state: states.get(profile.id) ?? "none",
+    }))
+    .sort((a, b) => {
+      const aHandle = a.handle.toLowerCase().startsWith(needle);
+      const bHandle = b.handle.toLowerCase().startsWith(needle);
+      if (aHandle !== bHandle) return aHandle ? -1 : 1;
+
+      const aDisplay = a.displayName.toLowerCase().startsWith(needle);
+      const bDisplay = b.displayName.toLowerCase().startsWith(needle);
+      if (aDisplay !== bDisplay) return aDisplay ? -1 : 1;
+
+      return a.handle.localeCompare(b.handle);
+    });
 }
