@@ -166,6 +166,7 @@ model Flight {
 
   @@unique([ownerId, igcSha256])
   @@index([ownerId, flightDate])
+  @@index([ownerId, status, flightDate])
 }
 
 // Heavy payloads kept off the Flight row so logbook/profile lists stay fast.

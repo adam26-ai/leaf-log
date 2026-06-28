@@ -10,6 +10,7 @@ const { auth } = NextAuth(authConfig);
 const PROTECTED = [
   "/upload",
   "/logbook",
+  "/feed",
   "/onboarding",
   "/settings",
   "/whats-new",

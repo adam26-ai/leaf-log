@@ -27,6 +27,7 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await page.getByPlaceholder("you@example.com").fill(`photo_${suffix}@test.local`);
   await page.getByRole("button", { name: /send magic link/i }).click();
   await page.goto(await getMagicLink());
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
   await page.locator('input[name="handle"]').fill(`photo${suffix}`.slice(0, 18));
   await page.locator('input[name="display_name"]').fill("Photo Pilot");

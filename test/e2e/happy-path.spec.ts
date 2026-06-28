@@ -33,6 +33,9 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   const link = await getMagicLink();
   await page.goto(link);
 
+  // 2b. "Keep me signed in?" interstitial (between the link and onboarding).
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+
   // 3. Onboarding.
   await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
   await page.locator('input[name="handle"]').fill(handle);
@@ -51,9 +54,13 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await expect(page.getByText("Max altitude")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Mussel Rock" })).toBeVisible();
 
-  // 6. Share it publicly.
-  await page.getByRole("button", { name: /share flight/i }).click();
-  await expect(page.getByText(/shared publicly/i)).toBeVisible({ timeout: 10_000 });
+  // 6. Share it publicly via the visibility control (Private → Public).
+  await page.getByRole("button", { name: "Public" }).click();
+  await expect(page.getByRole("button", { name: "Public" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+    { timeout: 10_000 },
+  );
 
   // 7. A logged-out visitor can see the now-public flight.
   const anon = await context.browser()!.newContext();

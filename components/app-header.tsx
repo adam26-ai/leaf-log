@@ -15,6 +15,9 @@ export function AppHeader({ profile }: { profile: Profile }) {
           <Link href="/logbook" className="hover:text-ink">
             Logbook
           </Link>
+          <Link href="/feed" className="hover:text-ink">
+            Feed
+          </Link>
           <Link href="/upload" className="hover:text-ink">
             Upload
           </Link>
