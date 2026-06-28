@@ -8,6 +8,7 @@ import {
 } from "@/lib/social/friends";
 import { AppHeader } from "@/components/app-header";
 import { Avatar } from "@/components/avatar";
+import { FriendSearch } from "@/components/social/friend-search";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -38,6 +39,10 @@ export default async function FriendsPage() {
         </p>
 
         <div className="flex flex-col gap-6">
+          <Card className="p-6">
+            <FriendSearch />
+          </Card>
+
           <Card className="p-6">
             <h2 className="font-condensed text-lg font-bold text-ink">
               Incoming requests
