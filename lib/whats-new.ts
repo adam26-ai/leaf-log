@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-06-28",
+    title: "Fly with friends",
+    body: "Leaf Log is social now. Send a friend request and, once it's accepted, you're connected both ways. Share flights just with your circle by setting any flight — or your upload default — to \"Friends only.\" Give a thumbs-up to flights you can see, and follow along in a new Feed of your friends' latest flights.",
+  },
+  {
     date: "2026-06-27",
     title: "Stay signed in",
     body: "After you click your magic sign-in link, you can now choose to stay signed in on your device for a month — no more re-requesting a link every visit. And once you're signed in, opening Leaf Log takes you straight to your logbook.",
