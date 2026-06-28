@@ -55,3 +55,8 @@ The friendly, private-first flight logbook for the Leaf vario. Product north sta
 
 Railway via [`railway.toml`](./railway.toml) (Nixpacks, `prisma migrate deploy` pre-deploy,
 `/api/health`). See [`README.md`](./README.md) for env vars and first-deploy steps.
+
+**Every user-facing release MUST add a `/whats-new` entry.** Before deploying a feature,
+prepend a friendly, benefit-oriented note to `RELEASE_NOTES` in
+[`lib/whats-new.ts`](./lib/whats-new.ts) (newest first) — this is the user-facing
+changelog. `FEATURES.md` remains the developer-facing log; the two are separate.
