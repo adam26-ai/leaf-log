@@ -5,7 +5,7 @@ import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
 import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
-import { FlightReplay3D } from "./flight-replay-3d";
+import { FlightReplay3D, type CameraMode } from "./flight-replay-3d";
 import { PlaybackBar } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
 import { PhotoUpload } from "./photo-upload";
@@ -46,9 +46,15 @@ export function FlightViz({
     const def = saved && BASEMAPS.find((b) => b.id === saved);
     return def && !(def.needsKey && !hasMapTiler()) ? def.id : "monochrome";
   });
-  const [cameraFollow, setCameraFollow] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem("leaf-camera-follow") !== "false";
+  const [cameraMode, setCameraMode] = useState<CameraMode>(() => {
+    if (typeof window === "undefined") return "follow";
+    const saved = localStorage.getItem("leaf-camera-mode");
+    if (saved === "follow" || saved === "chase" || saved === "fixed") return saved;
+    return localStorage.getItem("leaf-camera-follow") === "false" ? "fixed" : "follow";
+  });
+  const [showShadow, setShowShadow] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("leaf-3d-shadow") === "true";
   });
 
   // Shared replay timeline (seconds from takeoff).
@@ -92,6 +98,14 @@ export function FlightViz({
   useEffect(() => {
     loadPhotos();
   }, [loadPhotos]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("leaf-camera-mode", cameraMode);
+    } catch {
+      /* ignore */
+    }
+  }, [cameraMode]);
 
   // Playback loop — advances the shared time while playing.
   useEffect(() => {
@@ -142,11 +156,22 @@ export function FlightViz({
       /* ignore */
     }
   }
-  function toggleFollow() {
-    setCameraFollow((f) => {
-      const next = !f;
+  function cycleCameraMode() {
+    setCameraMode((mode) => {
+      const next = mode === "follow" ? "chase" : mode === "chase" ? "fixed" : "follow";
       try {
-        localStorage.setItem("leaf-camera-follow", String(next));
+        localStorage.setItem("leaf-camera-mode", next);
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+  function toggleShadow() {
+    setShowShadow((on) => {
+      const next = !on;
+      try {
+        localStorage.setItem("leaf-3d-shadow", String(next));
       } catch {
         /* ignore */
       }
@@ -205,26 +230,41 @@ export function FlightViz({
                   mode === m ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
                 )}
               >
-                {m === "2d" ? "Map" : "3D replay"}
+                {m === "2d" ? "2D" : "3D"}
               </button>
             ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             {mode === "3d" && (
-              <button
-                type="button"
-                onClick={toggleFollow}
-                className={cn(
-                  "h-8 rounded-md border px-2 font-condensed text-sm font-bold transition-colors",
-                  cameraFollow
-                    ? "border-amber bg-amber text-ink"
-                    : "border-gray-300 bg-paper text-gray-600 hover:text-ink",
-                )}
-                title="Toggle whether the camera follows the glider"
-              >
-                {cameraFollow ? "Camera: Follow" : "Camera: Fixed"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={toggleShadow}
+                  className={cn(
+                    "h-8 rounded-md border px-2 font-condensed text-sm font-bold transition-colors",
+                    showShadow
+                      ? "border-amber bg-amber text-ink"
+                      : "border-gray-300 bg-paper text-gray-600 hover:text-ink",
+                  )}
+                  title="Toggle the terrain-clamped flight shadow"
+                >
+                  Shadow
+                </button>
+                <button
+                  type="button"
+                  onClick={cycleCameraMode}
+                  className={cn(
+                    "h-8 rounded-md border px-2 font-condensed text-sm font-bold transition-colors",
+                    cameraMode !== "fixed"
+                      ? "border-amber bg-amber text-ink"
+                      : "border-gray-300 bg-paper text-gray-600 hover:text-ink",
+                  )}
+                  title="Cycle the 3D camera mode"
+                >
+                  {`Camera: ${cameraMode[0].toUpperCase()}${cameraMode.slice(1)}`}
+                </button>
+              </>
             )}
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <span className="font-condensed font-bold">Basemap</span>
@@ -270,7 +310,8 @@ export function FlightViz({
               flightId={flightId}
               basemap={basemap}
               time={time}
-              cameraFollow={cameraFollow}
+              cameraMode={cameraMode}
+              showShadow={showShadow}
               photos={photos}
               onPhotoHover={scrubTo}
               onPhotoOpen={(id, t) => {

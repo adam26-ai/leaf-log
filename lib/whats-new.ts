@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-06-28",
+    title: "A better 3D replay",
+    body: "The 3D flight replay got three upgrades: cleaner \"2D\" / \"3D\" view buttons, a ground-shadow toggle that drapes your track's footprint on the terrain so you can see how high you were, and a new Chase camera that flies behind the glider and turns with it (it smooths out tight thermals so it won't make you dizzy).",
+  },
+  {
+    date: "2026-06-28",
     title: "Find your friends",
     body: "Searching for pilots is easy now — on the Friends page, start typing a name or @handle and matching pilots appear as you type, ready to add with a tap.",
   },

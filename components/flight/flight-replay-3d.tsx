@@ -15,6 +15,7 @@ import { SphereGeometry } from "@luma.gl/engine";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { Card } from "@/components/ui/card";
+import { headingAt, type Sample } from "@/lib/igc/interpolate";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -36,7 +37,7 @@ const lightingEffect = new LightingEffect({
   }),
 });
 
-type Sample = [number, number, number, number]; // lon, lat, alt, tSec
+export type CameraMode = "follow" | "chase" | "fixed";
 
 interface ReplayData {
   samples: Sample[];
@@ -48,11 +49,16 @@ interface ReplayData {
   offsetMin: number;
 }
 
+type GeoJsonData = Parameters<maplibregl.GeoJSONSource["setData"]>[0];
+
 // True vertical scale (1.0): the track's real altitude and the real terrain
 // elevation share one reference, so the flight path sits correctly on/above the
 // ground. Exaggerating terrain would also inflate the track's height-above-ground
 // by the same factor, so it must stay applied to BOTH if ever changed.
 const TERRAIN_EXAGGERATION = 1.0;
+const CHASE_PITCH = 66;
+const SHADOW_SOURCE_ID = "flight-ground-shadow";
+const SHADOW_LAYER_ID = "flight-ground-shadow";
 
 // A unit sphere for the 3D glider marker (sized in metres via sizeScale).
 const GLIDER_MESH = new SphereGeometry({ radius: 1, nlat: 18, nlong: 36 });
@@ -76,7 +82,8 @@ export function FlightReplay3D({
   flightId,
   basemap = "monochrome",
   time,
-  cameraFollow = true,
+  cameraMode = "follow",
+  showShadow = false,
   photos = [],
   onPhotoHover,
   onPhotoOpen,
@@ -85,8 +92,10 @@ export function FlightReplay3D({
   basemap?: BasemapId;
   /** Shared replay time (s from takeoff) — drives the glider position. */
   time: number;
-  /** Keep the camera centred on the glider (vs a free/fixed camera). */
-  cameraFollow?: boolean;
+  /** Follow the glider, chase behind it, or leave the camera free/fixed. */
+  cameraMode?: CameraMode;
+  /** Draw a subtle terrain-draped footprint of the flight path. */
+  showShadow?: boolean;
   /** Geotagged photos to pin on the 3D track. */
   photos?: FlightPhoto[];
   /** Hovering a photo pin moves the scrubber to its time-from-takeoff. */
@@ -103,7 +112,9 @@ export function FlightReplay3D({
   >([]);
   const timeRef = useRef(time);
   const basemapRef = useRef(basemap);
-  const cameraFollowRef = useRef(cameraFollow);
+  const cameraModeRef = useRef(cameraMode);
+  const showShadowRef = useRef(showShadow);
+  const chaseBearingRef = useRef<number | null>(null);
   const didInitBasemap = useRef(false);
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
@@ -113,7 +124,7 @@ export function FlightReplay3D({
   const photosRef = useRef(photos);
   const onPhotoHoverRef = useRef(onPhotoHover);
   const onPhotoOpenRef = useRef(onPhotoOpen);
-  // Suppress the camera-follow recenter for a photo-hover scrub (otherwise the
+  // Suppress the follow/chase recenter for a photo-hover scrub (otherwise the
   // recenter slides the icon out from under the cursor mid-hover).
   const suppressFollowRef = useRef(false);
   useEffect(() => {
@@ -188,18 +199,112 @@ export function FlightReplay3D({
     return Math.max(6, 9 * metersPerPixel);
   }
 
-  // Chase camera: make the glider itself (at its altitude) the camera's look-at
-  // point, so the distance (zoom), tilt (pitch) and azimuth (bearing) all stay
-  // constant as it flies — the world moves under a fixed sphere. jumpTo only
-  // updates the centre + its elevation, leaving zoom/pitch/bearing as the user
-  // set them (drag still rotates/tilts, scroll still changes distance). Needs
-  // setCenterClampedToGround(false) so the centre can sit above the terrain.
-  function centerOnGlider(t: number) {
+  function normalizeBearing(bearing: number) {
+    return ((bearing % 360) + 360) % 360;
+  }
+
+  function angularDelta(from: number, to: number) {
+    return ((((to - from) % 360) + 540) % 360) - 180;
+  }
+
+  function easedChaseBearing(t: number) {
+    const map = mapRef.current;
+    const d = dataRef.current;
+    if (!map || !d) return map?.getBearing() ?? 0;
+    const current = chaseBearingRef.current ?? normalizeBearing(map.getBearing());
+    const target = headingAt(d.samples, t);
+    if (target == null) {
+      chaseBearingRef.current = current;
+      return current;
+    }
+    const next = normalizeBearing(current + angularDelta(current, target) * 0.2);
+    chaseBearingRef.current = next;
+    return next;
+  }
+
+  // Follow/chase camera: make the glider itself (at its altitude) the camera's
+  // look-at point, so distance (zoom) stays constant as it flies. Follow leaves
+  // pitch/bearing as the user set them; chase also eases bearing to the damped
+  // track heading and holds a steep pitch. Needs setCenterClampedToGround(false)
+  // so the centre can sit above the terrain.
+  function centerOnGlider(t: number, chase = false) {
     const map = mapRef.current;
     if (!map || !dataRef.current) return;
     if (map.getCenterClampedToGround()) map.setCenterClampedToGround(false);
     const p = positionAt(t);
-    map.jumpTo({ center: [p[0], p[1]], elevation: zOf(p[2]) });
+    map.jumpTo({
+      center: [p[0], p[1]],
+      elevation: zOf(p[2]),
+      ...(chase ? { bearing: easedChaseBearing(t), pitch: CHASE_PITCH } : {}),
+    });
+  }
+
+  function shadowGeoJson(d: ReplayData): GeoJsonData {
+    return {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "LineString",
+            coordinates: d.samples.map((s) => [s[0], s[1]]),
+          },
+        },
+      ],
+    };
+  }
+
+  function removeShadow(map: maplibregl.Map) {
+    if (map.getLayer(SHADOW_LAYER_ID)) map.removeLayer(SHADOW_LAYER_ID);
+    if (map.getSource(SHADOW_SOURCE_ID)) map.removeSource(SHADOW_SOURCE_ID);
+  }
+
+  function syncShadow() {
+    const map = mapRef.current;
+    const d = dataRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    if (!showShadowRef.current || !d || d.samples.length < 2) {
+      removeShadow(map);
+      return;
+    }
+
+    const geojson = shadowGeoJson(d);
+    const source = map.getSource(SHADOW_SOURCE_ID) as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    if (source) {
+      source.setData(geojson);
+    } else {
+      map.addSource(SHADOW_SOURCE_ID, {
+        type: "geojson",
+        data: geojson,
+      });
+    }
+
+    if (!map.getLayer(SHADOW_LAYER_ID)) {
+      const firstSymbol = map
+        .getStyle()
+        .layers?.find((l) => l.type === "symbol")?.id;
+      // Future option: add vertical curtain drop-lines from the airborne path.
+      map.addLayer(
+        {
+          id: SHADOW_LAYER_ID,
+          type: "line",
+          source: SHADOW_SOURCE_ID,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+          },
+          paint: {
+            "line-color": "#555555",
+            "line-opacity": 0.28,
+            "line-width": 2,
+          },
+        },
+        firstSymbol,
+      );
+    }
   }
 
   function renderLayers(t: number) {
@@ -390,10 +495,11 @@ export function FlightReplay3D({
       map.setPitch(62);
       map.setBearing(-20);
       renderLayers(timeRef.current);
-      // Entering 3D mid-flight with follow on: centre on the glider (a fresh
+      syncShadow();
+      // Entering 3D mid-flight with follow/chase on: centre on the glider (a fresh
       // load sits at takeoff t=0, where the fitBounds overview is preferred).
-      if (cameraFollowRef.current && timeRef.current > 0) {
-        centerOnGlider(timeRef.current);
+      if (cameraModeRef.current !== "fixed" && timeRef.current > 0) {
+        centerOnGlider(timeRef.current, cameraModeRef.current === "chase");
       }
 
       // Once terrain tiles are loaded, snap the takeoff to the ground so the
@@ -450,6 +556,7 @@ export function FlightReplay3D({
   // (setStyle preserves the camera but resets terrain and custom layers).
   useEffect(() => {
     const map = mapRef.current;
+    basemapRef.current = basemap;
     if (!map) return;
     if (!didInitBasemap.current) {
       didInitBasemap.current = true;
@@ -457,6 +564,7 @@ export function FlightReplay3D({
     }
     const reAdd = () => {
       setupTerrain(map);
+      syncShadow();
       renderLayers(timeRef.current);
     };
     const swap = () => {
@@ -468,21 +576,37 @@ export function FlightReplay3D({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
-  // Following looks at the glider above the terrain (unclamped centre); fixed
+  // Follow/chase look at the glider above the terrain (unclamped centre); fixed
   // returns the centre to the ground for normal map interaction.
   useEffect(() => {
-    mapRef.current?.setCenterClampedToGround(!cameraFollow);
-  }, [cameraFollow]);
+    cameraModeRef.current = cameraMode;
+    const map = mapRef.current;
+    if (!map) return;
+    if (cameraMode === "chase") {
+      chaseBearingRef.current = normalizeBearing(map.getBearing());
+    }
+    map.setCenterClampedToGround(cameraMode === "fixed");
+    if (cameraMode !== "fixed") centerOnGlider(timeRef.current, cameraMode === "chase");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraMode]);
 
   // Render the glider at the shared time; follow it with the camera if enabled.
   useEffect(() => {
     timeRef.current = time;
-    cameraFollowRef.current = cameraFollow;
-    if (cameraFollow && !suppressFollowRef.current) centerOnGlider(time);
+    cameraModeRef.current = cameraMode;
+    if (cameraMode !== "fixed" && !suppressFollowRef.current) {
+      centerOnGlider(time, cameraMode === "chase");
+    }
     suppressFollowRef.current = false;
     renderLayers(time);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [time, cameraFollow]);
+  }, [time, cameraMode]);
+
+  useEffect(() => {
+    showShadowRef.current = showShadow;
+    syncShadow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showShadow, data]);
 
   // Re-render the photo pins when the set changes.
   useEffect(() => {
