@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PathLayer, IconLayer } from "@deck.gl/layers";
+import { PathLayer, IconLayer, LineLayer } from "@deck.gl/layers";
 import { SimpleMeshLayer } from "@deck.gl/mesh-layers";
 import {
   LightingEffect,
@@ -211,13 +211,23 @@ export function FlightReplay3D({
     const map = mapRef.current;
     const d = dataRef.current;
     if (!map || !d) return map?.getBearing() ?? 0;
-    const current = chaseBearingRef.current ?? normalizeBearing(map.getBearing());
-    const target = headingAt(d.samples, t);
-    if (target == null) {
-      chaseBearingRef.current = current;
-      return current;
+    const heading = headingAt(d.samples, t);
+    // Chase bearing = the travel heading. In MapLibre, bearing is the compass
+    // direction at the TOP of the screen, so bearing == heading puts the glider's
+    // travel toward the top and the camera BEHIND it, looking forward.
+    if (heading == null) {
+      // Thermalling / no stable heading — hold the last bearing (don't spin).
+      return chaseBearingRef.current ?? normalizeBearing(map.getBearing());
     }
-    const next = normalizeBearing(current + angularDelta(current, target) * 0.2);
+    // On entering chase (ref cleared) snap straight behind; otherwise ease so
+    // turns are smooth, not jerky.
+    if (chaseBearingRef.current == null) {
+      chaseBearingRef.current = heading;
+      return heading;
+    }
+    const next = normalizeBearing(
+      chaseBearingRef.current + angularDelta(chaseBearingRef.current, heading) * 0.2,
+    );
     chaseBearingRef.current = next;
     return next;
   }
@@ -297,9 +307,11 @@ export function FlightReplay3D({
             "line-join": "round",
           },
           paint: {
-            "line-color": "#555555",
-            "line-opacity": 0.28,
-            "line-width": 2,
+            // A subtle grey footprint, a touch stronger than a faint shadow so
+            // it reads on the terrain without competing with the coloured track.
+            "line-color": "#3a3a3a",
+            "line-opacity": 0.5,
+            "line-width": 3,
           },
         },
         firstSymbol,
@@ -326,6 +338,43 @@ export function FlightReplay3D({
         position: [ph.lon as number, ph.lat as number, zOf(ph.altM ?? 0)],
       };
     });
+
+    // Plumb line from the glider straight down to the ground directly below it —
+    // a height-above-ground (AGL) cue, shown with the ground-shadow toggle. The
+    // ground z comes from the (exaggerated) terrain elevation under the glider;
+    // queryTerrainElevation is null until that DEM tile loads, so skip the line
+    // that frame rather than dropping it to a bogus elevation.
+    type DropDatum = { source: [number, number, number]; target: [number, number, number] };
+    const dropLayers: LineLayer<DropDatum>[] = [];
+    const map = mapRef.current;
+    if (showShadowRef.current && map) {
+      let ground: number | null = null;
+      try {
+        ground = map.queryTerrainElevation([pos[0], pos[1]]);
+      } catch {
+        ground = null;
+      }
+      if (ground != null && Number.isFinite(ground)) {
+        dropLayers.push(
+          new LineLayer<DropDatum>({
+            id: "glider-drop",
+            data: [
+              {
+                source: [pos[0], pos[1], zOf(pos[2])],
+                target: [pos[0], pos[1], ground],
+              },
+            ],
+            getSourcePosition: (l) => l.source,
+            getTargetPosition: (l) => l.target,
+            getColor: [58, 58, 58, 205],
+            getWidth: 2.5,
+            widthUnits: "pixels",
+            widthMinPixels: 2,
+          }),
+        );
+      }
+    }
+
     overlay.setProps({
       layers: [
         // The full 3D track, always visible, coloured by climb/sink.
@@ -385,6 +434,8 @@ export function FlightReplay3D({
             return true;
           },
         }),
+        // Plumb line glider → ground (AGL cue), with the ground-shadow toggle.
+        ...dropLayers,
         // 3D glider marker (a shaded sphere) at the current replay time.
         new SimpleMeshLayer<[number, number, number]>({
           id: "glider",
@@ -583,7 +634,9 @@ export function FlightReplay3D({
     const map = mapRef.current;
     if (!map) return;
     if (cameraMode === "chase") {
-      chaseBearingRef.current = normalizeBearing(map.getBearing());
+      // Clear so the first chase frame snaps straight behind the glider (to the
+      // travel heading) instead of easing in from the user's manual bearing.
+      chaseBearingRef.current = null;
     }
     map.setCenterClampedToGround(cameraMode === "fixed");
     if (cameraMode !== "fixed") centerOnGlider(timeRef.current, cameraMode === "chase");
@@ -605,6 +658,9 @@ export function FlightReplay3D({
   useEffect(() => {
     showShadowRef.current = showShadow;
     syncShadow();
+    // Re-render deck layers so the glider→ground plumb line appears/disappears
+    // with the toggle (not just on the next time tick).
+    renderLayers(timeRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showShadow, data]);
 
