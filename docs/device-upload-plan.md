@@ -36,7 +36,31 @@ Two facts that make this tractable:
 - **One ingestion seam.** Keep parse/derive/persist out of routes; the device route
   is a thin caller of `ingestFlight()`, exactly like the web upload route.
 
-## Auth: short pairing-code flow (decided)
+## v1 decision (2026-06-30): copy/paste API key first
+
+After review with the Leaf developer, **v1 ships the simpler, equally-secure
+copy/paste API-key flow**; the pairing-code state machine below becomes **phase 2**
+(the slicker "device shows a code" UX). Both end in the same place: the device holds
+a Bearer token and uploads to `POST /api/ingest`.
+
+**v1 flow:** the Leaf web app shows a "Connect to Leaf Log Online" link →
+`https://leaflog.norcalflight.com/pair#payload=base64url({email?, device?})` (MAC/email
+are onboarding metadata only, in the URL **fragment** so they don't hit the server or
+logs) → user logs in → generates a **scoped, revocable API key** (`llk_…`, shown once,
+stored sha256-hashed) → copies it into the Leaf's pilot profile → the Leaf uploads IGC
+with `Authorization: Bearer llk_…`. **The key is never put in a URL.**
+
+This dissolves the earlier HTTP / email+MAC / auto-create proposal: HTTPS + a key you
+generate while signed in means no auto-create, no auto-attach, no quarantine. Multiple
+on-device profiles each hold their own key (the key *is* the identity; MAC is just an
+optional device label). Pre-setup flights are buffered on-device and uploaded once a
+key is configured — no server-side holding store.
+
+v1 scope: `DeviceToken` model, Settings → Devices key UI (generate/name/revoke), the
+`/pair` landing page, and `POST /api/ingest` (single raw IGC body). `DevicePairing` +
+the pair/start·poll·claim routes are **phase 2**.
+
+## Auth: short pairing-code flow (phase 2 — the original "decided" design)
 
 The web upload uses NextAuth **sessions**; a device can't do magic-link login, so
 it needs its own credential. Use a **short pairing code** so no long token is ever
