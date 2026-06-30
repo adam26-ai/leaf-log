@@ -42,30 +42,6 @@ Track potential feature ideas for future sprints.
   inserting. Optional later: moderation/merge for public sites, and seeding from a
   licensed gazetteer (ParaglidingEarth) once redistribution terms are cleared.
 
-## 3D Track Ground Shadow (height projection)
-- **Area:** Flight detail page (3D replay)
-- **Description:** In the 3D replay, project the flight track straight down onto the terrain
-  below it — a "ground shadow" footprint draped on the surface — and optionally vertical drop
-  lines (a curtain) connecting the airborne track to its ground projection. This makes
-  height-above-ground legible at a glance (you can see how high each thermal and glide was over
-  the terrain), like the Google Earth flight view.
-- **Priority:** Medium
-- **Notes:** deck.gl — add a second `PathLayer` that drapes the track's `[lon,lat]` onto the
-  terrain (z = DEM elevation at each point; the terrarium DEM is already loaded), styled as a
-  faint shadow line. Optionally add periodic vertical `LineLayer` segments (or a `PolygonLayer`
-  wall/curtain) from track points down to their ground projection for the height effect. Reuse
-  the existing replay `samples`. Keep it subtle so it doesn't fight the climb/sink-coloured main
-  track; a toggle (like the camera-follow toggle) would be ideal. Pairs well with the
-  center-on-sphere / fixed-camera work.
-
-## Rename 2D / 3D Toggle Labels
-- **Area:** Flight detail page (view-mode toggle)
-- **Description:** Rename the flight-view toggle buttons from "Map" and "3D replay" to
-  "2D" and "3D" for a tighter, clearer pair of labels.
-- **Priority:** Low
-- **Notes:** One-line change in `components/flight/flight-viz.tsx` — the mode toggle
-  currently renders `m === "2d" ? "Map" : "3D replay"`.
-
 ## Logbook-Level Batch Photo Upload + Auto-Associate to Flights
 - **Area:** Logbook / photo ingestion / placement
 - **Description:** A photo-upload entry point at the **logbook (flights list)** level, not just
@@ -87,23 +63,6 @@ Track potential feature ideas for future sprints.
   owner-only `addPhotos({ flightId, … })` core per flight (no change to the write seam). New UI at
   `/logbook` or `/upload` (multi-flight). Surfaces the just-added unpinned/unassigned reasons.
 
-## 3D Chase-Cam (Behind-the-Glider) View
-- **Area:** Flight detail page (3D replay camera)
-- **Description:** A "chase" camera mode for the 3D replay that also tracks the glider's **bearing**
-  (direction of travel), keeping the camera positioned **behind and slightly above** the glider and
-  looking forward along the flight path — a true third-person follow-cam. A third option alongside
-  the current **Follow** / **Fixed**.
-- **Priority:** Medium
-- **Notes:** Builds on the existing chase camera (`centerOnGlider` →
-  `setCenterClampedToGround(false)` + `jumpTo({center, elevation})` so the glider is the look-at
-  point). For chase, additionally drive the map **bearing** to the glider's instantaneous heading
-  (compute from the velocity vector between bracketing samples at `tSec` — add a `headingAt()` next
-  to `positionAt()` in `lib/igc/interpolate.ts`) and hold a fixed pitch so the camera sits
-  behind+above. **Key caveat:** thermalling (tight circles) makes raw heading spin wildly — damp it
-  (low-pass / moving-average over a few seconds, or freeze the bearing when turn-rate is high) or it
-  will be nauseating while circling. Distance/pitch reuse the existing chase state. Surface as a
-  third toggle state (Follow / Chase / Fixed).
-
 ## Profile "Friends Only" Visibility + Leaf-Device API Token
 - **Area:** Account / profile / settings (follow-ons deferred from the shipped Profile Settings Page)
 - **Description:** The two pieces of the original Profile Settings idea that were **not** shipped in
@@ -117,9 +76,20 @@ Track potential feature ideas for future sprints.
   generate/name/revoke device tokens. (Avatar upload + cropper and default public/private privacy
   already shipped in PR #14 — see Shipped.)
 
----
-
-## Shipped
+## Pending Friend-Request Badge + Feed Indicator
+- **Area:** Social / navigation (account menu, feed)
+- **Description:** Show a badge when you have incoming friend request(s) waiting to be
+  accepted — under your profile/avatar (e.g. a count dot on the header account menu), and
+  surface something on the **feed** page too, so a pilot notices and acts on pending requests
+  without having to visit `/friends` directly.
+- **Priority:** Medium
+- **Notes:** The count already exists — `listIncomingRequests(meId)` in `lib/social/friends.ts`
+  (pending where addressee = me). Add a lightweight `countIncomingRequests(meId)` and surface it
+  on the `AvatarMenu` (a small dot/number, linking to `/friends`) and as a banner/prompt on
+  `/feed` ("N friend requests waiting"). Header is server-rendered per request (the menu already
+  receives the profile), so the count can be fetched alongside it — keep it cheap. Real-time
+  updates are out of scope; refresh-on-navigation is fine. Pairs with the deferred notifications
+  work in [[social-sprint-state]] but is much lighter (no notification model needed).
 Completed ideas (see git history / PRs for detail):
 
 - Short Flight URL IDs — 4-char `[a-z0-9]` flight URLs (PR #2)
@@ -144,3 +114,7 @@ Completed ideas (see git history / PRs for detail):
   `/` to `/logbook` (PR #17)
 - Production deploy — Railway (Nixpacks, `prisma migrate deploy` pre-release, `/api/health`
   check, pnpm-10 build pin in PR #15), live at <https://leaflog.norcalflight.com>
+- Social foundation — friends (request/accept), friends-only flight visibility, kudos, friends
+  feed, and friend search/autocomplete (SPRINT-003, PRs #21-26)
+- 3D flight-page polish — "2D"/"3D" toggle labels, a ground-shadow footprint toggle (track draped
+  on the terrain), and a Chase camera mode (Follow/Chase/Fixed) with damped heading tracking
