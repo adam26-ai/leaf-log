@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Plug } from "lucide-react";
 import { requireProfile } from "@/lib/profile";
 import { AppHeader } from "@/components/app-header";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -19,6 +21,25 @@ export default async function SettingsPage() {
         </p>
 
         <div className="flex flex-col gap-6">
+          <Link href="/settings/devices" className="group block">
+            <Card className="p-6 transition-colors group-hover:border-amber">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-amber/20 text-ink">
+                  <Plug className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="font-condensed text-lg font-bold text-ink">
+                    Devices
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Connect your Leaf vario: enter the pairing code shown on the
+                    device.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </Link>
+
           <Card className="flex flex-col gap-4 p-6">
             <h2 className="font-condensed text-lg font-bold text-ink">Photo</h2>
             <AvatarUploader

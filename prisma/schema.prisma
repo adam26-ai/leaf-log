@@ -75,8 +75,40 @@ model Profile {
   sentFriendReqs     Friendship[] @relation("SentFriendRequests")
   receivedFriendReqs Friendship[] @relation("ReceivedFriendRequests")
   kudos       Kudo[]
+  deviceTokens DeviceToken[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model DeviceToken {
+  id         String    @id @default(cuid())
+  ownerId    String
+  owner      Profile   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  label      String
+  deviceId   String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([ownerId])
+}
+
+model DevicePairing {
+  id               String   @id @default(cuid())
+  codeHash         String   @unique
+  pollHandleHash   String   @unique
+  status           String
+  label            String?
+  claimedByOwnerId String?
+  deviceTokenId    String?
+  // Plaintext device token is held only after claim and before the device's
+  // successful poll. pollPairing clears it when status moves to consumed.
+  tokenPlaintext   String?
+  createdAt        DateTime @default(now())
+  expiresAt        DateTime
+
+  @@index([expiresAt])
 }
 
 // Explicit friend graph: one directed request row, accepted means friends both ways.

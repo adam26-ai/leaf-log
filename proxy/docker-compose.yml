@@ -1,0 +1,17 @@
+# Device HTTP ingress proxy — Option B (VPS / any plain-HTTP Docker host on :80).
+# For Railway, use Option A (a service + TCP Proxy, built from the Dockerfile) —
+# this compose file is not for Railway's web domain (it forces HTTPS). See README.md.
+services:
+  http-ingress:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

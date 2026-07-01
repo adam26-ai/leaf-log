@@ -13,7 +13,7 @@ Track potential feature ideas for future sprints.
   on-device config + upload — is planned in the `leaf` repo). Reuses the existing
   source-agnostic `ingestFlight({ source: 'device_push' })` seam, so parse/derive/dedupe/
   persist already work. Adds Prisma models `DevicePairing` + `DeviceToken`; routes
-  `/api/devices/pair/{start,poll,claim}` and `POST /api/ingest` (Bearer); an Account → Devices
+  `/api/devices/pair/{start,poll}` and `POST /api/ingest` (Bearer); a Settings → Devices
   UI to claim/name/revoke. Pairing codes are short-lived/single-use/rate-limited; tokens
   stored hashed. Fully testable without firmware via curl.
 
