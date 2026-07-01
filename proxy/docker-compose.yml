@@ -1,5 +1,6 @@
-# Device HTTP ingress proxy — run on any host that can bind :80 and serve plain
-# HTTP (a small VPS / Docker host). NOT Railway (it forces HTTPS). See README.md.
+# Device HTTP ingress proxy — Option B (VPS / any plain-HTTP Docker host on :80).
+# For Railway, use Option A (a service + TCP Proxy, built from the Dockerfile) —
+# this compose file is not for Railway's web domain (it forces HTTPS). See README.md.
 services:
   http-ingress:
     image: caddy:2

@@ -1,48 +1,46 @@
 # Leaf Log — device HTTP ingress proxy
 #
-# The Leaf vario cannot do TLS without stalling its background services, so it
-# speaks PLAIN HTTP. Railway force-redirects HTTP->HTTPS at its edge, so the
-# device can't hit the app directly. This tiny Caddy proxy is the device's HTTP
-# front door: it accepts plaintext HTTP from the Leaf and forwards ONLY the
-# device endpoints to the real app over HTTPS (server-to-server TLS is fine).
+# The Leaf vario can't do TLS without stalling its background services, so it
+# speaks PLAIN HTTP. Railway force-redirects HTTP->HTTPS on its normal web
+# domains, so the device can't hit the app directly. This tiny Caddy service is
+# the device's HTTP front door: plain HTTP in from the Leaf, forwarded to ONLY
+# the device endpoints on the real app.
 #
-# Everything else (the website, the session-authed pairing CLAIM, etc.) stays
-# HTTPS-only on the main domain and is NOT reachable through this proxy.
+# Preferred deployment: run this as its own Railway service (root dir `proxy/`,
+# built from the Dockerfile) with a **TCP Proxy** attached — that gives a raw-TCP
+# (no-TLS, no-redirect) door at `<generated>.proxy.rlwy.net:<port>`. It can also
+# run on any plain-HTTP host (VPS) via docker-compose. See README.md.
 #
-# Run this on a host that can serve plain HTTP on :80 (a small VPS / any Docker
-# host) — NOT on Railway (which forces HTTPS). See README.md.
-
+# Listens on $PORT (Railway injects it; defaults to :80 for a VPS) on ANY Host,
+# since the TCP-proxy hostname is Railway-generated. Only the 3 device endpoints
+# are exposed; everything else 404s. The website + session-authed pairing CLAIM
+# stay HTTPS-only on the main domain and are not reachable here.
 {
-	# The Leaf talks plain HTTP to us; do not auto-provision TLS or redirect.
 	auto_https off
-	# Don't leak the proxy software version.
-	servers {
-		trusted_proxies static private_ranges
-	}
+	admin off
 }
 
-# Bind to the device hostname on port 80 only. Point ingest.leaflog.norcalflight.com
-# (A record) at this host. Use `:80` instead of the hostname if you want it to
-# answer on any Host header (e.g. for IP-based testing).
-http://ingest.leaflog.norcalflight.com:80 {
+:{$PORT:80} {
 	# Only the three device endpoints are exposed over HTTP.
 	@device path /api/ingest /api/devices/pair/start /api/devices/pair/poll
 
 	handle @device {
-		reverse_proxy https://leaflog.norcalflight.com {
-			header_up Host leaflog.norcalflight.com
-			# Preserve the real client IP for the app's logging / future rate limits.
-			header_up X-Forwarded-For {remote_host}
+		# Upstream defaults to the public app over HTTPS (Caddy does the TLS, which
+		# the Leaf can't). To go over Railway's private network instead, set
+		# UPSTREAM=http://web.railway.internal:<app-port> and keep UPSTREAM_HOST as
+		# the public hostname so the app sees the expected Host.
+		reverse_proxy {$UPSTREAM:https://leaflog.norcalflight.com} {
+			header_up Host {$UPSTREAM_HOST:leaflog.norcalflight.com}
 			header_up X-Forwarded-Proto http
 		}
 	}
 
-	# A trivial liveness check for the device to probe the proxy itself.
+	# Liveness probe for the device / monitoring.
 	handle /healthz {
 		respond "ok" 200
 	}
 
-	# Everything else is not available over the HTTP door.
+	# Nothing else is available over the HTTP door.
 	handle {
 		respond "Not found" 404
 	}
