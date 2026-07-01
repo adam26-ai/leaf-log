@@ -55,11 +55,16 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   }
 
   // New flights inherit the owner's default visibility. Unknown values fail closed.
+  // Device pushes are forced PRIVATE regardless of the default: the device
+  // credential travels over plain HTTP and is sniffable, so a stolen token must
+  // never be able to publish PUBLIC flights under the pilot's identity. The pilot
+  // promotes device flights to friends/public manually in the web app.
   const owner = await prisma.profile.findUnique({
     where: { id: ownerId },
     select: { defaultVisibility: true },
   });
-  const visibility = normalizeVisibility(owner?.defaultVisibility);
+  const visibility =
+    source === "device_push" ? "private" : normalizeVisibility(owner?.defaultVisibility);
 
   const parsed = parseIgc(bytes);
   const metrics = deriveMetrics(parsed);

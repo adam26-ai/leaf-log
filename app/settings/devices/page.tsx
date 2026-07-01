@@ -2,6 +2,7 @@ import { AppHeader } from "@/components/app-header";
 import { Card } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { DeviceKeys } from "@/components/settings/device-keys";
+import { DevicePairingForm } from "@/components/settings/device-pairing-form";
 import { listDeviceTokens } from "@/lib/devices/repo";
 import { requireProfile } from "@/lib/profile";
 
@@ -17,11 +18,12 @@ export default async function DevicesPage() {
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Devices</SectionHeading>
         <p className="mt-3 mb-8 text-gray-600">
-          Generate a scoped API key for each Leaf vario that should upload flights
-          to your logbook.
+          Connect your Leaf vario by entering the pairing code shown on the
+          device. Upload credentials stay on the device.
         </p>
 
-        <Card className="p-6">
+        <Card className="flex flex-col gap-8 p-6">
+          <DevicePairingForm />
           <DeviceKeys
             tokens={tokens.map((token) => ({
               id: token.id,

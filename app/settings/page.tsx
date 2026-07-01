@@ -32,7 +32,8 @@ export default async function SettingsPage() {
                     Devices
                   </h2>
                   <p className="mt-1 text-sm text-gray-600">
-                    Connect your Leaf vario to auto-upload flights.
+                    Connect your Leaf vario: enter the pairing code shown on the
+                    device.
                   </p>
                 </div>
               </div>

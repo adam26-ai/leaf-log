@@ -94,6 +94,23 @@ model DeviceToken {
   @@index([ownerId])
 }
 
+model DevicePairing {
+  id               String   @id @default(cuid())
+  codeHash         String   @unique
+  pollHandleHash   String   @unique
+  status           String
+  label            String?
+  claimedByOwnerId String?
+  deviceTokenId    String?
+  // Plaintext device token is held only after claim and before the device's
+  // successful poll. pollPairing clears it when status moves to consumed.
+  tokenPlaintext   String?
+  createdAt        DateTime @default(now())
+  expiresAt        DateTime
+
+  @@index([expiresAt])
+}
+
 // Explicit friend graph: one directed request row, accepted means friends both ways.
 // Decline/cancel removes the row. The no-self CHECK lives in the raw SQL migration
 // because Prisma v6 cannot represent CHECK constraints in schema.prisma; migrate

@@ -10,22 +10,34 @@ const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
 describe("device tokens", () => {
   let prisma: import("@prisma/client").PrismaClient;
   let repo: typeof import("@/lib/devices/repo");
+  let pairingRepo: typeof import("@/lib/devices/pairing-repo");
   let hashDeviceKey: typeof import("@/lib/devices/token").hashDeviceKey;
+  let pairingHelpers: typeof import("@/lib/devices/pairing");
   let ingestFlight: typeof import("@/lib/ingest/ingest-flight").ingestFlight;
   let ownerId = "";
   let otherId = "";
+  const pairingCodeHashes: string[] = [];
+  const pairingHandleHashes: string[] = [];
 
   beforeAll(async () => {
     const { PrismaClient } = await import("@prisma/client");
     prisma = new PrismaClient();
     repo = await import("@/lib/devices/repo");
+    pairingRepo = await import("@/lib/devices/pairing-repo");
     ({ hashDeviceKey } = await import("@/lib/devices/token"));
+    pairingHelpers = await import("@/lib/devices/pairing");
     ({ ingestFlight } = await import("@/lib/ingest/ingest-flight"));
 
     const owner = await prisma.user.create({
       data: {
         email: `device_owner_${suffix}@test.local`,
-        profile: { create: { handle: `devowner${suffix}`, displayName: "Owner" } },
+        profile: {
+          create: {
+            handle: `devowner${suffix}`,
+            displayName: "Owner",
+            defaultVisibility: "public",
+          },
+        },
       },
     });
     ownerId = owner.id;
@@ -40,9 +52,25 @@ describe("device tokens", () => {
 
   afterAll(async () => {
     if (!prisma) return;
+    await prisma.devicePairing.deleteMany({
+      where: {
+        OR: [
+          { claimedByOwnerId: { in: [ownerId, otherId] } },
+          { codeHash: { in: pairingCodeHashes } },
+          { pollHandleHash: { in: pairingHandleHashes } },
+        ],
+      },
+    });
     await prisma.user.deleteMany({ where: { id: { in: [ownerId, otherId] } } });
     await prisma.$disconnect();
   });
+
+  async function startTrackedPairing() {
+    const pairing = await pairingRepo.startPairing();
+    pairingCodeHashes.push(pairingHelpers.hashCode(pairing.code));
+    pairingHandleHashes.push(pairingHelpers.hashHandle(pairing.pollHandle));
+    return pairing;
+  }
 
   it("stores a hash, returns plaintext once, and resolves active keys only", async () => {
     const { plaintext, token } = await repo.createDeviceToken(
@@ -127,5 +155,124 @@ describe("device tokens", () => {
     });
     expect(second.flightId).toBe(first.flightId);
     expect(second.deduped).toBe(true);
+  });
+
+  it("runs the full pairing state machine and delivers the token once", async () => {
+    const pairing = await startTrackedPairing();
+
+    expect(await pairingRepo.pollPairing(pairing.pollHandle)).toEqual({
+      status: "pending",
+    });
+    expect(await pairingRepo.claimPairing(ownerId, "WRONG1", "Wrong")).toEqual({
+      ok: false,
+      error: "invalid_or_expired",
+    });
+
+    const claimed = await pairingRepo.claimPairing(
+      ownerId,
+      ` ${pairing.code.slice(0, 3).toLowerCase()}-${pairing.code.slice(3)} `,
+      "Cockpit Leaf",
+    );
+    expect(claimed.ok).toBe(true);
+
+    const storedPairing = await prisma.devicePairing.findUnique({
+      where: { codeHash: pairingHelpers.hashCode(pairing.code) },
+      select: {
+        status: true,
+        claimedByOwnerId: true,
+        deviceTokenId: true,
+        tokenPlaintext: true,
+        label: true,
+      },
+    });
+    expect(storedPairing).toMatchObject({
+      status: "claimed",
+      claimedByOwnerId: ownerId,
+      label: "Cockpit Leaf",
+    });
+    expect(storedPairing?.deviceTokenId).toBeTruthy();
+    expect(storedPairing?.tokenPlaintext).toMatch(/^llk_/);
+
+    const token = await prisma.deviceToken.findUnique({
+      where: { id: storedPairing?.deviceTokenId ?? "" },
+      select: { ownerId: true, label: true },
+    });
+    expect(token).toEqual({ ownerId, label: "Cockpit Leaf" });
+
+    const firstPoll = await pairingRepo.pollPairing(pairing.pollHandle);
+    expect(firstPoll.status).toBe("claimed");
+    if (firstPoll.status !== "claimed") throw new Error("Expected claimed poll");
+    expect(firstPoll.token).toMatch(/^llk_/);
+    expect(await repo.resolveDeviceTokenOwner(firstPoll.token)).toEqual({
+      ownerId,
+      tokenId: storedPairing?.deviceTokenId,
+    });
+
+    const consumedPairing = await prisma.devicePairing.findUnique({
+      where: { codeHash: pairingHelpers.hashCode(pairing.code) },
+      select: { status: true, tokenPlaintext: true },
+    });
+    expect(consumedPairing).toEqual({
+      status: "consumed",
+      tokenPlaintext: null,
+    });
+
+    expect(await pairingRepo.pollPairing(pairing.pollHandle)).toEqual({
+      status: "consumed",
+    });
+  });
+
+  it("does not claim expired codes or report unknown handles as claimed", async () => {
+    const expiredCode = `EXPIRED${suffix}`;
+    const expiredHandle = `expired-${suffix}`;
+    pairingCodeHashes.push(pairingHelpers.hashCode(expiredCode));
+    pairingHandleHashes.push(pairingHelpers.hashHandle(expiredHandle));
+    await prisma.devicePairing.create({
+      data: {
+        codeHash: pairingHelpers.hashCode(expiredCode),
+        pollHandleHash: pairingHelpers.hashHandle(expiredHandle),
+        status: "pending",
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    expect(await pairingRepo.claimPairing(ownerId, expiredCode, "Expired")).toEqual({
+      ok: false,
+      error: "invalid_or_expired",
+    });
+    expect(await pairingRepo.pollPairing(`missing-${suffix}`)).not.toMatchObject({
+      status: "claimed",
+    });
+  });
+
+  it("uses a paired token to ingest private device-pushed flights for the owner", async () => {
+    const pairing = await startTrackedPairing();
+    const claimed = await pairingRepo.claimPairing(ownerId, pairing.code, "Wing pod");
+    expect(claimed.ok).toBe(true);
+
+    const polled = await pairingRepo.pollPairing(pairing.pollHandle);
+    expect(polled.status).toBe("claimed");
+    if (polled.status !== "claimed") throw new Error("Expected claimed poll");
+
+    const resolved = await repo.resolveDeviceTokenOwner(polled.token);
+    expect(resolved?.ownerId).toBe(ownerId);
+
+    const { igc } = makeRealisticFlight();
+    const bytes = new TextEncoder().encode(`${igc}LTESTPAIR:${suffix}\n`);
+    const result = await ingestFlight({
+      ownerId: resolved?.ownerId ?? "",
+      source: "device_push",
+      bytes,
+    });
+
+    const flight = await prisma.flight.findUnique({
+      where: { id: result.flightId },
+      select: { ownerId: true, source: true, visibility: true },
+    });
+    expect(flight).toEqual({
+      ownerId,
+      source: "device_push",
+      visibility: "private",
+    });
   });
 });

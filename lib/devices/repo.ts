@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { generateDeviceKey, hashDeviceKey } from "./token";
 
+type DeviceTokenDb = {
+  deviceToken: {
+    create: typeof prisma.deviceToken.create;
+  };
+};
+
 const deviceTokenSelect = {
   id: true,
   label: true,
@@ -23,9 +29,10 @@ export async function createDeviceToken(
   ownerId: string,
   label: string,
   deviceId?: string | null,
+  db: DeviceTokenDb = prisma,
 ): Promise<{ plaintext: string; token: DeviceTokenListItem }> {
   const { plaintext, hash } = generateDeviceKey();
-  const token = await prisma.deviceToken.create({
+  const token = await db.deviceToken.create({
     data: {
       ownerId,
       tokenHash: hash,

@@ -1,0 +1,54 @@
+# Leaf Log — device HTTP ingress proxy
+#
+# The Leaf vario cannot do TLS without stalling its background services, so it
+# speaks PLAIN HTTP. Railway force-redirects HTTP->HTTPS at its edge, so the
+# device can't hit the app directly. This tiny Caddy proxy is the device's HTTP
+# front door: it accepts plaintext HTTP from the Leaf and forwards ONLY the
+# device endpoints to the real app over HTTPS (server-to-server TLS is fine).
+#
+# Everything else (the website, the session-authed pairing CLAIM, etc.) stays
+# HTTPS-only on the main domain and is NOT reachable through this proxy.
+#
+# Run this on a host that can serve plain HTTP on :80 (a small VPS / any Docker
+# host) — NOT on Railway (which forces HTTPS). See README.md.
+
+{
+	# The Leaf talks plain HTTP to us; do not auto-provision TLS or redirect.
+	auto_https off
+	# Don't leak the proxy software version.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# Bind to the device hostname on port 80 only. Point ingest.leaflog.norcalflight.com
+# (A record) at this host. Use `:80` instead of the hostname if you want it to
+# answer on any Host header (e.g. for IP-based testing).
+http://ingest.leaflog.norcalflight.com:80 {
+	# Only the three device endpoints are exposed over HTTP.
+	@device path /api/ingest /api/devices/pair/start /api/devices/pair/poll
+
+	handle @device {
+		reverse_proxy https://leaflog.norcalflight.com {
+			header_up Host leaflog.norcalflight.com
+			# Preserve the real client IP for the app's logging / future rate limits.
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto http
+		}
+	}
+
+	# A trivial liveness check for the device to probe the proxy itself.
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Everything else is not available over the HTTP door.
+	handle {
+		respond "Not found" 404
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
