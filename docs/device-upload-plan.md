@@ -27,10 +27,10 @@ session.
                                                  ingestFlight({ source:'device_push' })
 ```
 
-The device calls `pair/start`, `pair/poll`, and `/api/ingest` over plain HTTP via
-the Leaf Log reverse proxy. TLS termination and any device-network routing live in
-the proxy layer; the app still treats the device token as a bearer secret and keeps
-device-pushed flights private by default.
+The device calls `pair/start`, `pair/poll`, and `/api/ingest` directly over **HTTPS**
+on the main domain (the Leaf firmware does TLS). No reverse proxy is involved. The
+device token is a scoped, revocable bearer secret; device pushes honor the owner's
+default visibility, the same as web uploads.
 
 Two facts that make this tractable:
 
@@ -95,10 +95,10 @@ hashes. Tokens are stored hashed server-side; users can name/revoke devices.
 
 ### Privacy
 
-Device-pushed flights are forced **private** in `lib/ingest/ingest-flight.ts`, even
-when the owner's default visibility is public. The device credential may traverse
-plain HTTP between the Leaf and reverse proxy, so a stolen token must never be able
-to publish flights publicly under the pilot's identity.
+Device-pushed flights **honor the owner's default visibility** (private/friends/public),
+the same as web uploads — see `lib/ingest/ingest-flight.ts`. The device authenticates
+over HTTPS with a scoped, revocable token, so there's no plaintext-transport reason to
+special-case the visibility.
 
 ### Testing (no firmware needed)
 
