@@ -245,7 +245,7 @@ describe("device tokens", () => {
     });
   });
 
-  it("uses a paired token to ingest private device-pushed flights for the owner", async () => {
+  it("uses a paired token to ingest device-pushed flights honoring the owner's default visibility", async () => {
     const pairing = await startTrackedPairing();
     const claimed = await pairingRepo.claimPairing(ownerId, pairing.code, "Wing pod");
     expect(claimed.ok).toBe(true);
@@ -269,10 +269,11 @@ describe("device tokens", () => {
       where: { id: result.flightId },
       select: { ownerId: true, source: true, visibility: true },
     });
+    // The test owner's defaultVisibility is "public" — device pushes now honor it.
     expect(flight).toEqual({
       ownerId,
       source: "device_push",
-      visibility: "private",
+      visibility: "public",
     });
   });
 });
