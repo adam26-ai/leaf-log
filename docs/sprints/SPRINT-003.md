@@ -342,30 +342,52 @@ profile + feed reads), `app/[handle]/page.tsx`, `app/flights/[id]/page.tsx` +
 
 ## Definition of Done
 
-- [ ] Send/accept/decline/cancel/remove friends works; reverse-pending auto-accepts;
+> **Status: complete.** Shipped in PRs #21–#24 (+ #25 What's New, #26 friend search)
+> and deployed to production. Boxes below were re-verified against `main` on
+> 2026-07-27; the code references after each item are where the behaviour lives.
+
+- [x] Send/accept/decline/cancel/remove friends works; reverse-pending auto-accepts;
       self-request impossible; requests inbox at `/friends`; friend count + state on
       profiles; friends list + counts public.
-- [ ] `"friends only"` works end-to-end and is enforced **only** in
+      *(`lib/social/friends.ts`, `app/friends/`, `app/[handle]/friend-action.ts`)*
+- [x] `"friends only"` works end-to-end and is enforced **only** in
       `lib/flights/repo.ts`. The integration matrix proves: friend allowed; pending,
       stranger, anonymous denied; owner sees all incl. non-ready; **subresources**
       (track/replay/photos) match; removing a friend denies on next read.
-- [ ] Central `normalizeVisibility` + **runtime** allowlist used by settings,
+      *(`test/privacy.integration.test.ts`, `test/social.integration.test.ts`)*
+- [x] Central `normalizeVisibility` + **runtime** allowlist used by settings,
       onboarding, visibility action, and **ingest** (friends default persists);
       DB CHECK backstops present and the Prisma-v6 drift is documented.
-- [ ] Profile + feed render **dynamically per viewer / `no-store`**, never publicly
+      *(`lib/flights/visibility.ts` + `visibility.test.ts`, migration
+      `20260627121000_friends_visibility_checks`)*
+- [x] Profile + feed render **dynamically per viewer / `no-store`**, never publicly
       cached; profile stats computed from the repo-filtered list.
-- [ ] Kudos toggle + count + who-kudosed work, visibility-gated; **no self-kudos**;
+      *(`export const dynamic = "force-dynamic"` in `app/[handle]/page.tsx` and
+      `app/feed/page.tsx`; stats from `listProfileFlightsForViewer`)*
+- [x] Kudos toggle + count + who-kudosed work, visibility-gated; **no self-kudos**;
       counts computed (no denormalized column).
-- [ ] `/feed` shows only visible, ready flights from accepted friends, paginated
+      *(`lib/social/kudos.ts` — every entry point goes through `getFlightForViewer`
+      first and `toggleKudo` rejects `flight.ownerId === viewerId`)*
+- [x] `/feed` shows only visible, ready flights from accepted friends, paginated
       (stable keyset, `id` tiebreaker), excluding own.
-- [ ] No unscoped flight **display read** outside `repo.ts` — audited allowlist
+      *(`lib/flights/repo.ts` `decodeFeedCursor`/`feedCursorWhere`,
+      `test/feed.integration.test.ts`)*
+- [x] No unscoped flight **display read** outside `repo.ts` — audited allowlist
       (owner-scoped writes like photo POST/DELETE are permitted); derived tables
       (Kudo, track, photos) only returned after the parent flight is authorized.
-- [ ] **CI provisions Postgres so the privacy matrix actually runs** (not skipped).
-- [ ] All gates green: `build`, `test`, `typecheck`, `lint`, `e2e` (the happy path).
-- [ ] Comments, notifications, block/mute, "fly together" not shipped; "fly together"
+      *(Audit re-run 2026-07-27: the only `prisma.flight.*` calls outside `repo.ts`
+      are owner-scoped writes — visibility/delete actions, photo POST/DELETE — plus
+      the ingest path, which creates rather than displays.)*
+- [x] **CI provisions Postgres so the privacy matrix actually runs** (not skipped).
+      *(`.github/workflows/ci.yml` — `postgres:16-alpine` service + a `DATABASE_URL`
+      env, in both the gates and e2e jobs, so the suites cannot silently auto-skip.)*
+- [x] All gates green: `build`, `test`, `typecheck`, `lint`, `e2e` (the happy path).
+      *(CI `gates` + `e2e (Playwright)` jobs, green on every merge through #31.)*
+- [x] Comments, notifications, block/mute, "fly together" not shipped; "fly together"
       remains a documented sketch.
-- [ ] `/qa-prompt` handed to the validator partner.
+- [x] `/qa-prompt` handed to the validator partner.
+      *(`docs/qa-prompts/QA-PROMPT-2026-06-27-social.md`, plus the follow-up
+      `QA-PROMPT-2026-06-29-search-3d.md` covering friend search.)*
 
 ## Risks
 
