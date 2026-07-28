@@ -2,21 +2,6 @@
 
 Track potential feature ideas for future sprints.
 
-## Leaf Device Auto-Upload (pairing + ingest API)
-- **Area:** Ingestion / device integration / Account settings
-- **Description:** Let a Leaf vario push recorded IGC flights straight into the owner's Leaf
-  Log account — no manual export/upload. A short pairing-code flow authenticates the device
-  (the vario can't do magic-link login), then flights arrive automatically via a token-authed
-  ingest API. This is the headline "seamless Leaf auto-upload" hook from VISION.md.
-- **Priority:** High
-- **Notes:** Full leaf-log-side plan in `docs/device-upload-plan.md` (the firmware side —
-  on-device config + upload — is planned in the `leaf` repo). Reuses the existing
-  source-agnostic `ingestFlight({ source: 'device_push' })` seam, so parse/derive/dedupe/
-  persist already work. Adds Prisma models `DevicePairing` + `DeviceToken`; routes
-  `/api/devices/pair/{start,poll}` and `POST /api/ingest` (Bearer); a Settings → Devices
-  UI to claim/name/revoke. Pairing codes are short-lived/single-use/rate-limited; tokens
-  stored hashed. Fully testable without firmware via curl.
-
 ## User-Defined Takeoff Sites (public/private, auto-associate)
 - **Area:** Sites / reverse-lookup / flight detail + onboarding
 - **Description:** Let a pilot name a new site from a flight's detected takeoff
@@ -63,18 +48,18 @@ Track potential feature ideas for future sprints.
   owner-only `addPhotos({ flightId, … })` core per flight (no change to the write seam). New UI at
   `/logbook` or `/upload` (multi-flight). Surfaces the just-added unpinned/unassigned reasons.
 
-## Profile "Friends Only" Visibility + Leaf-Device API Token
-- **Area:** Account / profile / settings (follow-ons deferred from the shipped Profile Settings Page)
-- **Description:** The two pieces of the original Profile Settings idea that were **not** shipped in
-  PR #14: a **"friends only"** flight-visibility tier, and a **profile API token** for Leaf device
-  auto-upload (generate / name / revoke).
-- **Priority:** Medium
-- **Notes:** **"Friends only" is a new visibility tier** that needs a **social/friends model**
-  (follow or mutual-friend relationships) and a viewer-scoped check in `lib/flights/repo.ts` beyond
-  today's public/private — ship the social feature first, then add the tier. **API token:** overlaps
-  with [[Leaf Device Auto-Upload]] (`DeviceToken` + pairing) — `/settings` is the natural home for
-  generate/name/revoke device tokens. (Avatar upload + cropper and default public/private privacy
-  already shipped in PR #14 — see Shipped.)
+## Rate-Limit the Device Endpoints (pair/start, pair/poll, ingest)
+- **Area:** Device integration / abuse hardening
+- **Description:** The three unauthenticated-or-token-authed device endpoints have **no rate
+  limiting** — a documented follow-up from PR #28 that never got tracked. `pair/start` mints a
+  pairing code per call, `pair/poll` is a guessable-handle polling loop, and `/api/ingest` accepts
+  IGC bodies; all three are open to hammering.
+- **Priority:** Medium — worth closing before the firmware ships and real devices are in the field.
+- **Notes:** Codes and handles are already short-lived, single-use, and sha256-hashed, so the
+  exposure is brute-force/DoS rather than direct compromise. Per-endpoint limits keyed on IP (and
+  on token for `/api/ingest`) are the shape; a small in-process limiter is probably enough at
+  current scale, but note Railway may run more than one instance, so a shared store (or accepting
+  per-instance limits) is the decision to make.
 
 ## Pending Friend-Request Badge + Feed Indicator
 - **Area:** Social / navigation (account menu, feed)
@@ -106,9 +91,9 @@ Completed ideas (see git history / PRs for detail):
 - Profile Settings Page — `/settings` to edit handle / display name / bio, upload an avatar
   with a **pan & zoom cropper** (circular mask; 512²/128² JPEGs, EXIF stripped; HEIC falls back
   to a smart center-crop), and set **default flight privacy** (public/private) that new uploads
-  inherit. Also removed the redundant header "Upload flight" button. *Deferred: "friends only"
-  visibility (needs a social model) and the Leaf-device API token — see [[Leaf Device Auto-Upload]].*
-  (PR #14)
+  inherit. Also removed the redundant header "Upload flight" button. *Both follow-ons deferred here
+  have since shipped: "friends only" visibility with SPRINT-003, and the Leaf-device API token as
+  Settings → Devices with the device auto-upload work.* (PR #14)
 - "Keep me signed in?" after magic-link login — a `/stay-signed-in` interstitial offering a
   1-month persistent session vs. a session-only cookie; signed-in pilots are redirected from
   `/` to `/logbook` (PR #17)
@@ -118,3 +103,17 @@ Completed ideas (see git history / PRs for detail):
   feed, and friend search/autocomplete (SPRINT-003, PRs #21-26)
 - 3D flight-page polish — "2D"/"3D" toggle labels, a ground-shadow footprint toggle (track draped
   on the terrain), and a Chase camera mode (Follow/Chase/Fixed) with damped heading tracking
+  (PR #27)
+- Leaf Device Auto-Upload — the leaf-log side of the headline VISION.md hook. A pairing-code flow
+  (`POST /api/devices/pair/{start,poll}`, codes and poll handles sha256-hashed, 10-min TTL,
+  single-use and claimed atomically), a token-authed `POST /api/ingest` that is a thin caller of the
+  existing `ingestFlight({ source: "device_push" })` seam, and a **Settings → Devices** page to
+  claim / name / revoke device keys. The browser never displays a token — the device receives it
+  exactly once from `pair/poll`. Later refined to **direct HTTPS** (the firmware does TLS, so the
+  Caddy front door was dropped) with device pushes honoring the owner's default visibility like web
+  uploads (PR #29), then made one-tap via an **`/activate?code=…`** landing page the Leaf can show
+  as a QR or link — the code survives the magic-link round-trip, and manual code entry remains as a
+  fallback (PR #31). Contract for the firmware: `docs/device-api-contract.md`.
+  (PRs #28, #29, #31) — *this also closes the deferred Leaf-device API token from PR #14.*
+  Announced on `/whats-new` (2026-07-27) with an explicit "needs a firmware update" caveat — the
+  `leaf` firmware side is still at planning status, so the server half is live and waiting.
