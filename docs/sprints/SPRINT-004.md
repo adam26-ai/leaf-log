@@ -156,14 +156,19 @@ ALTER TABLE "Site" ADD CONSTRAINT "site_kind_check"
   CHECK ("kind" IN ('takeoff','landing','both','unknown'));
 ALTER TABLE "Site" ADD CONSTRAINT "site_source_check"
   CHECK ("source" IN ('manual','user'));
--- A cached name always implies a live linked site OR the historical-fallback case.
-ALTER TABLE "Flight" ADD CONSTRAINT "flight_takeoff_site_name_check"
-  CHECK ("takeoffSiteName" IS NULL OR "takeoffSiteId" IS NOT NULL
-         OR "takeoffSiteName" IS NOT NULL);  -- history fallback stays legal
 ```
 
-No `Flight` data fix-up is needed: every site that exists today is curated and becomes
-public, so every cached name already satisfies the new invariant.
+**No `Flight`-side CHECK is added for the cached-name columns**, on either endpoint. All
+four `(siteId, name)` combinations are legitimately reachable — no site yet (`NULL, NULL`),
+a deleted site's historical fallback (`NULL, name`), a linked private site (`id, NULL`,
+since only public sites get a cached name), and a linked public site (`id, name`) — so no
+single-row CHECK can distinguish a valid from an invalid state without an extra flag the
+schema doesn't have. (An earlier draft of this plan carried a `flight_takeoff_site_name_check`
+that read as if it enforced this; it was a tautology — `X IS NULL OR X IS NOT NULL` is
+always true — and has been dropped rather than fixed, since there's nothing correct to
+enforce here at the DB layer.) The real invariant — *the cached name is written only by
+`lib/sites/associate.ts`* — is enforced at the application layer by the audited allowlist
+test in PR2, not by a database CHECK.
 
 ### Site visibility and scoped lookup
 
@@ -314,8 +319,13 @@ shows **consequence copy before the save** ("Public shares this name and locatio
 every pilot"), the creator undo is in committed scope, and a daily create cap stays.
 
 **Undo.** The creator may unpublish or delete their own site while
-`count(flights WHERE siteId = s.id AND ownerId <> creator) === 0` — one guard, no new
-authorization concept. Once another pilot's flight depends on it, the site is community
+`count(flights WHERE (takeoffSiteId = s.id OR landingSiteId = s.id) AND ownerId <> creator)
+=== 0` — one guard, no new authorization concept. **Both columns, not just
+`takeoffSiteId`:** `Flight` has no unified `siteId` field, and a site can be referenced
+through either endpoint (a landing-only reference is exactly as real as a takeoff one, per
+the "opposite-endpoint reuse widens `kind` to `both`" rule above) — checking only one column
+would let a site still referenced through the other be unpublished or deleted undetected.
+Once another pilot's flight depends on it via either endpoint, the site is community
 property and the affordance disappears; `scripts/admin-sites.ts` is the operator remedy
 (rename / force-private / merge). **Raw `prisma.site.delete` is forbidden** — it would
 leave orphan cached names; deletion must go through the helper.
@@ -403,7 +413,11 @@ Four ordered PRs. Each ships its own migration where needed and passes all five 
   `reassociateOwnFlights` (capped at 200, cap logged).
 - Server action + `components/flight/name-site-dialog.tsx`; owner-only affordances on the
   takeoff headline **and the new landing line**; consequence copy with Public preselected;
-  `lib/geo/bearing.ts`.
+  candidate bearings computed with the existing, already-unit-tested `bearingDeg` from
+  `lib/igc/interpolate.ts` — **no new bearing implementation.** (A prior draft of this plan
+  proposed a separate `lib/geo/bearing.ts`; that would have given the app two independent
+  great-circle bearing calculations with a real risk of divergence — rounding, 0°/360°
+  wrap-around — between the replay heading math and the site-suggestion UI.)
 - Structured log line on every create / bind.
 - Tests: create public and private; every validation rejection; dedup surfaces candidates
   and reuse binds without inserting; **opposite-endpoint reuse widens `kind` to `both`**;
@@ -427,7 +441,7 @@ Four ordered PRs. Each ships its own migration where needed and passes all five 
 
 **New:** `lib/sites/geo.ts` (+test), `lib/sites/visibility.ts` (+test),
 `lib/sites/name.ts` (+test), `lib/sites/repo.ts`, `lib/sites/associate.ts`,
-`lib/geo/bearing.ts` (+test), `components/flight/name-site-dialog.tsx`,
+`components/flight/name-site-dialog.tsx`,
 `app/flights/[id]/site-action.ts`, `scripts/admin-sites.ts`,
 `test/sites.integration.test.ts`, `test/e2e/sites.spec.ts`,
 `prisma/migrations/*_user_sites/`.
