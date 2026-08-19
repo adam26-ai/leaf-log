@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Ban, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { revokeDeviceKeyAction } from "@/app/settings/devices/actions";
+import { formatDuration } from "@/lib/flights/format";
 
 export interface DeviceTokenView {
   id: string;
@@ -42,8 +43,8 @@ function flightSummary(flight: NonNullable<DeviceTokenView["lastFlight"]>): stri
         new Date(when),
       )
     : "Undated flight";
-  const minutes = flight.durationS ? Math.max(1, Math.round(flight.durationS / 60)) : null;
-  return [date, flight.takeoffSiteName, minutes ? `${minutes} min` : null]
+  const duration = flight.durationS == null ? null : formatDuration(flight.durationS);
+  return [date, flight.takeoffSiteName, duration]
     .filter(Boolean)
     .join(" · ");
 }

@@ -19,16 +19,7 @@ const deviceTokenSelect = {
   createdAt: true,
   lastUsedAt: true,
   revokedAt: true,
-  lastFlight: {
-    select: {
-      id: true,
-      status: true,
-      flightDate: true,
-      takeoffAt: true,
-      takeoffSiteName: true,
-      durationS: true,
-    },
-  },
+  lastFlightId: true,
 } as const;
 
 export interface DeviceTokenListItem {
@@ -38,14 +29,7 @@ export interface DeviceTokenListItem {
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
-  lastFlight: {
-    id: string;
-    status: string;
-    flightDate: Date | null;
-    takeoffAt: Date | null;
-    takeoffSiteName: string | null;
-    durationS: number | null;
-  } | null;
+  lastFlightId: string | null;
 }
 
 export async function createDeviceToken(

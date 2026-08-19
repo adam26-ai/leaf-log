@@ -19,6 +19,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing poll handle" }, { status: 400 });
   }
 
-  const result = await pollPairing(pollHandle);
-  return NextResponse.json(result);
+  try {
+    const result = await pollPairing(pollHandle);
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json(
+      { error: "Could not check pairing status" },
+      { status: 500 },
+    );
+  }
 }

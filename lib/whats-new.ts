@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-19",
+    title: "See what your Leaf uploaded",
+    body: "Connected devices now show their latest uploaded flight, with a direct link from Settings → Devices. Pairing also remembers the Leaf Log account shown on your vario, and reconnecting or unlinking cleans up the old device access automatically.",
+  },
+  {
     date: "2026-07-27",
     title: "Your Leaf uploads its own flights",
     body: "Connect your Leaf vario once and your flights land in your logbook on their own — no SD card, no exporting, no dragging files into a browser. Your Leaf shows a code you can scan or tap, you confirm it's yours, and that's it. Manage your connected varios (and disconnect one any time) under Settings → Devices. This needs a Leaf firmware update that's still on its way — once your vario has it, everything here is ready and waiting.",

@@ -4,6 +4,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { DeviceKeys } from "@/components/settings/device-keys";
 import { DevicePairingForm } from "@/components/settings/device-pairing-form";
 import { listDeviceTokens } from "@/lib/devices/repo";
+import { listOwnFlightsByIds } from "@/lib/flights/repo";
 import { requireProfile } from "@/lib/profile";
 
 export const metadata = { title: "Devices — Leaf Log" };
@@ -11,6 +12,13 @@ export const metadata = { title: "Devices — Leaf Log" };
 export default async function DevicesPage() {
   const profile = await requireProfile();
   const tokens = await listDeviceTokens(profile.id);
+  const latestFlights = await listOwnFlightsByIds(
+    profile.id,
+    tokens.flatMap((token) => (token.lastFlightId ? [token.lastFlightId] : [])),
+  );
+  const latestFlightById = new Map(
+    latestFlights.map((flight) => [flight.id, flight]),
+  );
 
   return (
     <div className="flex flex-1 flex-col">
@@ -25,21 +33,29 @@ export default async function DevicesPage() {
         <Card className="flex flex-col gap-8 p-6">
           <DevicePairingForm />
           <DeviceKeys
-            tokens={tokens.map((token) => ({
-              id: token.id,
-              label: token.label,
-              deviceId: token.deviceId,
-              createdAt: token.createdAt.toISOString(),
-              lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
-              revokedAt: token.revokedAt?.toISOString() ?? null,
-              lastFlight: token.lastFlight
-                ? {
-                    ...token.lastFlight,
-                    flightDate: token.lastFlight.flightDate?.toISOString() ?? null,
-                    takeoffAt: token.lastFlight.takeoffAt?.toISOString() ?? null,
-                  }
-                : null,
-            }))}
+            tokens={tokens.map((token) => {
+              const lastFlight = token.lastFlightId
+                ? latestFlightById.get(token.lastFlightId)
+                : null;
+              return {
+                id: token.id,
+                label: token.label,
+                deviceId: token.deviceId,
+                createdAt: token.createdAt.toISOString(),
+                lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
+                revokedAt: token.revokedAt?.toISOString() ?? null,
+                lastFlight: lastFlight
+                  ? {
+                      id: lastFlight.id,
+                      status: lastFlight.status,
+                      flightDate: lastFlight.flightDate?.toISOString() ?? null,
+                      takeoffAt: lastFlight.takeoffAt?.toISOString() ?? null,
+                      takeoffSiteName: lastFlight.takeoffSiteName,
+                      durationS: lastFlight.durationS,
+                    }
+                  : null,
+              };
+            })}
           />
         </Card>
       </main>

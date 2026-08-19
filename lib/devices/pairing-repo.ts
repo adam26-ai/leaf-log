@@ -36,6 +36,20 @@ function cleanLabel(label?: string | null): string {
   return trimmed || DEFAULT_LABEL;
 }
 
+async function consumePairing(id: string): Promise<boolean> {
+  const consumed = await prisma.devicePairing.updateMany({
+    where: {
+      id,
+      status: "claimed",
+    },
+    data: {
+      status: "consumed",
+      tokenPlaintext: null,
+    },
+  });
+  return consumed.count === 1;
+}
+
 export async function startPairing(): Promise<{
   code: string;
   pollHandle: string;
@@ -151,28 +165,25 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
 
   if (pairing.status === "claimed") {
     const token = pairing.tokenPlaintext;
-    if (!token) return { status: "consumed" };
+    if (!token) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
 
-    if (!pairing.claimedByOwnerId) return { status: "consumed" };
+    if (!pairing.claimedByOwnerId) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
     const account = await prisma.profile.findUnique({
       where: { id: pairing.claimedByOwnerId },
       select: { handle: true, displayName: true },
     });
-    if (!account) throw new Error("Claimed pairing owner could not be loaded");
+    if (!account) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
 
-    const consumed = await prisma.devicePairing.updateMany({
-      where: {
-        id: pairing.id,
-        status: "claimed",
-        tokenPlaintext: { not: null },
-      },
-      data: {
-        status: "consumed",
-        tokenPlaintext: null,
-      },
-    });
-
-    if (consumed.count !== 1) return { status: "consumed" };
+    if (!(await consumePairing(pairing.id))) return { status: "consumed" };
     return { status: "claimed", token, account };
   }
 
