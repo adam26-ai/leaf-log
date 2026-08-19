@@ -70,7 +70,9 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
 
   await page.goto("/feed");
   await expect(page.getByText(`@${bHandle}`)).toBeVisible();
-  await expect(page.getByRole("link", { name: /mussel rock/i })).toBeVisible();
+  // Sites are fully community-driven (no curated seed), so the shared
+  // fixture's flight reads "Unknown site" until someone names it.
+  await expect(page.getByRole("link", { name: /unknown site/i })).toBeVisible();
 
   await page.goto(flightUrl);
   await expect(page.getByText("Airtime")).toBeVisible();

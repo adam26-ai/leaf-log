@@ -107,3 +107,11 @@ Completed ideas (see git history / PRs for detail):
   delete) their own site while no other pilot's flight depends on it; once one does, it's
   community property and `scripts/admin-sites.ts` (rename / force-private / merge) is the operator
   remedy — no moderation queue in v1. (SPRINT-004, PRs #36-39)
+- Removed the curated site seed — sites are now **fully community-driven**. `prisma/seed.ts` no
+  longer creates the 12 curated launches (Mussel Rock, Ed Levin, etc.); every flight starts as
+  "Unknown site" until a pilot names it via SPRINT-004's naming flow. `prisma/seed.ts` stays as a
+  no-op entry point for any future non-site seed data; `Site.source`/`license` keep their
+  `manual`/`"curated"` schema values (unused today) for a possible future gazetteer import.
+  Updated the tests/fixtures that assumed curated data existed (the E2E happy-path and social
+  specs, and `lib/sites/lookup.test.ts`'s curated-launch tests, now use dynamically-created
+  community sites instead). (PR #40)

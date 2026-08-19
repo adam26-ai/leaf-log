@@ -38,9 +38,9 @@ cp .env.example .env.local
 #   - set DATABASE_URL to the local Postgres (already correct in the example)
 #   - set AUTH_SECRET to any 32+ char string
 
-# 3. Apply migrations + seed sites.
+# 3. Apply migrations. (No site seed — sites are fully community-driven.)
 pnpm db:migrate      # prisma migrate dev
-pnpm db:seed         # 12 curated sites
+pnpm db:seed         # currently a no-op; kept as the seed entry point
 
 # 4. Run the app.
 pnpm dev             # http://localhost:3000
@@ -64,10 +64,13 @@ when `DATABASE_URL` is unset.
 ## Sites data
 
 Named-site reverse lookup is a bounding-box + haversine search over the `Site`
-table. M1 ships a **curated manual seed** (`prisma/seed.ts`) — the documented
-Plan B while ParaglidingEarth bulk-redistribution terms are unconfirmed. When a
-licensed dataset is cleared, import it with `source`/`sourceUrl`/`license` set and
-run `scripts/backfill-sites.ts` to name existing flights.
+table. Sites are **fully community-driven** (SPRINT-004) — a pilot names their
+own unmatched takeoff/landing as public or private directly on the flight page;
+there is no curated seed. `prisma/seed.ts` is kept as a no-op entry point for
+any future non-site seed data. `Site.source`/`license` still support a `manual`/
+`"curated"` value in the schema (unused today) in case a licensed gazetteer
+import is ever added later — `scripts/backfill-sites.ts` is the tool that would
+retroactively name existing flights against it.
 
 ## Deployment (Railway)
 
@@ -79,8 +82,8 @@ Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
 3. Set env vars: `DATABASE_URL` (from the Postgres plugin), `AUTH_SECRET`,
    `AUTH_URL`/`NEXTAUTH_URL` (your Railway URL), `AUTH_EMAIL_FROM`,
    `RESEND_API_KEY`, and optionally `NEXT_PUBLIC_MAPTILER_KEY`.
-4. Deploy — `prisma migrate deploy` runs automatically before each release. Seed
-   sites once with `pnpm db:seed` against the production `DATABASE_URL`.
+4. Deploy — `prisma migrate deploy` runs automatically before each release. No
+   site seeding step — sites are fully community-driven.
 
 ## Project structure
 
