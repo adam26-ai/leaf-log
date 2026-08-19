@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { createDeviceToken } from "./repo";
+import { createDeviceToken, type DeviceAccountIdentity } from "./repo";
 import {
   PAIRING_TTL_MS,
   generatePairingCode,
@@ -19,7 +19,7 @@ export type ClaimPairingResult =
 
 export type PollPairingResult =
   | { status: "pending" }
-  | { status: "claimed"; token: string }
+  | { status: "claimed"; token: string; account: DeviceAccountIdentity }
   | { status: "consumed" }
   | { status: "expired" }
   | { status: "unknown" };
@@ -34,6 +34,20 @@ function isUniqueViolation(error: unknown): boolean {
 function cleanLabel(label?: string | null): string {
   const trimmed = label?.trim();
   return trimmed || DEFAULT_LABEL;
+}
+
+async function consumePairing(id: string): Promise<boolean> {
+  const consumed = await prisma.devicePairing.updateMany({
+    where: {
+      id,
+      status: "claimed",
+    },
+    data: {
+      status: "consumed",
+      tokenPlaintext: null,
+    },
+  });
+  return consumed.count === 1;
 }
 
 export async function startPairing(): Promise<{
@@ -133,6 +147,7 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
       status: true,
       tokenPlaintext: true,
       expiresAt: true,
+      claimedByOwnerId: true,
     },
   });
 
@@ -150,22 +165,26 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
 
   if (pairing.status === "claimed") {
     const token = pairing.tokenPlaintext;
-    if (!token) return { status: "consumed" };
+    if (!token) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
 
-    const consumed = await prisma.devicePairing.updateMany({
-      where: {
-        id: pairing.id,
-        status: "claimed",
-        tokenPlaintext: { not: null },
-      },
-      data: {
-        status: "consumed",
-        tokenPlaintext: null,
-      },
+    if (!pairing.claimedByOwnerId) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
+    const account = await prisma.profile.findUnique({
+      where: { id: pairing.claimedByOwnerId },
+      select: { handle: true, displayName: true },
     });
+    if (!account) {
+      await consumePairing(pairing.id);
+      return { status: "consumed" };
+    }
 
-    if (consumed.count !== 1) return { status: "consumed" };
-    return { status: "claimed", token };
+    if (!(await consumePairing(pairing.id))) return { status: "consumed" };
+    return { status: "claimed", token, account };
   }
 
   return { status: "consumed" };

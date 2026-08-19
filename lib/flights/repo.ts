@@ -194,6 +194,18 @@ export function listOwnFlights(ownerId: string): Promise<FlightListItem[]> {
   });
 }
 
+/** Owner-scoped flight summaries for references stored outside the flight model. */
+export function listOwnFlightsByIds(
+  ownerId: string,
+  flightIds: string[],
+): Promise<FlightListItem[]> {
+  if (flightIds.length === 0) return Promise.resolve([]);
+  return prisma.flight.findMany({
+    where: { id: { in: flightIds }, ownerId },
+    select: LIST_SELECT,
+  });
+}
+
 /** A pilot's public ready flights. */
 export function listPublicFlights(ownerId: string): Promise<FlightListItem[]> {
   return listProfileFlightsForViewer(ownerId, null);
