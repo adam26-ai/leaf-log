@@ -911,4 +911,126 @@ describe("sites: read-path firewall", () => {
       expect(othersRow.takeoffSiteId).toBeNull();
     });
   });
+
+  // ---------------------------------------------------------------------
+  // PR4: creator undo (unpublish / delete), guarded by "no other pilot
+  // depends on this site."
+  // ---------------------------------------------------------------------
+  describe("creator undo — unpublish", () => {
+    it("unpublishes a site with no other pilot's flight attached", async () => {
+      const owner = await createPilot("undopub");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 50, takeoffLon: 50 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Undo Pub Site",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      const updated = await associate.unpublishOwnSite(site.id, owner);
+      expect(updated.visibility).toBe("private");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id); // still bound
+      expect(row.takeoffSiteName).toBeNull(); // cache stripped
+
+      // The owner still sees the name via the live resolver, cache or not.
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen?.takeoffSiteName).toBe("Undo Pub Site");
+    });
+
+    it("refuses to unpublish once another pilot's flight depends on it", async () => {
+      const owner = await createPilot("undoblocked");
+      const other = await createPilot("undoblockedother");
+      const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 51, takeoffLon: 51 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Undo Blocked Site",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      // Another pilot's flight now depends on it (via reuse).
+      const flightB = await createFlight({ ownerId: other, visibility: "public", takeoffLat: 51.0005, takeoffLon: 51.0005 });
+      await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightB.id,
+        ownerId: other,
+        endpoint: "takeoff",
+        mode: "reuse",
+        existingSiteId: site.id,
+      });
+
+      await expect(associate.unpublishOwnSite(site.id, owner)).rejects.toThrow(/depends on this site/);
+
+      const row = await prisma.site.findUniqueOrThrow({ where: { id: site.id } });
+      expect(row.visibility).toBe("public"); // unchanged
+    });
+
+    it("a non-owner cannot unpublish someone else's site", async () => {
+      const owner = await createPilot("undononowner");
+      const stranger = await createPilot("undononownerstr");
+      const site = await createSite({ lat: 52, lon: 52, visibility: "public", ownerId: owner });
+
+      await expect(associate.unpublishOwnSite(site.id, stranger)).rejects.toThrow();
+    });
+  });
+
+  describe("creator undo — delete", () => {
+    it("deletes a site with no other pilot's flight attached", async () => {
+      const owner = await createPilot("undodel");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 53, takeoffLon: 53 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Undo Delete Site",
+        visibility: "public",
+      });
+
+      await associate.deleteSite(site.id, owner);
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBeNull();
+      expect(row.takeoffSiteName).toBe("Undo Delete Site"); // historical fallback
+
+      const siteRow = await prisma.site.findUnique({ where: { id: site.id } });
+      expect(siteRow).toBeNull();
+    });
+
+    it("refuses to delete once another pilot's flight depends on it", async () => {
+      const owner = await createPilot("undodelblocked");
+      const other = await createPilot("undodelblockedother");
+      const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 54, takeoffLon: 54 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Undo Delete Blocked",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      const flightB = await createFlight({ ownerId: other, visibility: "public", takeoffLat: 54.0005, takeoffLon: 54.0005 });
+      await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightB.id,
+        ownerId: other,
+        endpoint: "takeoff",
+        mode: "reuse",
+        existingSiteId: site.id,
+      });
+
+      await expect(associate.deleteSite(site.id, owner)).rejects.toThrow(/depends on this site/);
+
+      const stillThere = await prisma.site.findUnique({ where: { id: site.id } });
+      expect(stillThere).not.toBeNull();
+    });
+  });
 });
