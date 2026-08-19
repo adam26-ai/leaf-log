@@ -92,6 +92,7 @@ describe("device tokens", () => {
     expect(await repo.resolveDeviceTokenOwner(plaintext)).toEqual({
       ownerId,
       tokenId: token.id,
+      account: { handle: `devowner${suffix}`, displayName: "Owner" },
     });
     expect(await repo.resolveDeviceTokenOwner("llk_garbage")).toBeNull();
 
@@ -106,26 +107,40 @@ describe("device tokens", () => {
     expect(await repo.resolveDeviceTokenOwner(plaintext)).toEqual({
       ownerId,
       tokenId: token.id,
+      account: { handle: `devowner${suffix}`, displayName: "Owner" },
     });
 
     expect(await repo.revokeDeviceToken(token.id, ownerId)).toBe(true);
     expect(await repo.resolveDeviceTokenOwner(plaintext)).toBeNull();
   });
 
-  it("touches lastUsedAt", async () => {
+  it("touches lastUsedAt and records the latest delivered flight", async () => {
     const { token } = await repo.createDeviceToken(ownerId, "Touch");
+    const { igc } = makeRealisticFlight();
+    const flight = await ingestFlight({
+      ownerId,
+      bytes: new TextEncoder().encode(`${igc}LTOUCH:${suffix}\n`),
+    });
     const before = await prisma.deviceToken.findUnique({
       where: { id: token.id },
       select: { lastUsedAt: true },
     });
     expect(before?.lastUsedAt).toBeNull();
 
-    await repo.touchDeviceToken(token.id);
+    await repo.touchDeviceToken(token.id, flight.flightId);
     const after = await prisma.deviceToken.findUnique({
       where: { id: token.id },
-      select: { lastUsedAt: true },
+      select: { lastUsedAt: true, lastFlightId: true },
     });
     expect(after?.lastUsedAt).toBeInstanceOf(Date);
+    expect(after?.lastFlightId).toBe(flight.flightId);
+  });
+
+  it("self-revokes an active plaintext token", async () => {
+    const { plaintext } = await repo.createDeviceToken(ownerId, "Self revoke");
+    expect(await repo.revokeDeviceTokenByPlaintext(plaintext)).toBe(true);
+    expect(await repo.revokeDeviceTokenByPlaintext(plaintext)).toBe(false);
+    expect(await repo.resolveDeviceTokenOwner(plaintext)).toBeNull();
   });
 
   it("resolves a generated key and ingests device-pushed flights with dedupe", async () => {
@@ -203,9 +218,14 @@ describe("device tokens", () => {
     expect(firstPoll.status).toBe("claimed");
     if (firstPoll.status !== "claimed") throw new Error("Expected claimed poll");
     expect(firstPoll.token).toMatch(/^llk_/);
+    expect(firstPoll.account).toEqual({
+      handle: `devowner${suffix}`,
+      displayName: "Owner",
+    });
     expect(await repo.resolveDeviceTokenOwner(firstPoll.token)).toEqual({
       ownerId,
       tokenId: storedPairing?.deviceTokenId,
+      account: { handle: `devowner${suffix}`, displayName: "Owner" },
     });
 
     const consumedPairing = await prisma.devicePairing.findUnique({

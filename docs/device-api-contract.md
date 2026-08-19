@@ -7,7 +7,7 @@ document is the source of truth for the firmware implementation.
 - **Base URL:** `https://leaflog.norcalflight.com`
 - **Transport:** HTTPS, directly to the base URL. No reverse proxy, no plain HTTP.
 - **Auth:** a scoped, revocable **bearer token** the device obtains via pairing.
-- **All three device endpoints are `POST`** and are safe to call from the device
+- **All four device endpoints are `POST`** and are safe to call from the device
   (no browser session needed).
 
 The device never logs in and never sees a password. The only human step is the pilot
@@ -31,12 +31,12 @@ implement that step.
  POST /api/devices/pair/poll ──►  (poll every few s the whole time)
    ◄── { status: "pending" }        …until claimed…
  POST /api/devices/pair/poll ──►
-   ◄── { status: "claimed", token: "llk_…" }   ← delivered ONCE
+  ◄── { status: "claimed", token: "llk_…", account: {…} } ← delivered ONCE
  store token persistently, discard pollHandle
 
  later, per recorded flight:
  POST /api/ingest  (Bearer token, raw IGC body) ──►  ingest + dedupe
-   ◄── { flightId, status, deduped }
+  ◄── { flightId, status, deduped, account }
 ```
 
 ---
@@ -90,11 +90,11 @@ Poll until the pilot has claimed the code, then receive the token **once**.
   ```json
   { "pollHandle": "…the pollHandle from start…" }
   ```
-- **Response `200`:** `{ "status": <status>, "token"?: "llk_…" }`
+- **Response `200`:** `{ "status": <status>, "token"?: "llk_…", "account"?: {…} }`
   | `status`   | meaning | firmware action |
   |------------|---------|-----------------|
   | `pending`  | not claimed yet | keep polling until `expiresAt`. |
-  | `claimed`  | claimed — **`token` is present** | **store the token now**, stop polling, discard `pollHandle`. |
+  | `claimed`  | claimed — **`token` and `account` are present** | **store the token now**, cache the public account identity, stop polling, discard `pollHandle`. |
   | `consumed` | the token was already delivered on a prior poll | stop; if you didn't store it, re-pair. |
   | `expired`  | the 10-min window elapsed | stop; start over at `pair/start`. |
   | `unknown`  | handle not recognized | stop; start over at `pair/start`. |
@@ -107,6 +107,15 @@ revokes the device and re-pairs.
 
 Recommended poll cadence: every **3–5 s**, stopping at `expiresAt` (~10 min max).
 
+The claimed response's `account` object contains public identity only:
+
+```json
+{ "handle": "skyhawk", "displayName": "Jamie Smith" }
+```
+
+The handle and display name are a cosmetic cache. The bearer token remains the source of upload
+ownership, and neither account email nor an on-device pilot identifier is returned or required.
+
 ## 3) `POST /api/ingest`
 
 Upload one IGC flight.
@@ -118,13 +127,14 @@ Upload one IGC flight.
     Content-Type may be `application/octet-stream` or `text/plain`.
 - **Response `200`:**
   ```json
-  { "flightId": "tn8t", "status": "ready", "deduped": false }
+  { "flightId": "tn8t", "status": "ready", "deduped": false, "account": { "handle": "skyhawk", "displayName": "Jamie Smith" } }
   ```
   | field      | type    | notes |
   |------------|---------|-------|
   | `flightId` | string  | the flight's id in Leaf Log. |
   | `status`   | string  | `"ready"` (parsed OK) or `"failed"` (bad/empty IGC — stored as a failed flight, still counts as delivered). |
   | `deduped`  | boolean | `true` if this exact flight was already uploaded (safe no-op). |
+  | `account`  | object  | Current public `handle` and `displayName` for the token owner. |
 - **Errors:**
   | code  | when | firmware action |
   |-------|------|-----------------|
@@ -136,6 +146,21 @@ Upload one IGC flight.
 **Idempotency:** uploads are de-duplicated by exact file bytes per account, so
 **retries are safe** — re-uploading a flight you're unsure delivered just returns
 `deduped: true`. Prefer to over-retry than to lose a flight.
+
+After durably recording `flightId`, firmware may refresh its cached account label from `account`.
+
+## 4) `POST /api/devices/revoke-self`
+
+Revoke the bearer token used for the request. This supports unlink and best-effort cleanup of the old
+credential after successful re-pairing.
+
+- Header `Authorization: Bearer llk_…` — required.
+- Request body: none.
+- Response `200`: `{ "revoked": true }`.
+- Response `401`: token is missing, invalid, or already revoked; an already-revoked old token is
+  harmless during cleanup.
+- Response `5xx`: transient cleanup failure. Firmware keeps a newly paired token active and does not
+  roll it back.
 
 ---
 
@@ -152,9 +177,9 @@ Upload one IGC flight.
 
 ## Firmware responsibilities / recommended behavior
 
-- **One token per on-device pilot profile.** Each profile pairs separately and stores
-  its own `llk_…`; uploads use that profile's token → the flight lands in that pilot's
-  account. The server identifies the account solely from the token (no MAC/email sent).
+- **One current token per Leaf device.** The paired account initially owns every flight uploaded with
+  that token, regardless of local pilot snapshots. The server identifies the account solely from the
+  token; no local pilot ID, MAC address, or email is sent.
 - **Buffer-then-upload.** Flights recorded before pairing can be uploaded once a token
   exists — hold them on the device and push when connected + paired.
 - **Persist the token durably** (survive reboots). It's only re-obtainable by re-pairing.
@@ -164,6 +189,7 @@ Upload one IGC flight.
 - **Revocation is normal.** If the pilot revokes the device in the website, uploads
   start returning `401` — the firmware should detect this and prompt a re-pair rather
   than retrying forever.
+- **Re-pair safely.** Persist the new token before best-effort self-revocation of the old token.
 - **Base URL should be configurable** (to point at a staging/self-hosted instance),
   defaulting to `https://leaflog.norcalflight.com`.
 
@@ -190,12 +216,12 @@ curl -s -X POST $BASE/api/devices/pair/start
 curl -s -X POST $BASE/api/devices/pair/poll \
   -H 'Content-Type: application/json' \
   -d '{"pollHandle":"…the handle…"}'
-# -> {"status":"pending"}  … then  {"status":"claimed","token":"llk_…"}
+# -> {"status":"pending"}  … then  {"status":"claimed","token":"llk_…","account":{…}}
 
 # 4. upload a flight
 curl -s -X POST $BASE/api/ingest \
   -H "Authorization: Bearer llk_…" \
   -H "X-Filename: 2026-07-02-XSX-flight.igc" \
   --data-binary @flight.igc
-# -> {"flightId":"tn8t","status":"ready","deduped":false}
+# -> {"flightId":"tn8t","status":"ready","deduped":false,"account":{…}}
 ```

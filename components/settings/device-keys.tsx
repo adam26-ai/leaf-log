@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Ban, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { revokeDeviceKeyAction } from "@/app/settings/devices/actions";
@@ -13,6 +14,14 @@ export interface DeviceTokenView {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  lastFlight: {
+    id: string;
+    status: string;
+    flightDate: string | null;
+    takeoffAt: string | null;
+    takeoffSiteName: string | null;
+    durationS: number | null;
+  } | null;
 }
 
 function formatDate(value: string | null): string {
@@ -21,7 +30,22 @@ function formatDate(value: string | null): string {
     month: "short",
     day: "numeric",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   }).format(new Date(value));
+}
+
+function flightSummary(flight: NonNullable<DeviceTokenView["lastFlight"]>): string {
+  const when = flight.takeoffAt ?? flight.flightDate;
+  const date = when
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(
+        new Date(when),
+      )
+    : "Undated flight";
+  const minutes = flight.durationS ? Math.max(1, Math.round(flight.durationS / 60)) : null;
+  return [date, flight.takeoffSiteName, minutes ? `${minutes} min` : null]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function DeviceKeys({ tokens }: { tokens: DeviceTokenView[] }) {
@@ -86,6 +110,21 @@ export function DeviceKeys({ tokens }: { tokens: DeviceTokenView[] }) {
                       <dd>Last used {formatDate(token.lastUsedAt)}</dd>
                     </div>
                   </dl>
+                  <div className="mt-2 text-sm text-gray-600">
+                    {token.lastFlight ? (
+                      <>
+                        Latest flight{" "}
+                        <Link
+                          href={`/flights/${token.lastFlight.id}`}
+                          className="font-medium text-ink underline decoration-gray-300 underline-offset-2"
+                        >
+                          {flightSummary(token.lastFlight)}
+                        </Link>
+                      </>
+                    ) : (
+                      "No flights uploaded with this key."
+                    )}
+                  </div>
                 </div>
                 <Button
                   type="button"

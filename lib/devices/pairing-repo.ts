@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { createDeviceToken } from "./repo";
+import { createDeviceToken, type DeviceAccountIdentity } from "./repo";
 import {
   PAIRING_TTL_MS,
   generatePairingCode,
@@ -19,7 +19,7 @@ export type ClaimPairingResult =
 
 export type PollPairingResult =
   | { status: "pending" }
-  | { status: "claimed"; token: string }
+  | { status: "claimed"; token: string; account: DeviceAccountIdentity }
   | { status: "consumed" }
   | { status: "expired" }
   | { status: "unknown" };
@@ -133,6 +133,7 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
       status: true,
       tokenPlaintext: true,
       expiresAt: true,
+      claimedByOwnerId: true,
     },
   });
 
@@ -152,6 +153,13 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
     const token = pairing.tokenPlaintext;
     if (!token) return { status: "consumed" };
 
+    if (!pairing.claimedByOwnerId) return { status: "consumed" };
+    const account = await prisma.profile.findUnique({
+      where: { id: pairing.claimedByOwnerId },
+      select: { handle: true, displayName: true },
+    });
+    if (!account) throw new Error("Claimed pairing owner could not be loaded");
+
     const consumed = await prisma.devicePairing.updateMany({
       where: {
         id: pairing.id,
@@ -165,7 +173,7 @@ export async function pollPairing(rawPollHandle: string): Promise<PollPairingRes
     });
 
     if (consumed.count !== 1) return { status: "consumed" };
-    return { status: "claimed", token };
+    return { status: "claimed", token, account };
   }
 
   return { status: "consumed" };

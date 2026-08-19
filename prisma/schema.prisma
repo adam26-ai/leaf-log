@@ -58,40 +58,43 @@ model VerificationToken {
 
 // ---------- Application models ----------
 model Profile {
-  id          String   @id // == User.id (1:1)
-  user        User     @relation(fields: [id], references: [id], onDelete: Cascade)
-  handle      String   @unique
-  displayName String
-  bio         String?
+  id                 String        @id // == User.id (1:1)
+  user               User          @relation(fields: [id], references: [id], onDelete: Cascade)
+  handle             String        @unique
+  displayName        String
+  bio                String?
   // Default visibility applied to newly ingested flights (private | friends | public).
-  defaultVisibility String @default("private")
+  defaultVisibility  String        @default("private")
   // Set whenever the avatar is (re)uploaded; null = no avatar. Doubles as a
   // cache-busting key for the public avatar serve route.
-  avatarUpdatedAt DateTime?
-  avatar      Avatar?
-  homeSiteId  String?
-  homeSite    Site?    @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
-  flights     Flight[]
-  sentFriendReqs     Friendship[] @relation("SentFriendRequests")
-  receivedFriendReqs Friendship[] @relation("ReceivedFriendRequests")
-  kudos       Kudo[]
-  deviceTokens DeviceToken[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  avatarUpdatedAt    DateTime?
+  avatar             Avatar?
+  homeSiteId         String?
+  homeSite           Site?         @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
+  flights            Flight[]
+  sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
+  receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
+  kudos              Kudo[]
+  deviceTokens       DeviceToken[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 }
 
 model DeviceToken {
-  id         String    @id @default(cuid())
-  ownerId    String
-  owner      Profile   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  tokenHash  String    @unique
-  label      String
-  deviceId   String?
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-  revokedAt  DateTime?
+  id           String    @id @default(cuid())
+  ownerId      String
+  owner        Profile   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  label        String
+  deviceId     String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  lastFlightId String?
+  lastFlight   Flight?   @relation("DeviceTokenLastFlight", fields: [lastFlightId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
+  @@index([lastFlightId])
 }
 
 model DevicePairing {
@@ -118,10 +121,10 @@ model DevicePairing {
 model Friendship {
   requesterId String
   addresseeId String
-  status      String   // "pending" | "accepted"
-  requester   Profile  @relation("SentFriendRequests", fields: [requesterId], references: [id], onDelete: Cascade)
-  addressee   Profile  @relation("ReceivedFriendRequests", fields: [addresseeId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
+  status      String // "pending" | "accepted"
+  requester   Profile   @relation("SentFriendRequests", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee   Profile   @relation("ReceivedFriendRequests", fields: [addresseeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
   respondedAt DateTime?
 
   @@id([requesterId, addresseeId])
@@ -151,18 +154,18 @@ model Avatar {
 }
 
 model Flight {
-  id                    String      @id @default(cuid())
+  id                    String        @id @default(cuid())
   ownerId               String
-  owner                 Profile     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  visibility            String      @default("private") // private | friends | public
-  source                String      @default("web_upload") // web_upload | device_push
-  status                String      @default("uploaded") // uploaded | processing | ready | failed
+  owner                 Profile       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  visibility            String        @default("private") // private | friends | public
+  source                String        @default("web_upload") // web_upload | device_push
+  status                String        @default("uploaded") // uploaded | processing | ready | failed
   igcSha256             String
-  parserVersion         String      @default("1")
-  parseWarnings         Json        @default("[]")
+  parserVersion         String        @default("1")
+  parseWarnings         Json          @default("[]")
   failureReason         String?
   // header facts
-  flightDate            DateTime?   @db.Date
+  flightDate            DateTime?     @db.Date
   takeoffAt             DateTime?
   landingAt             DateTime?
   localTz               String?
@@ -185,16 +188,17 @@ model Flight {
   bounds                Json?
   // located sites (denormalized name kept for history)
   takeoffSiteId         String?
-  takeoffSite           Site?       @relation("TakeoffSite", fields: [takeoffSiteId], references: [id], onDelete: SetNull)
+  takeoffSite           Site?         @relation("TakeoffSite", fields: [takeoffSiteId], references: [id], onDelete: SetNull)
   takeoffSiteName       String?
   landingSiteId         String?
-  landingSite           Site?       @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
+  landingSite           Site?         @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
   landingSiteName       String?
   data                  FlightData?
   photos                Photo[]
   kudos                 Kudo[]
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
+  latestForDeviceTokens DeviceToken[] @relation("DeviceTokenLastFlight")
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   @@unique([ownerId, igcSha256])
   @@index([ownerId, flightDate])
@@ -212,18 +216,18 @@ model FlightData {
 // A photo attached to a flight. Light metadata row (no image bytes) so the
 // gallery list stays fast; bytes live in PhotoData (mirrors Flight/FlightData).
 model Photo {
-  id                     String     @id @default(cuid())
-  flightId               String
-  flight                 Flight     @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  flightId String
+  flight   Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
 
-  originalFilename       String?
-  contentType            String     @default("image/jpeg") // output type (jpeg in v1)
-  displayWidth           Int
-  displayHeight          Int
-  displayBytes           Int
-  thumbWidth             Int
-  thumbHeight            Int
-  thumbBytes             Int
+  originalFilename String?
+  contentType      String  @default("image/jpeg") // output type (jpeg in v1)
+  displayWidth     Int
+  displayHeight    Int
+  displayBytes     Int
+  thumbWidth       Int
+  thumbHeight      Int
+  thumbBytes       Int
 
   takenAt                DateTime? // UTC instant of capture
   tSec                   Float? // seconds from takeoff (timeline link) when time-placed
@@ -231,13 +235,13 @@ model Photo {
   lat                    Float?
   lon                    Float?
   altM                   Int?
-  placementSource        String     @default("unpinned") // exif_gps | interpolated_time | unpinned
+  placementSource        String    @default("unpinned") // exif_gps | interpolated_time | unpinned
   placementFailureReason String? // no_time | out_of_window | missing_flight_offset | bad_gps
 
-  sha256                 String // over the ORIGINAL bytes — exact-dupe guard
-  data                   PhotoData?
-  createdAt              DateTime   @default(now())
-  updatedAt              DateTime   @updatedAt
+  sha256    String // over the ORIGINAL bytes — exact-dupe guard
+  data      PhotoData?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@unique([flightId, sha256])
   @@index([flightId, takenAt])
@@ -253,18 +257,18 @@ model PhotoData {
 }
 
 model Site {
-  id          String    @id @default(cuid())
-  name        String
-  kind        String    @default("unknown") // takeoff | landing | both | unknown
-  lat         Float
-  lon         Float
-  countryCode String?
-  region      String?
-  source      String    @default("manual")
-  sourceId    String?
-  sourceUrl   String?
-  license     String?
-  createdAt   DateTime  @default(now())
+  id             String    @id @default(cuid())
+  name           String
+  kind           String    @default("unknown") // takeoff | landing | both | unknown
+  lat            Float
+  lon            Float
+  countryCode    String?
+  region         String?
+  source         String    @default("manual")
+  sourceId       String?
+  sourceUrl      String?
+  license        String?
+  createdAt      DateTime  @default(now())
   takeoffFlights Flight[]  @relation("TakeoffSite")
   landingFlights Flight[]  @relation("LandingSite")
   homeProfiles   Profile[] @relation("HomeSite")

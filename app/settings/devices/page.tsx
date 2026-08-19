@@ -32,6 +32,13 @@ export default async function DevicesPage() {
               createdAt: token.createdAt.toISOString(),
               lastUsedAt: token.lastUsedAt?.toISOString() ?? null,
               revokedAt: token.revokedAt?.toISOString() ?? null,
+              lastFlight: token.lastFlight
+                ? {
+                    ...token.lastFlight,
+                    flightDate: token.lastFlight.flightDate?.toISOString() ?? null,
+                    takeoffAt: token.lastFlight.takeoffAt?.toISOString() ?? null,
+                  }
+                : null,
             }))}
           />
         </Card>

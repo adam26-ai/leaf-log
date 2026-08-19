@@ -52,11 +52,12 @@ export async function POST(request: Request) {
       source: "device_push",
       filename,
     });
-    await touchDeviceToken(resolved.tokenId);
+    await touchDeviceToken(resolved.tokenId, result.flightId);
     return NextResponse.json({
       flightId: result.flightId,
       status: result.status,
       deduped: result.deduped,
+      account: resolved.account,
     });
   } catch {
     return NextResponse.json(
