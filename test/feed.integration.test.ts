@@ -41,6 +41,12 @@ describe("friends feed", () => {
     takeoffAt?: Date | null;
   }) {
     flightSeq += 1;
+    // No takeoffSiteId/SiteName here on purpose: fabricating a cached name
+    // with no linked site id would simulate the "historical fallback" state
+    // (a genuinely deleted site) without ever having a real site behind it —
+    // a hole in the SPRINT-004 invariant that a non-null cached name implies
+    // either a live site or a real prior one. This test exercises feed
+    // visibility, not site names, so "no site" is the honest fixture.
     return prisma.flight.create({
       data: {
         ownerId,
@@ -49,7 +55,6 @@ describe("friends feed", () => {
         igcSha256: `${label}${suffix}${flightSeq}`,
         flightDate,
         takeoffAt,
-        takeoffSiteName: label,
         durationS: 60 + flightSeq,
       },
     });

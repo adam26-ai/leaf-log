@@ -4,12 +4,20 @@ import {
   normalizeVisibility,
   type FlightVisibility,
 } from "@/lib/flights/visibility";
+import { canSeeSite, normalizeSiteVisibility } from "@/lib/sites/visibility";
 import { kudoCountsFor } from "@/lib/social/kudos";
 
 /**
  * App-layer privacy enforcement (this app has no DB RLS). EVERY flight read goes
  * through here with an explicit viewer id, and the visibility predicate is always
  * applied. Friends-only visibility resolves here, not in pages/routes/actions.
+ *
+ * Site names get the same treatment (SPRINT-004): Flight.{takeoff,landing}SiteName
+ * is a public-name CACHE, not the source of truth. Every row returned from here
+ * has had resolveSiteFields() re-verify each non-null site id against the live
+ * Site row for THIS viewer — the Site row wins when visible, and both id and
+ * name are stripped when it isn't. Never return a raw Prisma Flight/site read to
+ * a caller without going through this.
  */
 
 const LIST_SELECT = {
@@ -18,6 +26,8 @@ const LIST_SELECT = {
   takeoffAt: true,
   takeoffSiteName: true,
   takeoffSiteId: true,
+  landingSiteName: true,
+  landingSiteId: true,
   durationS: true,
   maxAltM: true,
   visibility: true,
@@ -123,6 +133,82 @@ function feedCursorWhere(cursor: FeedCursor | null): Prisma.FlightWhereInput {
   };
 }
 
+interface SiteFieldRow {
+  takeoffSiteId: string | null;
+  takeoffSiteName: string | null;
+  landingSiteId: string | null;
+  landingSiteName: string | null;
+}
+
+interface VisibleSiteRow {
+  id: string;
+  name: string;
+  visibility: string;
+  ownerId: string | null;
+}
+
+function resolveEndpoint(
+  siteId: string | null,
+  cachedName: string | null,
+  sites: Map<string, VisibleSiteRow>,
+  viewerId: string | null,
+): { id: string | null; name: string | null } {
+  if (siteId === null) return { id: null, name: cachedName }; // historical fallback
+
+  const site = sites.get(siteId);
+  if (site && canSeeSite(normalizeSiteVisibility(site.visibility), site.ownerId, viewerId)) {
+    return { id: siteId, name: site.name }; // the Site row wins
+  }
+  return { id: null, name: null }; // not visible (or deleted concurrently): nothing leaves
+}
+
+/**
+ * The read-path firewall for site names. Re-verifies EVERY non-null site id
+ * on the page against the live Site row — not just rows whose cached name is
+ * null — so a stale or hand-written row can never leak a private site's
+ * identity through the denormalized cache column. Returns viewer-safe DTOs;
+ * `takeoffSiteId`/`landingSiteId` may be nulled relative to the DB row.
+ */
+async function resolveSiteFields<T extends SiteFieldRow>(
+  rows: T[],
+  viewerId: string | null,
+): Promise<T[]> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.takeoffSiteId) ids.add(row.takeoffSiteId);
+    if (row.landingSiteId) ids.add(row.landingSiteId);
+  }
+  if (ids.size === 0) return rows;
+
+  const siteRows = await prisma.site.findMany({
+    where: { id: { in: Array.from(ids) } },
+    select: { id: true, name: true, visibility: true, ownerId: true },
+  });
+  const sites = new Map(siteRows.map((s) => [s.id, s]));
+
+  return rows.map((row) => {
+    const takeoff = resolveEndpoint(
+      row.takeoffSiteId,
+      row.takeoffSiteName,
+      sites,
+      viewerId,
+    );
+    const landing = resolveEndpoint(
+      row.landingSiteId,
+      row.landingSiteName,
+      sites,
+      viewerId,
+    );
+    return {
+      ...row,
+      takeoffSiteId: takeoff.id,
+      takeoffSiteName: takeoff.name,
+      landingSiteId: landing.id,
+      landingSiteName: landing.name,
+    };
+  });
+}
+
 /** Accepted friendship in either direction. The only read-authz friend resolver. */
 export async function areFriends(aId: string, bId: string): Promise<boolean> {
   if (aId === bId) return false;
@@ -145,19 +231,20 @@ export async function getFlightForViewer(
 ): Promise<Flight | null> {
   const flight = await prisma.flight.findUnique({ where: { id: flightId } });
   if (!flight) return null;
-  if (viewerId && flight.ownerId === viewerId) return flight;
 
+  const isOwner = viewerId !== null && flight.ownerId === viewerId;
   const visibility = normalizeVisibility(flight.visibility);
-  if (visibility === "public") return flight;
-  if (
+  const isPublic = visibility === "public";
+  const isFriendVisible =
+    !isOwner &&
     visibility === "friends" &&
-    viewerId &&
-    (await areFriends(viewerId, flight.ownerId))
-  ) {
-    return flight;
-  }
+    viewerId !== null &&
+    (await areFriends(viewerId, flight.ownerId));
 
-  return null;
+  if (!isOwner && !isPublic && !isFriendVisible) return null;
+
+  const [resolved] = await resolveSiteFields([flight], viewerId);
+  return resolved;
 }
 
 export async function visibleVisibilitiesFor(
@@ -178,20 +265,22 @@ export async function listProfileFlightsForViewer(
   viewerId: string | null,
 ): Promise<FlightListItem[]> {
   const visibility = await visibleVisibilitiesFor(ownerId, viewerId);
-  return prisma.flight.findMany({
+  const rows = await prisma.flight.findMany({
     where: { ownerId, status: "ready", visibility: { in: visibility } },
     orderBy: [{ flightDate: "desc" }, { takeoffAt: "desc" }, { id: "desc" }],
     select: LIST_SELECT,
   });
+  return resolveSiteFields(rows, viewerId);
 }
 
 /** The owner's own logbook — all of their flights. */
-export function listOwnFlights(ownerId: string): Promise<FlightListItem[]> {
-  return prisma.flight.findMany({
+export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]> {
+  const rows = await prisma.flight.findMany({
     where: { ownerId },
     orderBy: [{ flightDate: "desc" }, { takeoffAt: "desc" }],
     select: LIST_SELECT,
   });
+  return resolveSiteFields(rows, ownerId);
 }
 
 /** Owner-scoped flight summaries for references stored outside the flight model. */
@@ -249,7 +338,7 @@ export async function listFeedForViewer(
     select: FEED_SELECT,
   });
 
-  const visible = page.slice(0, limit);
+  const visible = await resolveSiteFields(page.slice(0, limit), viewerId);
   const counts = await kudoCountsFor(visible.map((flight) => flight.id));
   const rows = visible.map((flight) => ({
     ...flight,

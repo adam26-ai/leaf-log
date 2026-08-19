@@ -4,6 +4,7 @@ import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { findSite } from "@/lib/sites/lookup";
+import { resolveSiteCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 
@@ -68,8 +69,11 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
 
   // Write-time scope: what the flight's OWNER can name for their own flight —
   // public sites plus their own private ones. Distinct from the read-time
-  // scope applied later per viewer in lib/flights/repo.ts.
-  const [takeoffSite, landingSite] = metrics
+  // scope applied later per viewer in lib/flights/repo.ts. This is a
+  // best-effort pre-match outside the transaction; it's re-verified below
+  // inside the create transaction, since a site can be demoted or deleted
+  // between this match and the write.
+  const [takeoffMatch, landingMatch] = metrics
     ? await Promise.all([
         findSite(prisma, {
           lat: metrics.takeoff.lat,
@@ -90,48 +94,57 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const status: "ready" | "failed" = metrics ? "ready" : "failed";
   const flightDateMs = parsed.headers.dateMs ?? metrics?.takeoffAtMs ?? 0;
 
-  const flight = await prisma.flight.create({
-    data: {
-      ownerId,
-      source,
-      status,
-      visibility,
-      igcSha256: hash,
-      parserVersion: PARSER_VERSION,
-      parseWarnings: parsed.warnings,
-      failureReason: metrics ? null : "No usable GPS fixes in file",
-      flightDate: flightDateMs ? isoDate(flightDateMs) : null,
-      glider: parsed.headers.glider,
-      recorder: parsed.headers.recorder,
-      takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
-      landingAt: metrics ? new Date(metrics.landingAtMs) : null,
-      durationS: metrics?.durationS ?? null,
-      maxAltM: metrics?.maxAltM ?? null,
-      altGainM: metrics?.altGainM ?? null,
-      maxClimbMs: metrics?.maxClimbMs ?? null,
-      maxSinkMs: metrics?.maxSinkMs ?? null,
-      altSource: metrics?.altSource ?? null,
-      trackDistM: metrics?.trackDistM ?? null,
-      straightDistM: metrics?.straightDistM ?? null,
-      takeoffLat: metrics?.takeoff.lat ?? null,
-      takeoffLon: metrics?.takeoff.lon ?? null,
-      landingLat: metrics?.landing.lat ?? null,
-      landingLon: metrics?.landing.lon ?? null,
-      bounds: metrics?.bounds ?? undefined,
-      localTz: metrics?.localTz ?? null,
-      localUtcOffsetMinutes: metrics?.localUtcOffsetMinutes ?? null,
-      takeoffSiteId: takeoffSite?.id ?? null,
-      takeoffSiteName: takeoffSite?.name ?? null,
-      landingSiteId: landingSite?.id ?? null,
-      landingSiteName: landingSite?.name ?? null,
+  const flight = await prisma.$transaction(async (tx) => {
+    // Re-read each matched site INSIDE the transaction and re-verify it's
+    // still visible to the owner (not just that it still exists) — a demote
+    // to private-owned-by-someone-else between match and create must never
+    // cache a name the flight's owner no longer has any claim to.
+    const [takeoffPatch, landingPatch] = await Promise.all([
+      resolveSiteCache(tx, takeoffMatch?.id ?? null, "takeoff", ownerId),
+      resolveSiteCache(tx, landingMatch?.id ?? null, "landing", ownerId),
+    ]);
+
+    return tx.flight.create({
       data: {
-        create: {
-          rawIgc: Buffer.from(bytes),
-          track: track ? (track as unknown as Prisma.InputJsonValue) : undefined,
+        ownerId,
+        source,
+        status,
+        visibility,
+        igcSha256: hash,
+        parserVersion: PARSER_VERSION,
+        parseWarnings: parsed.warnings,
+        failureReason: metrics ? null : "No usable GPS fixes in file",
+        flightDate: flightDateMs ? isoDate(flightDateMs) : null,
+        glider: parsed.headers.glider,
+        recorder: parsed.headers.recorder,
+        takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
+        landingAt: metrics ? new Date(metrics.landingAtMs) : null,
+        durationS: metrics?.durationS ?? null,
+        maxAltM: metrics?.maxAltM ?? null,
+        altGainM: metrics?.altGainM ?? null,
+        maxClimbMs: metrics?.maxClimbMs ?? null,
+        maxSinkMs: metrics?.maxSinkMs ?? null,
+        altSource: metrics?.altSource ?? null,
+        trackDistM: metrics?.trackDistM ?? null,
+        straightDistM: metrics?.straightDistM ?? null,
+        takeoffLat: metrics?.takeoff.lat ?? null,
+        takeoffLon: metrics?.takeoff.lon ?? null,
+        landingLat: metrics?.landing.lat ?? null,
+        landingLon: metrics?.landing.lon ?? null,
+        bounds: metrics?.bounds ?? undefined,
+        localTz: metrics?.localTz ?? null,
+        localUtcOffsetMinutes: metrics?.localUtcOffsetMinutes ?? null,
+        ...takeoffPatch,
+        ...landingPatch,
+        data: {
+          create: {
+            rawIgc: Buffer.from(bytes),
+            track: track ? (track as unknown as Prisma.InputJsonValue) : undefined,
+          },
         },
       },
-    },
-    select: { id: true },
+      select: { id: true },
+    });
   });
 
   return {
