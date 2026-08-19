@@ -1,48 +1,98 @@
 import type { Db } from "@/lib/prisma";
-import { haversineM } from "@/lib/geo/distance";
-
-// Match radii (metres): launches are tighter than landing zones.
-const TAKEOFF_RADIUS_M = 600;
-const LANDING_RADIUS_M = 900;
+import {
+  radiusForKind,
+  boundingBox,
+  withinRadius,
+  compareSiteCandidates,
+  type MatchKind,
+} from "./geo";
+import { normalizeSiteVisibility, type SiteVisibility } from "./visibility";
 
 export interface SiteMatch {
   id: string;
   name: string;
+  visibility: SiteVisibility;
+  ownerId: string | null;
+  kind: string;
+  distanceM: number;
+}
+
+export interface FindSiteOptions {
+  lat: number;
+  lon: number;
+  kind: MatchKind;
+  /**
+   * Required and defaultless on purpose — every call site is a compile error
+   * until it states who is asking. `null` means "anonymous / no viewer": only
+   * public sites match. A concrete id also unlocks that viewer's own private
+   * sites. Never widen this to match every private site regardless of owner —
+   * that would leak every other pilot's private launch to everyone.
+   */
+  viewerId: string | null;
 }
 
 /**
- * Nearest named site to a coordinate within a kind-appropriate radius. Prefilters
- * by a lat/lon bounding box (indexed), then ranks by true haversine distance.
- * Returns null when nothing is close enough — we show an honest "Unknown site".
+ * Nearest site visible to `viewerId`, within a kind-appropriate radius.
+ * Prefilters by a lat/lon bounding box (indexed), then ranks by true
+ * haversine distance with deterministic tie-breaking. Returns null when
+ * nothing visible is close enough — callers show an honest "Unknown site".
  */
 export async function findSite(
   db: Pick<Db, "site">,
-  lat: number,
-  lon: number,
-  kind: "takeoff" | "landing",
+  options: FindSiteOptions,
 ): Promise<SiteMatch | null> {
-  const radius = kind === "takeoff" ? TAKEOFF_RADIUS_M : LANDING_RADIUS_M;
-  // Pad the box a little beyond the radius before exact filtering.
-  const dLat = (radius / 111_320) * 1.5;
-  const cosLat = Math.max(0.01, Math.cos((lat * Math.PI) / 180));
-  const dLon = (radius / (111_320 * cosLat)) * 1.5;
+  const { lat, lon, kind, viewerId } = options;
+  const radius = radiusForKind(kind);
+  const box = boundingBox(lat, lon, radius);
+
+  const lonWhere =
+    box.lonRanges.length === 1
+      ? { lon: { gte: box.lonRanges[0].min, lte: box.lonRanges[0].max } }
+      : {
+          OR: box.lonRanges.map((r) => ({ lon: { gte: r.min, lte: r.max } })),
+        };
+
+  // The private branch is OMITTED ENTIRELY when viewerId is null — Prisma
+  // compiles `{ ownerId: null }` to `IS NULL`, which would otherwise match
+  // every orphaned private site for an anonymous caller.
+  const visibilityOr =
+    viewerId !== null
+      ? [{ visibility: "public" }, { visibility: "private", ownerId: viewerId }]
+      : [{ visibility: "public" }];
 
   const candidates = await db.site.findMany({
     where: {
-      lat: { gte: lat - dLat, lte: lat + dLat },
-      lon: { gte: lon - dLon, lte: lon + dLon },
-      OR: [{ kind }, { kind: "both" }],
+      AND: [
+        { lat: { gte: box.latMin, lte: box.latMax } },
+        lonWhere,
+        { OR: [{ kind }, { kind: "both" }] },
+        { OR: visibilityOr },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      lat: true,
+      lon: true,
+      kind: true,
+      visibility: true,
+      ownerId: true,
+      license: true,
     },
   });
 
-  let best: SiteMatch | null = null;
-  let bestDist = Infinity;
-  for (const s of candidates) {
-    const d = haversineM(lat, lon, s.lat, s.lon);
-    if (d <= radius && d < bestDist) {
-      bestDist = d;
-      best = { id: s.id, name: s.name };
-    }
-  }
-  return best;
+  const ranked = withinRadius(candidates, lat, lon, radius).sort(
+    compareSiteCandidates,
+  );
+  const best = ranked[0];
+  if (!best) return null;
+
+  return {
+    id: best.id,
+    name: best.name,
+    visibility: normalizeSiteVisibility(best.visibility),
+    ownerId: best.ownerId,
+    kind: best.kind,
+    distanceM: best.distanceM,
+  };
 }

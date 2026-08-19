@@ -66,10 +66,23 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const parsed = parseIgc(bytes);
   const metrics = deriveMetrics(parsed);
 
+  // Write-time scope: what the flight's OWNER can name for their own flight —
+  // public sites plus their own private ones. Distinct from the read-time
+  // scope applied later per viewer in lib/flights/repo.ts.
   const [takeoffSite, landingSite] = metrics
     ? await Promise.all([
-        findSite(prisma, metrics.takeoff.lat, metrics.takeoff.lon, "takeoff"),
-        findSite(prisma, metrics.landing.lat, metrics.landing.lon, "landing"),
+        findSite(prisma, {
+          lat: metrics.takeoff.lat,
+          lon: metrics.takeoff.lon,
+          kind: "takeoff",
+          viewerId: ownerId,
+        }),
+        findSite(prisma, {
+          lat: metrics.landing.lat,
+          lon: metrics.landing.lon,
+          kind: "landing",
+          viewerId: ownerId,
+        }),
       ])
     : [null, null];
 

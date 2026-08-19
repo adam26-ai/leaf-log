@@ -69,8 +69,11 @@ model Profile {
   // cache-busting key for the public avatar serve route.
   avatarUpdatedAt    DateTime?
   avatar             Avatar?
+  // Dormant since SPRINT-004: self-asserted persistent location on a public
+  // handle needs its own privacy design, not a free ride on the user-sites work.
   homeSiteId         String?
   homeSite           Site?         @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
+  ownedSites         Site[]        @relation("OwnedSites")
   flights            Flight[]
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
@@ -203,6 +206,8 @@ model Flight {
   @@unique([ownerId, igcSha256])
   @@index([ownerId, flightDate])
   @@index([ownerId, status, flightDate])
+  @@index([takeoffSiteId])
+  @@index([landingSiteId])
 }
 
 // Heavy payloads kept off the Flight row so logbook/profile lists stay fast.
@@ -259,19 +264,26 @@ model PhotoData {
 model Site {
   id             String    @id @default(cuid())
   name           String
+  normalizedName String // NFKC + folded, for proximity-scoped dup checks
   kind           String    @default("unknown") // takeoff | landing | both | unknown
   lat            Float
   lon            Float
   countryCode    String?
   region         String?
-  source         String    @default("manual")
+  source         String    @default("manual") // manual | user
   sourceId       String?
   sourceUrl      String?
   license        String?
+  ownerId        String? // null for curated seeds
+  owner          Profile?  @relation("OwnedSites", fields: [ownerId], references: [id], onDelete: SetNull)
+  visibility     String // private | public — NO column default (forces every create to state intent)
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   takeoffFlights Flight[]  @relation("TakeoffSite")
   landingFlights Flight[]  @relation("LandingSite")
   homeProfiles   Profile[] @relation("HomeSite")
 
   @@index([lat, lon])
+  @@index([ownerId])
+  @@index([ownerId, normalizedName])
 }
