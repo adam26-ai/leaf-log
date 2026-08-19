@@ -26,6 +26,14 @@ export function formatDistance(m: number | null): string {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
+const COMPASS_POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+/** Degrees clockwise from north -> an 8-point compass abbreviation. */
+export function formatBearing(deg: number): string {
+  const index = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+  return COMPASS_POINTS[index];
+}
+
 export function formatVario(ms: number | null): string {
   if (ms == null) return "—";
   const sign = ms > 0 ? "+" : "";

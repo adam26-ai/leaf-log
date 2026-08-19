@@ -17,6 +17,7 @@ describe("sites: read-path firewall", () => {
   let prisma: import("@prisma/client").PrismaClient;
   let repo: typeof import("@/lib/flights/repo");
   let associate: typeof import("@/lib/sites/associate");
+  let siteRepo: typeof import("@/lib/sites/repo");
   const ids: string[] = [];
   const siteIds: string[] = [];
   const flightIds: string[] = [];
@@ -68,6 +69,11 @@ describe("sites: read-path firewall", () => {
     takeoffSiteName?: string | null;
     landingSiteId?: string | null;
     landingSiteName?: string | null;
+    takeoffLat?: number | null;
+    takeoffLon?: number | null;
+    landingLat?: number | null;
+    landingLon?: number | null;
+    flightDate?: Date;
   }) {
     seq += 1;
     const flight = await prisma.flight.create({
@@ -76,12 +82,16 @@ describe("sites: read-path firewall", () => {
         visibility: opts.visibility,
         status: opts.status ?? "ready",
         igcSha256: `sitesmx${suffix}${seq}`,
-        flightDate: new Date("2026-06-01T00:00:00.000Z"),
+        flightDate: opts.flightDate ?? new Date("2026-06-01T00:00:00.000Z"),
         takeoffAt: new Date("2026-06-01T10:00:00.000Z"),
         takeoffSiteId: opts.takeoffSiteId ?? null,
         takeoffSiteName: opts.takeoffSiteName ?? null,
         landingSiteId: opts.landingSiteId ?? null,
         landingSiteName: opts.landingSiteName ?? null,
+        takeoffLat: opts.takeoffLat ?? null,
+        takeoffLon: opts.takeoffLon ?? null,
+        landingLat: opts.landingLat ?? null,
+        landingLon: opts.landingLon ?? null,
       },
     });
     flightIds.push(flight.id);
@@ -115,6 +125,7 @@ describe("sites: read-path firewall", () => {
     prisma = new PrismaClient();
     repo = await import("@/lib/flights/repo");
     associate = await import("@/lib/sites/associate");
+    siteRepo = await import("@/lib/sites/repo");
   });
 
   afterAll(async () => {
@@ -574,6 +585,330 @@ describe("sites: read-path firewall", () => {
       // Positive control: the flight itself (unrelated to the site) is still visible.
       const seen = await repo.getFlightForViewer(flight.id, null);
       expect(seen).not.toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // PR3: createOrAttachSiteFromFlight — create, dedup, re-associate
+  // ---------------------------------------------------------------------
+  describe("createOrAttachSiteFromFlight — create", () => {
+    it("creates a public site and binds it to the flight", async () => {
+      const owner = await createPilot("createpub");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 30, takeoffLon: 30 });
+
+      const { site, created } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Create Pub Ridge",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      expect(created).toBe(true);
+      expect(site.visibility).toBe("public");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id);
+      expect(row.takeoffSiteName).toBe("Create Pub Ridge");
+    });
+
+    it("creates a private site and binds it, with no cached name", async () => {
+      const owner = await createPilot("createpriv");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 31, takeoffLon: 31 });
+
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Create Priv Ridge",
+        visibility: "private",
+      });
+      siteIds.push(site.id);
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id);
+      expect(row.takeoffSiteName).toBeNull();
+    });
+
+    it("rejects every invalid name the same way validateSiteName does", async () => {
+      const owner = await createPilot("createbadname");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 32, takeoffLon: 32 });
+
+      for (const badName of ["A", "Unknown Site", "---", "Sonoma <script>"]) {
+        await expect(
+          siteRepo.createOrAttachSiteFromFlight({
+            flightId: flight.id,
+            ownerId: owner,
+            endpoint: "takeoff",
+            mode: "create",
+            name: badName,
+            visibility: "public",
+          }),
+        ).rejects.toThrow();
+      }
+    });
+
+    it("a proximity-scoped duplicate name is refused with a steer to reuse", async () => {
+      const owner = await createPilot("dupname");
+      const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 33, takeoffLon: 33 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Duplicate Ridge",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      const flightB = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 33.001, takeoffLon: 33.001 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flightB.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          mode: "create",
+          name: "duplicate ridge", // same normalizedName, different case
+          visibility: "public",
+        }),
+      ).rejects.toThrow(/already exists nearby/);
+
+      const countAtLocation = await prisma.site.count({ where: { normalizedName: "duplicate ridge" } });
+      expect(countAtLocation).toBe(1);
+    });
+
+    it("concurrent creation by two different pilots at the same spot with the same name resolves to one site", async () => {
+      const pilotA = await createPilot("concurrentA");
+      const pilotB = await createPilot("concurrentB");
+      const flightA = await createFlight({ ownerId: pilotA, visibility: "public", takeoffLat: 34, takeoffLon: 34 });
+      const flightB = await createFlight({ ownerId: pilotB, visibility: "public", takeoffLat: 34.0005, takeoffLon: 34.0005 });
+
+      const { site: siteA } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: pilotA,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Shared Launch",
+        visibility: "public",
+      });
+      siteIds.push(siteA.id);
+
+      // Pilot B's attempt at the same public name nearby is rejected, steering to reuse.
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flightB.id,
+          ownerId: pilotB,
+          endpoint: "takeoff",
+          mode: "create",
+          name: "Shared Launch",
+          visibility: "public",
+        }),
+      ).rejects.toThrow();
+
+      // Pilot B reuses the existing site instead — resolves to exactly one site.
+      const { site: siteB, created: createdB } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightB.id,
+        ownerId: pilotB,
+        endpoint: "takeoff",
+        mode: "reuse",
+        existingSiteId: siteA.id,
+      });
+      expect(createdB).toBe(false);
+      expect(siteB.id).toBe(siteA.id);
+
+      const countAtLocation = await prisma.site.count({ where: { normalizedName: "shared launch" } });
+      expect(countAtLocation).toBe(1);
+    });
+
+    it("the daily create cap refuses further creates for the same owner", async () => {
+      const owner = await createPilot("dailycap");
+      // Spread far enough apart (0.5 deg =~ 55 km) that none of these collide
+      // with each other's proximity-scoped dedup check.
+      for (let i = 0; i < siteRepo.DAILY_CREATE_CAP; i++) {
+        const lat = 40 + i * 0.5;
+        const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: lat, takeoffLon: 40 });
+        const { site } = await siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          mode: "create",
+          name: `Cap Site ${i}`,
+          visibility: "public",
+        });
+        siteIds.push(site.id);
+      }
+
+      const overflowFlight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 60, takeoffLon: 40 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: overflowFlight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          mode: "create",
+          name: "One Too Many",
+          visibility: "public",
+        }),
+      ).rejects.toThrow(/limit/i);
+    });
+
+    it("a non-owner cannot name a site on someone else's flight", async () => {
+      const owner = await createPilot("nameowner");
+      const stranger = await createPilot("namestranger");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 35, takeoffLon: 35 });
+
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: stranger,
+          endpoint: "takeoff",
+          mode: "create",
+          name: "Hijacked Site",
+          visibility: "public",
+        }),
+      ).rejects.toThrow();
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBeNull();
+    });
+
+    it("a flight with no fix for that endpoint offers no affordance (the call itself is refused)", async () => {
+      const owner = await createPilot("nofix");
+      // No landingLat/Lon set.
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 36, takeoffLon: 36 });
+
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "landing",
+          mode: "create",
+          name: "No Fix LZ",
+          visibility: "public",
+        }),
+      ).rejects.toThrow(/landing coordinate/);
+    });
+  });
+
+  describe("suggestNearbySites — the reuse-first dialog step", () => {
+    it("surfaces a nearby visible site with distance and bearing", async () => {
+      const owner = await createPilot("suggestowner");
+      const site = await createSite({ lat: 37, lon: 37, visibility: "public", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbySites(37.01, 37.01, owner);
+      const match = suggestions.find((s) => s.id === site.id);
+      expect(match).toBeTruthy();
+      expect(match?.distanceM).toBeGreaterThan(0);
+      expect(typeof match?.bearingDeg).toBe("number");
+    });
+
+    it("is kind-agnostic: a landing-kind site is still suggested for a takeoff naming flow", async () => {
+      const owner = await createPilot("suggestkind");
+      const site = await createSite({ lat: 38, lon: 38, kind: "landing", visibility: "public", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbySites(38.001, 38.001, owner);
+      expect(suggestions.some((s) => s.id === site.id)).toBe(true);
+    });
+
+    it("never surfaces a private site the viewer cannot see", async () => {
+      const owner = await createPilot("suggestprivowner");
+      const stranger = await createPilot("suggestprivstranger");
+      const site = await createSite({ lat: 39, lon: 39, visibility: "private", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbySites(39.001, 39.001, stranger);
+      expect(suggestions.some((s) => s.id === site.id)).toBe(false);
+
+      // Positive control: the owner does see it.
+      const ownSuggestions = await siteRepo.suggestNearbySites(39.001, 39.001, owner);
+      expect(ownSuggestions.some((s) => s.id === site.id)).toBe(true);
+    });
+  });
+
+  describe("reuse — opposite-endpoint widening", () => {
+    it("widens kind to 'both' when a takeoff-kind site is reused on a landing", async () => {
+      const owner = await createPilot("widenowner");
+      const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 41, takeoffLon: 41 });
+      const { site } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Widen Site",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+      expect(site.kind).toBe("takeoff");
+
+      const flightB = await createFlight({ ownerId: owner, visibility: "public", landingLat: 41, landingLon: 41 });
+      const { site: widened } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightB.id,
+        ownerId: owner,
+        endpoint: "landing",
+        mode: "reuse",
+        existingSiteId: site.id,
+      });
+      expect(widened.kind).toBe("both");
+    });
+
+    it("never narrows an already-'both' site back down", async () => {
+      const owner = await createPilot("neverNarrow");
+      const site = await createSite({ lat: 42, lon: 42, kind: "both", visibility: "public", ownerId: owner });
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 42, takeoffLon: 42 });
+
+      const { site: result } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "reuse",
+        existingSiteId: site.id,
+      });
+      expect(result.kind).toBe("both");
+    });
+  });
+
+  describe("reassociateOwnFlights — retroactive fix", () => {
+    it("re-associates the creator's own older unmatched flights but not another pilot's", async () => {
+      const owner = await createPilot("retroowner");
+      const other = await createPilot("retroother");
+
+      // An older flight of the owner's, already ready, missing a takeoff site,
+      // sitting right where the new site will be created.
+      const olderOwn = await createFlight({
+        ownerId: owner,
+        visibility: "public",
+        takeoffLat: 43,
+        takeoffLon: 43,
+        flightDate: new Date("2026-01-01T00:00:00.000Z"),
+      });
+      // Another pilot's flight at the exact same spot — must NOT be touched.
+      const othersFlight = await createFlight({
+        ownerId: other,
+        visibility: "public",
+        takeoffLat: 43,
+        takeoffLon: 43,
+      });
+
+      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 43, takeoffLon: 43 });
+      const { site, reassociated } = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: current.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        mode: "create",
+        name: "Retro Site",
+        visibility: "public",
+      });
+      siteIds.push(site.id);
+
+      expect(reassociated.updated).toBeGreaterThanOrEqual(1);
+
+      const olderRow = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwn.id } });
+      expect(olderRow.takeoffSiteId).toBe(site.id);
+      expect(olderRow.takeoffSiteName).toBe("Retro Site");
+
+      const othersRow = await prisma.flight.findUniqueOrThrow({ where: { id: othersFlight.id } });
+      expect(othersRow.takeoffSiteId).toBeNull();
     });
   });
 });

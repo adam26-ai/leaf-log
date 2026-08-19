@@ -42,7 +42,7 @@ export default async function FlightPage({
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <FlightHeader flight={flight} />
+          <FlightHeader flight={flight} isOwner={isOwner} />
           {isOwner && (
             <ShareToggle
               flightId={flight.id}
