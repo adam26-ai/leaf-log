@@ -51,6 +51,20 @@ Track potential feature ideas for future sprints.
   updates are out of scope; refresh-on-navigation is fine. Pairs with the deferred notifications
   work in [[social-sprint-state]] but is much lighter (no notification model needed).
 
+## Following / Followers List Page
+- **Area:** Social / profile
+- **Description:** A page (likely under `/friends` or a pilot's profile) that lists a pilot's
+  connections as "Following" / "Followers" for a clearer social/community feel — but backed by
+  the existing mutual, accept-required Friendship model, not a new asymmetric follow relationship.
+  Since friendship is symmetric, both lists are the same underlying accepted-friends set; this is
+  a presentation/framing feature, not a new data relationship.
+- **Priority:** Low
+- **Notes:** `lib/social/friends.ts` already has the accepted-friends query this would reuse (no
+  schema change needed). Mostly a UI/naming exercise on top of `/friends` — decide whether
+  "Following"/"Followers" are shown as one combined list (since they're identical for a mutual
+  model) or kept as two views for familiarity, and whether it lives on `/friends` or on each
+  pilot's public profile page.
+
 Completed ideas (see git history / PRs for detail):
 
 - Short Flight URL IDs — 4-char `[a-z0-9]` flight URLs (PR #2)
