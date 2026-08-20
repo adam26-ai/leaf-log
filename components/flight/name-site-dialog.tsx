@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { nameSite, suggestSitesForFlight } from "@/app/flights/[id]/site-action";
+import {
+  nameSite,
+  suggestSitesForFlight,
+  getBoundSiteInfo,
+  unpublishSiteForFlight,
+  deleteSiteForFlight,
+  type BoundSiteInfo,
+} from "@/app/flights/[id]/site-action";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteVisibility } from "@/lib/sites/visibility";
 import type { SiteSuggestion } from "@/lib/sites/repo";
@@ -63,6 +70,10 @@ export function SiteNameControl({
             setName(result.siteName);
             setOpen(false);
           }}
+          onUndone={() => {
+            setName(null);
+            setOpen(false);
+          }}
         />
       )}
     </>
@@ -80,14 +91,17 @@ function NameSiteDialog({
   currentName,
   onClose,
   onNamed,
+  onUndone,
 }: {
   flightId: string;
   endpoint: SiteEndpoint;
   currentName: string | null;
   onClose: () => void;
   onNamed: (result: { siteId: string; siteName: string }) => void;
+  onUndone: () => void;
 }) {
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
+  const [boundSite, setBoundSite] = useState<BoundSiteInfo | null>(null);
   const [name, setNameValue] = useState("");
   const [visibility, setVisibility] = useState<SiteVisibility>("public");
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +111,9 @@ function NameSiteDialog({
     let cancelled = false;
     suggestSitesForFlight(flightId, endpoint).then((rows) => {
       if (!cancelled) setSuggestions(rows);
+    });
+    getBoundSiteInfo(flightId, endpoint).then((info) => {
+      if (!cancelled) setBoundSite(info);
     });
     return () => {
       cancelled = true;
@@ -125,6 +142,24 @@ function NameSiteDialog({
     });
   }
 
+  function unpublish() {
+    setError(null);
+    startTransition(async () => {
+      const result = await unpublishSiteForFlight(flightId, endpoint);
+      if (result.ok) setBoundSite((prev) => (prev ? { ...prev, visibility: "private" } : prev));
+      else setError(result.error);
+    });
+  }
+
+  function remove() {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteSiteForFlight(flightId, endpoint);
+      if (result.ok) onUndone();
+      else setError(result.error);
+    });
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4"
@@ -142,6 +177,20 @@ function NameSiteDialog({
             <p className="text-sm text-gray-500">Currently named &ldquo;{currentName}&rdquo;.</p>
           )}
         </div>
+
+        {boundSite?.ownedByViewer && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
+            <span className="text-xs text-gray-500">This is your site.</span>
+            {boundSite.visibility === "public" && (
+              <Button type="button" variant="outline" size="sm" disabled={pending} onClick={unpublish}>
+                Unpublish
+              </Button>
+            )}
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={remove}>
+              Delete
+            </Button>
+          </div>
+        )}
 
         {suggestions === null ? (
           <p className="text-sm text-gray-500">Checking for nearby sites…</p>

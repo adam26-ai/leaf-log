@@ -15,7 +15,12 @@ import { prisma } from "@/lib/prisma";
 import { findSite, type SiteMatch } from "@/lib/sites/lookup";
 import { siteCachePatch, type SiteFieldPatch } from "@/lib/sites/associate";
 
-function parseArgs(argv: string[]): { siteId: string | null; publicOnly: boolean } {
+export interface BackfillOptions {
+  siteId?: string | null;
+  publicOnly?: boolean;
+}
+
+export function parseArgs(argv: string[]): { siteId: string | null; publicOnly: boolean } {
   let siteId: string | null = null;
   let publicOnly = false;
   for (let i = 0; i < argv.length; i++) {
@@ -25,8 +30,15 @@ function parseArgs(argv: string[]): { siteId: string | null; publicOnly: boolean
   return { siteId, publicOnly };
 }
 
-async function main() {
-  const { siteId: onlySiteId, publicOnly } = parseArgs(process.argv.slice(2));
+/**
+ * The core sweep, exported so it's testable directly against a real
+ * Postgres without shelling out to the CLI. Owner-scoped: every match is
+ * looked up as the flight's own owner would see it (public sites ∪ their
+ * own private ones) — the same write-time scope ingestFlight uses.
+ */
+export async function runBackfill(options: BackfillOptions = {}): Promise<number> {
+  const onlySiteId = options.siteId ?? null;
+  const publicOnly = options.publicOnly ?? false;
 
   const flights = await prisma.flight.findMany({
     where: { OR: [{ takeoffSiteId: null }, { landingSiteId: null }] },
@@ -51,9 +63,6 @@ async function main() {
 
   let updated = 0;
   for (const f of flights) {
-    // Scoped to the flight's own owner: an operator sweep records what that
-    // pilot could name for their own flight (public sites ∪ their own
-    // private ones) — the same write-time scope ingestFlight uses.
     const [takeoffMatch, landingMatch] = await Promise.all([
       f.takeoffSiteId === null && f.takeoffLat != null && f.takeoffLon != null
         ? findSite(prisma, {
@@ -84,12 +93,19 @@ async function main() {
     await prisma.flight.update({ where: { id: f.id }, data: patch });
     updated++;
   }
+  return updated;
+}
+
+async function main() {
+  const updated = await runBackfill(parseArgs(process.argv.slice(2)));
   console.log(`backfilled ${updated} flight(s)`);
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+if (require.main === module) {
+  main()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}

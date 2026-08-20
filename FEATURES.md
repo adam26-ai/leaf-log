@@ -2,31 +2,6 @@
 
 Track potential feature ideas for future sprints.
 
-## User-Defined Takeoff Sites (public/private, auto-associate)
-- **Area:** Sites / reverse-lookup / flight detail + onboarding
-- **Description:** Let a pilot name a new site from a flight's detected takeoff
-  location (when reverse-lookup returns "Unknown site") and save it as **public**
-  (shared into the community gazetteer) or **private** (only theirs). Afterwards,
-  any pilot whose takeoff falls close enough to that point auto-associates with the
-  existing site instead of creating a duplicate — and when creating a site near an
-  existing one, the app offers to reuse it rather than make a near-duplicate.
-- **Priority:** Medium
-- **Notes:** Extends the existing reverse-lookup rather than replacing it. **Distance
-  threshold:** reuse the takeoff match radius already in `lib/sites/lookup.ts` —
-  `TAKEOFF_RADIUS_M = 600` (landing is 900). ~500–600 m is the sweet spot: tight
-  enough that two distinct nearby launches on the same ridge don't collapse into one,
-  loose enough to absorb GPS scatter and pilots launching from different points of one
-  site; for dense flying areas a 300–400 m option could be exposed later, but 600 m is
-  a sound default and keeps behavior consistent with curated sites. **Data model:** add
-  `ownerId String?` + `visibility` (`public`/`private`) to `Site` (curated seeds stay
-  `ownerId=null`, `source="manual"`, public); set `source="user"` for pilot-created
-  sites. **Privacy:** `findSite()` must become viewer-scoped (public sites ∪ the
-  viewer's own private sites) — same app-layer privacy model as flights
-  (`lib/flights/repo.ts`), no RLS. **Dedup/snap:** on create, run `findSite` at the
-  takeoff coord first; if a match exists, suggest "use existing site" instead of
-  inserting. Optional later: moderation/merge for public sites, and seeding from a
-  licensed gazetteer (ParaglidingEarth) once redistribution terms are cleared.
-
 ## Logbook-Level Batch Photo Upload + Auto-Associate to Flights
 - **Area:** Logbook / photo ingestion / placement
 - **Description:** A photo-upload entry point at the **logbook (flights list)** level, not just
@@ -75,6 +50,7 @@ Track potential feature ideas for future sprints.
   receives the profile), so the count can be fetched alongside it — keep it cheap. Real-time
   updates are out of scope; refresh-on-navigation is fine. Pairs with the deferred notifications
   work in [[social-sprint-state]] but is much lighter (no notification model needed).
+
 Completed ideas (see git history / PRs for detail):
 
 - Short Flight URL IDs — 4-char `[a-z0-9]` flight URLs (PR #2)
@@ -117,3 +93,17 @@ Completed ideas (see git history / PRs for detail):
   (PRs #28, #29, #31) — *this also closes the deferred Leaf-device API token from PR #14.*
   Announced on `/whats-new` (2026-07-27) with an explicit "needs a firmware update" caveat — the
   `leaf` firmware side is still at planning status, so the server half is live and waiting.
+- User-generated site locations (SPRINT-004) — a pilot can name their own unmatched takeoff or
+  landing as **public** (shared gazetteer) or **private** (theirs only), directly on the flight
+  page. `Site` gains `ownerId`/`visibility`/`normalizedName`; the read path
+  (`lib/flights/repo.ts`) re-verifies every site id per viewer on every read, so a private site's
+  name never leaks through the cached column even via a public flight — proven by a
+  owner/friend/stranger/anonymous × private/public × flight-visibility matrix, a leak sweep, and
+  a stale-row defence test. Naming offers nearby sites to reuse first (kind-agnostic, 2 km,
+  distance + bearing) before creating a new one; creating widens an opposite-endpoint reuse to
+  `kind:"both"` and never narrows, guards against concurrent duplicate creation, and retroactively
+  re-associates the creator's own older unmatched flights (capped at 200). A later flight — web
+  upload or device push — auto-associates with no interaction. The creator can undo (unpublish or
+  delete) their own site while no other pilot's flight depends on it; once one does, it's
+  community property and `scripts/admin-sites.ts` (rename / force-private / merge) is the operator
+  remedy — no moderation queue in v1. (SPRINT-004, PRs #36-39)

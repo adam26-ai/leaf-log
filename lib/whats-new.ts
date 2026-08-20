@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-08-19",
+    title: "Name your own launch",
+    body: "Flew somewhere Leaf Log didn't recognize? You can name it now. Open the flight, tap \"Unknown site\" (takeoff or landing), and give it a name — share it publicly so every pilot who launches from there gets it too, or keep it private just for you. Your next flight from the same spot names itself automatically, and so do your older flights from there. If a nearby site already exists, we'll offer it first so you're not creating a duplicate.",
+  },
+  {
+    date: "2026-08-19",
     title: "See what your Leaf uploaded",
     body: "Connected devices now show their latest uploaded flight, with a direct link from Settings → Devices. Pairing also remembers the Leaf Log account shown on your vario, and reconnecting or unlinking cleans up the old device access automatically.",
   },

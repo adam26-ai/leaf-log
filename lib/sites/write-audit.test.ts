@@ -22,6 +22,11 @@ const ALLOWED_FILES = new Set([
   // Read-path DTO construction (in-memory, never persisted) — see
   // resolveSiteFields()/resolveEndpoint() in lib/flights/repo.ts.
   "lib/flights/repo.ts",
+  // The operator remedy script: it deliberately mirrors associate.ts's
+  // transition-writer cache logic (rename/force-private/merge) rather than
+  // calling the owner-gated functions, since it runs with full DB authority
+  // outside any pilot's session. See its own file-level comment.
+  "scripts/admin-sites.ts",
 ]);
 
 const FLIGHT_WRITE_CALL = /\.flight\.(create|update|updateMany|upsert)\s*\(/;

@@ -1,4 +1,4 @@
-import type { Site } from "@prisma/client";
+import type { Prisma, Site } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canSeeSite, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
 
@@ -160,6 +160,31 @@ export async function renameSite(
   });
 }
 
+function stillReferenced() {
+  return new Error("Another pilot's flight depends on this site — it can no longer be changed this way.");
+}
+
+/**
+ * True once no OTHER pilot's flight (either endpoint) references this site.
+ * The creator's own flights don't count — this guards "does giving this up
+ * surprise a stranger," not "is this site orphaned."
+ */
+async function referencedByOthers(
+  tx: Pick<SiteCacheDb, "site"> & {
+    flight: { count(args: { where: Prisma.FlightWhereInput }): Promise<number> };
+  },
+  siteId: string,
+  ownerId: string,
+): Promise<boolean> {
+  const count = await tx.flight.count({
+    where: {
+      OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }],
+      ownerId: { not: ownerId },
+    },
+  });
+  return count > 0;
+}
+
 /**
  * Delete a site the caller owns. `onDelete: SetNull` on both
  * Flight.takeoffSiteId/landingSiteId nulls the id on every referencing
@@ -167,9 +192,38 @@ export async function renameSite(
  * untouched — that's the historical fallback the read path relies on.
  * Raw `prisma.site.delete` is forbidden everywhere else in the app; this is
  * the one sanctioned path.
+ *
+ * Always guarded: once another pilot's flight depends on this site, it's
+ * community property and can no longer be deleted this way. The operator
+ * remedy (scripts/admin-sites.ts merge) reassigns those references first —
+ * once the site is naturally unreferenced, this same guard passes.
  */
 export async function deleteSite(siteId: string, ownerId: string): Promise<void> {
-  const existing = await prisma.site.findFirst({ where: { id: siteId, ownerId } });
-  if (!existing) throw notFoundOrNotOwned();
-  await prisma.site.delete({ where: { id: siteId } });
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
+    if (!existing) throw notFoundOrNotOwned();
+    if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
+    await tx.site.delete({ where: { id: siteId } });
+  });
+}
+
+/**
+ * Unpublish (demote to private) a site the caller owns, guarded the same
+ * way as delete: once another pilot's flight depends on it, it's community
+ * property and the creator can no longer take it back. This is the specific
+ * "creator undo" wrapper — the general setSiteVisibility above stays
+ * unguarded for the operator's force-private remedy, which by design
+ * overrides this exact guard.
+ */
+export async function unpublishOwnSite(siteId: string, ownerId: string): Promise<Site> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
+    if (!existing) throw notFoundOrNotOwned();
+    if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
+
+    const updated = await tx.site.update({ where: { id: siteId }, data: { visibility: "private" } });
+    await tx.flight.updateMany({ where: { takeoffSiteId: siteId }, data: { takeoffSiteName: null } });
+    await tx.flight.updateMany({ where: { landingSiteId: siteId }, data: { landingSiteName: null } });
+    return updated;
+  });
 }
