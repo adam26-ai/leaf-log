@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
-import { findSite } from "@/lib/sites/lookup";
+import { findLocation } from "@/lib/sites/lookup";
 import { resolveSiteCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
@@ -68,20 +68,25 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const metrics = deriveMetrics(parsed);
 
   // Write-time scope: what the flight's OWNER can name for their own flight —
-  // public sites plus their own private ones. Distinct from the read-time
-  // scope applied later per viewer in lib/flights/repo.ts. This is a
-  // best-effort pre-match outside the transaction; it's re-verified below
+  // public sites/zones plus their own private ones. Distinct from the
+  // read-time scope applied later per viewer in lib/flights/repo.ts. This is
+  // a best-effort pre-match outside the transaction; it's re-verified below
   // inside the create transaction, since a site can be demoted or deleted
   // between this match and the write.
+  //
+  // SPRINT-005: findLocation resolves a zone-first match with a site
+  // fallback, but this PR (PR1) writes the SITE portion only — the zone
+  // cache columns stay unwritten until PR2's two-level read-path firewall
+  // exists to protect them. The ordering is the safety property.
   const [takeoffMatch, landingMatch] = metrics
     ? await Promise.all([
-        findSite(prisma, {
+        findLocation(prisma, {
           lat: metrics.takeoff.lat,
           lon: metrics.takeoff.lon,
           kind: "takeoff",
           viewerId: ownerId,
         }),
-        findSite(prisma, {
+        findLocation(prisma, {
           lat: metrics.landing.lat,
           lon: metrics.landing.lon,
           kind: "landing",
@@ -100,8 +105,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
     // to private-owned-by-someone-else between match and create must never
     // cache a name the flight's owner no longer has any claim to.
     const [takeoffPatch, landingPatch] = await Promise.all([
-      resolveSiteCache(tx, takeoffMatch?.id ?? null, "takeoff", ownerId),
-      resolveSiteCache(tx, landingMatch?.id ?? null, "landing", ownerId),
+      resolveSiteCache(tx, takeoffMatch?.site.id ?? null, "takeoff", ownerId),
+      resolveSiteCache(tx, landingMatch?.site.id ?? null, "landing", ownerId),
     ]);
 
     return tx.flight.create({

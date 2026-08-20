@@ -22,3 +22,22 @@ export function canSeeSite(
   if (visibility === "public") return true;
   return viewerId !== null && ownerId !== null && ownerId === viewerId;
 }
+
+/**
+ * SPRINT-005: a zone is readable only if BOTH it and its parent site are
+ * readable by the viewer — the parent gate is not redundant, since the
+ * roll-up display renders the parent's name, so a readable zone under an
+ * unreadable site would leak the site. Fail-closed on a missing or
+ * mismatched parent (a stale/hand-written Flight row carrying a zone id from
+ * a DIFFERENT site than its own site id must never render a mismatched
+ * roll-up).
+ */
+export function canSeeZone(
+  zone: { visibility: SiteVisibility; ownerId: string | null; siteId: string },
+  site: { id: string; visibility: SiteVisibility; ownerId: string | null } | null,
+  viewerId: string | null,
+): boolean {
+  if (!site || site.id !== zone.siteId) return false;
+  if (!canSeeSite(site.visibility, site.ownerId, viewerId)) return false;
+  return canSeeSite(zone.visibility, zone.ownerId, viewerId);
+}

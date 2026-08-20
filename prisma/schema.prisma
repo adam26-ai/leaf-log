@@ -74,6 +74,7 @@ model Profile {
   homeSiteId         String?
   homeSite           Site?         @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
   ownedSites         Site[]        @relation("OwnedSites")
+  ownedZones         Zone[]        @relation("OwnedZones")
   flights            Flight[]
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
@@ -196,6 +197,19 @@ model Flight {
   landingSiteId         String?
   landingSite           Site?         @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
   landingSiteName       String?
+  // located zones (SPRINT-005) — a zone is a specific launch/landing spot
+  // WITHIN the site above; zoneId is only ever non-null alongside its own
+  // siteId (zone.siteId === flight.takeoffSiteId), enforced by the single
+  // cache writer in lib/sites/associate.ts, not a DB constraint — see
+  // docs/sprints/SPRINT-005.md "No Flight-side zoneId ⇒ siteId CHECK".
+  // Cached name is nulled (not kept as history) when the zone itself is
+  // deleted — the historical-fallback cache is reserved for a deleted SITE.
+  takeoffZoneId         String?
+  takeoffZone           Zone?         @relation("TakeoffZone", fields: [takeoffZoneId], references: [id], onDelete: SetNull)
+  takeoffZoneName       String?
+  landingZoneId         String?
+  landingZone           Zone?         @relation("LandingZone", fields: [landingZoneId], references: [id], onDelete: SetNull)
+  landingZoneName       String?
   data                  FlightData?
   photos                Photo[]
   kudos                 Kudo[]
@@ -208,6 +222,8 @@ model Flight {
   @@index([ownerId, status, flightDate])
   @@index([takeoffSiteId])
   @@index([landingSiteId])
+  @@index([takeoffZoneId])
+  @@index([landingZoneId])
 }
 
 // Heavy payloads kept off the Flight row so logbook/profile lists stay fast.
@@ -282,8 +298,42 @@ model Site {
   takeoffFlights Flight[]  @relation("TakeoffSite")
   landingFlights Flight[]  @relation("LandingSite")
   homeProfiles   Profile[] @relation("HomeSite")
+  zones          Zone[]    @relation("SiteZones")
 
   @@index([lat, lon])
   @@index([ownerId])
   @@index([ownerId, normalizedName])
+}
+
+// SPRINT-005: a specific launch/landing spot within a Site (e.g. "North
+// Launch" within "Mission Ridge"). A Zone cannot exist without its parent —
+// a Site, by contrast, is a fully first-class state with zero zones. Zone
+// visibility is INDEPENDENT of its parent's; effective visibility is the
+// conjunction (see lib/sites/visibility.ts's canSeeZone) — this is what lets
+// a private spot exist under a public site. Sibling-name uniqueness among
+// PUBLIC zones is enforced by a raw-SQL partial unique index in the
+// migration (Prisma v6 cannot express partial indexes in schema.prisma) —
+// deliberately not a plain @@unique, so a private zone can never block or
+// leak the existence of a public sibling with the same name.
+model Zone {
+  id             String   @id @default(cuid())
+  siteId         String // REQUIRED — a zone cannot exist alone
+  site           Site     @relation("SiteZones", fields: [siteId], references: [id], onDelete: Cascade)
+  name           String
+  normalizedName String // NFKC + folded, scoped to siblings under one site
+  kind           String   @default("unknown") // takeoff | landing | both | unknown
+  lat            Float
+  lon            Float
+  ownerId        String? // null-able for the same SetNull reason as Site.ownerId
+  owner          Profile? @relation("OwnedZones", fields: [ownerId], references: [id], onDelete: SetNull)
+  visibility     String // private | public — NO column default (forces every create to state intent)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  takeoffFlights Flight[] @relation("TakeoffZone")
+  landingFlights Flight[] @relation("LandingZone")
+
+  @@index([lat, lon])
+  @@index([siteId])
+  @@index([siteId, normalizedName])
+  @@index([ownerId])
 }

@@ -12,7 +12,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { prisma } from "@/lib/prisma";
-import { findSite, type SiteMatch } from "@/lib/sites/lookup";
+import { findLocation, type SiteMatch } from "@/lib/sites/lookup";
 import { siteCachePatch, type SiteFieldPatch } from "@/lib/sites/associate";
 
 export interface BackfillOptions {
@@ -63,9 +63,12 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
 
   let updated = 0;
   for (const f of flights) {
+    // SPRINT-005: findLocation resolves a zone-first match with a site
+    // fallback; this script writes the SITE portion only (zone-aware
+    // backfill is a later sprint's concern per docs/sprints/SPRINT-005.md).
     const [takeoffMatch, landingMatch] = await Promise.all([
       f.takeoffSiteId === null && f.takeoffLat != null && f.takeoffLon != null
-        ? findSite(prisma, {
+        ? findLocation(prisma, {
             lat: f.takeoffLat,
             lon: f.takeoffLon,
             kind: "takeoff",
@@ -73,7 +76,7 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
           })
         : null,
       f.landingSiteId === null && f.landingLat != null && f.landingLon != null
-        ? findSite(prisma, {
+        ? findLocation(prisma, {
             lat: f.landingLat,
             lon: f.landingLon,
             kind: "landing",
@@ -82,8 +85,8 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
         : null,
     ]);
 
-    const takeoff = accepted(takeoffMatch) ? takeoffMatch : null;
-    const landing = accepted(landingMatch) ? landingMatch : null;
+    const takeoff = accepted(takeoffMatch?.site ?? null) ? takeoffMatch!.site : null;
+    const landing = accepted(landingMatch?.site ?? null) ? landingMatch!.site : null;
     if (!takeoff && !landing) continue;
 
     const patch: SiteFieldPatch = {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma, Site } from "@prisma/client";
+import type { Prisma, Site, Zone } from "@prisma/client";
 import { haversineM } from "@/lib/geo/distance";
 import { bearingDeg } from "@/lib/igc/interpolate";
 import {
@@ -44,6 +44,37 @@ export function listOwnSites(ownerId: string): Promise<Site[]> {
   return prisma.site.findMany({
     where: { ownerId },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+/**
+ * SPRINT-005: a Prisma WHERE fragment for Zone — public zones, plus the
+ * viewer's own private ones, AND (always) the parent site's own visibility.
+ * The conjunction lives here, not just in `canSeeZone`, so every Zone query
+ * in this module applies it uniformly rather than re-deriving it per call
+ * site.
+ */
+export function zoneVisibleWhere(viewerId: string | null): Prisma.ZoneWhereInput {
+  return {
+    AND: [
+      viewerId === null
+        ? { visibility: "public" }
+        : { OR: [{ visibility: "public" }, { visibility: "private", ownerId: viewerId }] },
+      { site: siteVisibleWhere(viewerId) },
+    ],
+  };
+}
+
+/** A single zone, only if the viewer may see it (and its parent site). */
+export async function getZoneForViewer(zoneId: string, viewerId: string | null): Promise<Zone | null> {
+  return prisma.zone.findFirst({ where: { id: zoneId, ...zoneVisibleWhere(viewerId) } });
+}
+
+/** Every zone under a site that the viewer may see, oldest first. */
+export function listZonesForSite(siteId: string, viewerId: string | null): Promise<Zone[]> {
+  return prisma.zone.findMany({
+    where: { siteId, ...zoneVisibleWhere(viewerId) },
+    orderBy: { createdAt: "asc" },
   });
 }
 

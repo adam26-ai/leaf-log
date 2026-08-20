@@ -3,7 +3,10 @@ import { haversineM } from "@/lib/geo/distance";
 import {
   TAKEOFF_RADIUS_M,
   LANDING_RADIUS_M,
+  ZONE_TAKEOFF_RADIUS_M,
+  ZONE_LANDING_RADIUS_M,
   radiusForKind,
+  zoneRadiusForKind,
   kindMatches,
   boundingBox,
   withinRadius,
@@ -22,6 +25,19 @@ describe("radiusForKind / kindMatches", () => {
     expect(kindMatches("both", "landing")).toBe(true);
     expect(kindMatches("landing", "takeoff")).toBe(false);
     expect(kindMatches("unknown", "takeoff")).toBe(false);
+  });
+});
+
+describe("zoneRadiusForKind — tighter than the site radius, same asymmetry", () => {
+  it("returns roughly half the site radius for each kind", () => {
+    expect(zoneRadiusForKind("takeoff")).toBe(ZONE_TAKEOFF_RADIUS_M);
+    expect(zoneRadiusForKind("landing")).toBe(ZONE_LANDING_RADIUS_M);
+    expect(ZONE_TAKEOFF_RADIUS_M).toBeLessThan(TAKEOFF_RADIUS_M);
+    expect(ZONE_LANDING_RADIUS_M).toBeLessThan(LANDING_RADIUS_M);
+  });
+
+  it("preserves the takeoff/landing asymmetry at the zone level", () => {
+    expect(ZONE_TAKEOFF_RADIUS_M).toBeLessThan(ZONE_LANDING_RADIUS_M);
   });
 });
 
@@ -63,6 +79,39 @@ describe("withinRadius — radius boundaries", () => {
     const [result] = withinRadius([p], origin.lat, origin.lon, TAKEOFF_RADIUS_M);
     const direct = haversineM(origin.lat, origin.lon, p.lat, p.lon);
     expect(result.distanceM).toBeCloseTo(direct, 6);
+  });
+
+  it("includes a point just inside the zone-takeoff radius", () => {
+    const p = { id: "in", ...pointNorth(ZONE_TAKEOFF_RADIUS_M - 5) };
+    const result = withinRadius([p], origin.lat, origin.lon, ZONE_TAKEOFF_RADIUS_M);
+    expect(result.map((r) => r.id)).toEqual(["in"]);
+  });
+
+  it("excludes a point just outside the zone-takeoff radius", () => {
+    const p = { id: "out", ...pointNorth(ZONE_TAKEOFF_RADIUS_M + 20) };
+    const result = withinRadius([p], origin.lat, origin.lon, ZONE_TAKEOFF_RADIUS_M);
+    expect(result).toHaveLength(0);
+  });
+
+  it("includes a point just inside the zone-landing radius", () => {
+    const p = { id: "in", ...pointNorth(ZONE_LANDING_RADIUS_M - 5) };
+    const result = withinRadius([p], origin.lat, origin.lon, ZONE_LANDING_RADIUS_M);
+    expect(result.map((r) => r.id)).toEqual(["in"]);
+  });
+
+  it("excludes a point just outside the zone-landing radius", () => {
+    const p = { id: "out", ...pointNorth(ZONE_LANDING_RADIUS_M + 20) };
+    const result = withinRadius([p], origin.lat, origin.lon, ZONE_LANDING_RADIUS_M);
+    expect(result).toHaveLength(0);
+  });
+
+  it("a point between the zone and site radius is excluded from the zone radius but included in the site radius", () => {
+    // Demonstrates the zone-vs-site radius interaction directly: the same
+    // point is a zone-miss and a site-hit, which is exactly the "no dead
+    // ends" fallback lib/sites/lookup.ts's findLocation relies on.
+    const p = { id: "between", ...pointNorth((ZONE_TAKEOFF_RADIUS_M + TAKEOFF_RADIUS_M) / 2) };
+    expect(withinRadius([p], origin.lat, origin.lon, ZONE_TAKEOFF_RADIUS_M)).toHaveLength(0);
+    expect(withinRadius([p], origin.lat, origin.lon, TAKEOFF_RADIUS_M).map((r) => r.id)).toEqual(["between"]);
   });
 });
 
