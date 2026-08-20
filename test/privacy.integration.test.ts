@@ -108,9 +108,12 @@ describe("privacy invariant (app-layer repo)", () => {
         prisma.site.create({
           data: {
             name: `Privacy Site ${n} ${suffix}`,
+            normalizedName: `privacy site ${n} ${suffix}`.toLowerCase(),
             kind: "takeoff",
             lat: 37 + n / 100,
             lon: -122 - n / 100,
+            visibility: "public",
+            ownerId: null,
           },
         }),
       ),

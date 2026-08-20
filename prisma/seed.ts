@@ -22,14 +22,28 @@ const SITES = [
   { name: "Sun Valley (Bald Mtn)", kind: "takeoff", lat: 43.675, lon: -114.362, countryCode: "US", region: "Idaho" },
 ];
 
+function normalizeName(name: string): string {
+  return name.normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 async function main() {
   for (const s of SITES) {
+    // Curated seeds are always public and unowned — explicit here since
+    // `visibility` has no column default (forces every create to state intent).
+    const data = {
+      ...s,
+      source: "manual",
+      license: "curated",
+      ownerId: null,
+      visibility: "public" as const,
+      normalizedName: normalizeName(s.name),
+    };
     // Idempotent by name for the curated seed.
     const existing = await prisma.site.findFirst({ where: { name: s.name } });
     if (existing) {
-      await prisma.site.update({ where: { id: existing.id }, data: { ...s, source: "manual", license: "curated" } });
+      await prisma.site.update({ where: { id: existing.id }, data });
     } else {
-      await prisma.site.create({ data: { ...s, source: "manual", license: "curated" } });
+      await prisma.site.create({ data });
     }
   }
   const count = await prisma.site.count();
