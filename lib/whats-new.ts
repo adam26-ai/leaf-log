@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-08-19",
+    title: "Every site is pilot-named now",
+    body: "We retired the small starter list of pre-loaded launches — Leaf Log's gazetteer is now built entirely by pilots, using the naming tool above. If a flight you upload from a well-known launch shows \"Unknown site,\" you're probably the first to log it here — go ahead and name it (see \"Name your own launch\" below) so it's ready for the next pilot too.",
+  },
+  {
+    date: "2026-08-19",
     title: "Name your own launch",
     body: "Flew somewhere Leaf Log didn't recognize? You can name it now. Open the flight, tap \"Unknown site\" (takeoff or landing), and give it a name — share it publicly so every pilot who launches from there gets it too, or keep it private just for you. Your next flight from the same spot names itself automatically, and so do your older flights from there. If a nearby site already exists, we'll offer it first so you're not creating a duplicate.",
   },

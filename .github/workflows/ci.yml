@@ -43,8 +43,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma migrate deploy
-      # Seed the curated named sites — lookup.test.ts and the e2e happy-path
-      # (named-site heading) depend on them being present.
+      # No curated seed data (sites are fully community-driven) — kept as the
+      # entry point in case future non-site seed data is ever needed.
       - run: pnpm db:seed
       - run: pnpm typecheck
       - run: pnpm lint
@@ -78,8 +78,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prisma migrate deploy
-      # Seed the curated named sites — lookup.test.ts and the e2e happy-path
-      # (named-site heading) depend on them being present.
+      # No curated seed data (sites are fully community-driven) — kept as the
+      # entry point in case future non-site seed data is ever needed.
       - run: pnpm db:seed
       - run: pnpm exec playwright install --with-deps chromium
       # `pnpm e2e` generates the IGC fixture and starts its own dev server

@@ -114,6 +114,7 @@ describe("privacy invariant (app-layer repo)", () => {
             lon: -122 - n / 100,
             visibility: "public",
             ownerId: null,
+            source: "user",
           },
         }),
       ),

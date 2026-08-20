@@ -76,25 +76,43 @@ describe("findSite (viewer-scoped haversine)", () => {
     await prisma.$disconnect();
   });
 
-  it("names a known curated launch from its coordinates", async () => {
-    const site = await findSite(prisma, {
-      lat: 37.6685,
-      lon: -122.4936,
+  it("names a public site from its coordinates", async () => {
+    const site = await createSite({
+      lat: 20.0,
+      lon: 20.0,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: null,
+    });
+
+    const match = await findSite(prisma, {
+      lat: 20.0,
+      lon: 20.0,
       kind: "takeoff",
       viewerId: null,
     });
-    expect(site?.name).toBe("Mussel Rock");
+    expect(match?.id).toBe(site.id);
   });
 
-  it("names at least 3 known seeded sites", async () => {
-    const checks: [number, number, string][] = [
-      [37.4699, -121.8638, "Ed Levin"],
-      [40.4828, -111.903, "Point of the Mountain"],
-      [46.696, 7.796, "Interlaken (Beatenberg)"],
-    ];
-    for (const [lat, lon, name] of checks) {
-      const site = await findSite(prisma, { lat, lon, kind: "takeoff", viewerId: null });
-      expect(site?.name).toBe(name);
+  it("names each of several distinct public sites from their own coordinates", async () => {
+    const created = await Promise.all(
+      [
+        [21.0, 21.0],
+        [22.0, 22.0],
+        [23.0, 23.0],
+      ].map(([lat, lon]) =>
+        createSite({ lat, lon, kind: "takeoff", visibility: "public", ownerId: null }),
+      ),
+    );
+
+    for (const site of created) {
+      const match = await findSite(prisma, {
+        lat: site.lat,
+        lon: site.lon,
+        kind: "takeoff",
+        viewerId: null,
+      });
+      expect(match?.id).toBe(site.id);
     }
   });
 
@@ -109,10 +127,12 @@ describe("findSite (viewer-scoped haversine)", () => {
   });
 
   it("respects the tighter takeoff radius", async () => {
-    // ~3 km north of Mussel Rock — outside the 600 m takeoff radius.
+    await createSite({ lat: 24.0, lon: 24.0, kind: "takeoff", visibility: "public", ownerId: null });
+
+    // ~3 km north — outside the 600 m takeoff radius.
     const site = await findSite(prisma, {
-      lat: 37.695,
-      lon: -122.4936,
+      lat: 24.027,
+      lon: 24.0,
       kind: "takeoff",
       viewerId: null,
     });
@@ -238,13 +258,8 @@ describe("findSite (viewer-scoped haversine)", () => {
     expect(match).toBeNull();
   });
 
-  it("every curated (source='manual') site is public, unowned, and normalized", async () => {
-    const rows = await prisma.site.findMany({ where: { source: "manual" } });
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      expect(row.visibility).toBe("public");
-      expect(row.ownerId).toBeNull();
-      expect(row.normalizedName).toBe(row.name.toLowerCase());
-    }
+  it("sites are fully community-driven: no curated (source='manual') seed exists", async () => {
+    const count = await prisma.site.count({ where: { source: "manual" } });
+    expect(count).toBe(0);
   });
 });
