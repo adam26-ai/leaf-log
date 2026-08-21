@@ -147,22 +147,25 @@ Completed ideas (see git history / PRs for detail):
   Along the way, found and fixed a real Postgres limitation (two FK cascade paths converging on
   one `Flight` row during a site delete) and a latent regex bug in the SPRINT-004 write-audit that
   silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005)
-
-## Custom GeoJSON Polygon Boundaries for Sites and Zones
-- **Area:** Sites & zones / matching
-- **Description:** Replace (or supplement) the fixed-radius circle matching for `Site` and `Zone`
-  with a custom GeoJSON polygon boundary a pilot can draw — e.g. tracing the actual bowl or ridge
-  shape of a launch instead of relying on a 300–600 m circle centered on one point. Matching a
-  flight endpoint would become a point-in-polygon test against the drawn boundary (falling back to
-  the existing radius circle for any site/zone that hasn't defined one).
-- **Priority:** Low
-- **Notes:** A meaningfully larger change than a config tweak — needs a polygon column (e.g.
-  PostGIS `geometry`/`geography`, or a plain `jsonb` GeoJSON column with in-app point-in-polygon
-  math if staying off PostGIS), a drawing UI (map + editable vertices) in the naming/edit flow,
-  and point-in-polygon logic alongside (or replacing) `lib/sites/geo.ts`'s `radiusForKind` /
-  `zoneRadiusForKind`. Should compose with the (also proposed) per-site/per-zone radius
-  configurability rather than duplicate it — a polygon is really "a custom-shaped radius." Worth
-  scoping as its own sprint given the schema, matching-engine, and UI surface all change together.
+- Custom boundaries for sites and zones — a pilot can now draw a polygon that **replaces** the
+  fixed-radius circle for that one `Site` or `Zone` (a versioned `jsonb` envelope + derived bbox
+  columns, no PostGIS), so a 3 km ridge site can finally catch flights from both ends and two
+  close-together launches can stop grabbing each other's flights. `lib/sites/lookup.ts`'s
+  `findLocation` unions a boundary-bbox prefilter alongside the existing circle one (still exactly
+  two DB round trips per endpoint) and every matched row — circle or boundary — gets a real
+  `distanceM`, so ranking never needed a "boundary beats circle" tier. An owner-scoped picker
+  (`lib/sites/associate.ts`'s `listOwnedSitesForBoundaryEditing`/`listOwnedZonesForBoundaryEditing`)
+  lets a pilot edit a boundary on any site/zone they own or edit-control even with no flight bound
+  to it — closing a reachability gap the original planning drafts left (the editor could otherwise
+  only be reached from an already-bound flight, making "expand a ridge site" unreachable in
+  practice). No radius-configurability column shipped separately — the envelope's `kind`
+  discriminant is designed to absorb that as a future variant of the same column. Zone boundaries
+  were deliberately left uncapped near the old circle scale (a stakeholder call, not an oversight)
+  — the accepted tradeoff is documented alongside the mitigations (editor context, `boundary-clear`)
+  in `docs/sprints/SPRINT-006.md`'s Risks section. Ships with a `SITE_BOUNDARY_MATCHING=off` kill
+  switch, a `boundaryUpdatedById` attribution column, a per-caller daily edit cap, and
+  `scripts/admin-sites.ts`'s `boundary-clear` / `zone-boundary-clear` (plus a boundary-preservation
+  guard on `merge`/`zone-merge`). (SPRINT-006)
 
 ## Manual Zone Correction on a Flight
 - **Area:** Flight page / sites & zones
@@ -182,4 +185,6 @@ Completed ideas (see git history / PRs for detail):
   then a direct bind path that skips the 300 m/400 m match-radius gate entirely (an explicit pilot
   choice, not an auto-match). Should reuse `locationCachePatch`/the existing single-writer pattern
   in `lib/sites/associate.ts` rather than introduce a second write path for the same cache
-  columns.
+  columns. *Now that SPRINT-006 shipped custom boundaries, a pilot who draws the right shape may
+  need this less — but one who's drawn a boundary and still hits a mis-match will want the manual
+  override more, not less (see SPRINT-006.md's "genuinely still open" list).*
