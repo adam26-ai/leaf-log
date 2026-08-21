@@ -157,7 +157,23 @@ export function BoundaryEditor({
     map.on("load", () => {
       new maplibregl.Marker({ color: "#272727" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
 
-      if (referenceRadiusM) {
+      if (initialBoundary) {
+        // A row that already has a boundary is being replaced by whatever
+        // gets saved next, not by the circle — show the CURRENTLY SAVED
+        // shape as a static dashed reference, distinct from the live
+        // (orange, editable) draft, so editing/dragging points never loses
+        // sight of what's actually live right now.
+        map.addSource("current-boundary", {
+          type: "geojson",
+          data: ringGeoJson(initialBoundary.geometry.coordinates[0] as LngLat[]),
+        });
+        map.addLayer({
+          id: "current-boundary-line",
+          type: "line",
+          source: "current-boundary",
+          paint: { "line-color": "#3b7dd8", "line-width": 2, "line-dasharray": [2, 2] },
+        });
+      } else if (referenceRadiusM) {
         map.addSource("reference-circle", {
           type: "geojson",
           data: ringGeoJson(circleRing(anchor.lat, anchor.lon, referenceRadiusM)),
@@ -267,6 +283,12 @@ export function BoundaryEditor({
   return (
     <div className="flex flex-col gap-3">
       <div ref={containerRef} data-testid="boundary-editor-map" className="h-[360px] w-full rounded-lg" />
+      {initialBoundary && (
+        <p className="text-xs text-neutral-500">
+          <span className="inline-block h-0 w-3 border-t-2 border-dashed border-[#3b7dd8] align-middle" /> dashed blue
+          — the currently saved boundary
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
         <span>{live.vertexCount} point{live.vertexCount === 1 ? "" : "s"}</span>
         {live.approxAreaM2 != null && (
