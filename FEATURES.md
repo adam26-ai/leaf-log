@@ -147,3 +147,39 @@ Completed ideas (see git history / PRs for detail):
   Along the way, found and fixed a real Postgres limitation (two FK cascade paths converging on
   one `Flight` row during a site delete) and a latent regex bug in the SPRINT-004 write-audit that
   silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005)
+
+## Custom GeoJSON Polygon Boundaries for Sites and Zones
+- **Area:** Sites & zones / matching
+- **Description:** Replace (or supplement) the fixed-radius circle matching for `Site` and `Zone`
+  with a custom GeoJSON polygon boundary a pilot can draw — e.g. tracing the actual bowl or ridge
+  shape of a launch instead of relying on a 300–600 m circle centered on one point. Matching a
+  flight endpoint would become a point-in-polygon test against the drawn boundary (falling back to
+  the existing radius circle for any site/zone that hasn't defined one).
+- **Priority:** Low
+- **Notes:** A meaningfully larger change than a config tweak — needs a polygon column (e.g.
+  PostGIS `geometry`/`geography`, or a plain `jsonb` GeoJSON column with in-app point-in-polygon
+  math if staying off PostGIS), a drawing UI (map + editable vertices) in the naming/edit flow,
+  and point-in-polygon logic alongside (or replacing) `lib/sites/geo.ts`'s `radiusForKind` /
+  `zoneRadiusForKind`. Should compose with the (also proposed) per-site/per-zone radius
+  configurability rather than duplicate it — a polygon is really "a custom-shaped radius." Worth
+  scoping as its own sprint given the schema, matching-engine, and UI surface all change together.
+
+## Manual Zone Correction on a Flight
+- **Area:** Flight page / sites & zones
+- **Description:** On a flight's takeoff or landing endpoint, let the pilot **remove** a
+  previously bound zone (whether it was auto-matched on ingest or manually selected before) and
+  **manually pick a different, nearby zone** even when it falls outside the auto-match radius.
+  Motivated by a real gap: if the Leaf device starts recording a few seconds after actual launch,
+  the recorded endpoint can sit meters to tens of meters past the true launch point — enough to
+  miss a zone's 300 m/400 m match radius even though the pilot knows exactly which zone it was.
+- **Priority:** Medium
+- **Notes:** "Remove a zone" is mostly already there in spirit (`unpublishZoneForFlight` /
+  `deleteZoneForFlight` in `app/flights/[id]/site-action.ts` cover unpublishing/deleting the zone
+  *itself*), but there's no existing action to simply *unbind* a flight from its matched zone
+  while leaving the zone and the parent site intact. "Manually pick a nearby zone" needs a new
+  picker UI — likely reusing `suggestNearbyLocations()` (`lib/sites/repo.ts`, currently a 2 km
+  `SUGGEST_RADIUS_M` sweep used for site/zone creation) to list candidate zones near the endpoint,
+  then a direct bind path that skips the 300 m/400 m match-radius gate entirely (an explicit pilot
+  choice, not an auto-match). Should reuse `locationCachePatch`/the existing single-writer pattern
+  in `lib/sites/associate.ts` rather than introduce a second write path for the same cache
+  columns.
