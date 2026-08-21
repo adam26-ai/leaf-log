@@ -60,12 +60,19 @@ export interface BoundaryEditorContext {
 
 export type BoundaryActionOutcome = { ok: true } | { ok: false; error: string };
 
+export interface NearbyContextItem {
+  lat: number;
+  lon: number;
+  radiusM: number;
+}
+
 export function BoundaryEditor({
   anchor,
   initialBoundary,
   level,
   referenceRadiusM,
   parent = null,
+  nearby = [],
   onSave,
   onClear,
   onCancel,
@@ -80,6 +87,11 @@ export function BoundaryEditor({
   /** When editing a zone, the parent site's geometry — drawn faintly as
    *  CONTEXT, never enforced (a zone may legally extend past it). */
   parent?: BoundaryEditorContext | null;
+  /** Other visible sites/zones near the anchor, drawn as faint reference
+   *  circles — context for a pilot about to draw something large, since
+   *  zone boundaries are deliberately not capped near the old circle
+   *  scale (see docs/sprints/SPRINT-006.md's Risks). */
+  nearby?: NearbyContextItem[];
   onSave: (raw: unknown) => Promise<BoundaryActionOutcome>;
   onClear: () => Promise<BoundaryActionOutcome>;
   onCancel: () => void;
@@ -173,6 +185,22 @@ export function BoundaryEditor({
             paint: { "line-color": "#6fae5e", "line-width": 1.5, "line-dasharray": [1, 2] },
           });
         }
+      }
+
+      if (nearby.length > 0) {
+        map.addSource("nearby-context", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: nearby.map((n) => ringGeoJson(circleRing(n.lat, n.lon, n.radiusM))),
+          },
+        });
+        map.addLayer({
+          id: "nearby-context-line",
+          type: "line",
+          source: "nearby-context",
+          paint: { "line-color": "#b0b0b0", "line-width": 1, "line-dasharray": [1, 3] },
+        });
       }
 
       map.addSource("draft-boundary", { type: "geojson", data: ringGeoJson([]) });

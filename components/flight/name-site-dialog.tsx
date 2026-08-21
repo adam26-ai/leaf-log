@@ -18,12 +18,12 @@ import {
   clearBoundaryForOwnedRow,
   getBoundaryForOwnedRow,
   type BoundaryEditableRows,
+  type BoundaryEditorInitialState,
 } from "@/app/flights/[id]/boundary-action";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteChoice, ZoneChoice, SiteSuggestion, ZoneSuggestion } from "@/lib/sites/repo";
 import type { SiteVisibility } from "@/lib/sites/visibility";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
-import type { Boundary } from "@/lib/sites/geo";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { formatLocationLabel } from "@/lib/sites/display";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
@@ -884,9 +884,7 @@ function BoundaryStep({
   onBack: () => void;
   onClose: () => void;
 }) {
-  const [initial, setInitial] = useState<{ anchor: { lat: number; lon: number }; boundary: Boundary | null } | null | undefined>(
-    undefined,
-  );
+  const [initial, setInitial] = useState<BoundaryEditorInitialState | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -934,6 +932,7 @@ function BoundaryStep({
         initialBoundary={initial.boundary}
         level={target.level}
         referenceRadiusM={target.referenceRadiusM}
+        nearby={initial.nearby}
         onSave={(raw) => saveBoundaryForOwnedRow(target.level, target.id, raw)}
         onClear={() => clearBoundaryForOwnedRow(target.level, target.id)}
         onCancel={onBack}

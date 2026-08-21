@@ -16,6 +16,8 @@ import {
 } from "@/lib/sites/associate";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import type { Boundary } from "@/lib/sites/geo";
+import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
+import { suggestNearbyLocations } from "@/lib/sites/repo";
 import { siteIdForFlightEndpoint, zoneIdForFlightEndpoint, revalidateSiteSurfaces } from "./site-action";
 
 export type BoundaryActionResult = { ok: true } | { ok: false; error: string };
@@ -147,16 +149,34 @@ export async function clearBoundaryForOwnedRow(level: BoundaryLevel, id: string)
   }
 }
 
+export interface NearbyContextItem {
+  lat: number;
+  lon: number;
+  /** A representative reference radius for drawing a faint context circle —
+   *  not authoritative, just a visual aid so a pilot drawing a large shape
+   *  can see what's nearby. The item's own boundary (if any) is
+   *  deliberately not fetched here — boundary JSON stays confined to the
+   *  row actually being edited, never a merely-nearby one. */
+  radiusM: number;
+}
+
 export interface BoundaryEditorInitialState {
   anchor: { lat: number; lon: number };
   boundary: Boundary | null;
+  /** Other VISIBLE sites/zones near the anchor, drawn faintly for context —
+   *  the mitigation the "allow large zone boundaries, accept the risk"
+   *  interview decision leans on: a pilot drawing something oversized can
+   *  see what else is nearby before they save. Viewer-scoped (reuses
+   *  suggestNearbyLocations), never includes the row being edited itself. */
+  nearby: NearbyContextItem[];
 }
 
 /**
  * The editor's initial state for a row the caller owns/edit-controls —
  * returns the anchor (always, so the editor can show it as a labelled
- * marker) and the current boundary (if any). Returns null for a row the
- * caller can't edit, hidden and nonexistent alike.
+ * marker), the current boundary (if any), and nearby visible geometry for
+ * context. Returns null for a row the caller can't edit, hidden and
+ * nonexistent alike.
  */
 export async function getBoundaryForOwnedRow(
   level: BoundaryLevel,
@@ -165,13 +185,46 @@ export async function getBoundaryForOwnedRow(
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
+  // suggestNearbyLocations deliberately exposes distance/bearing rather
+  // than raw coordinates; re-derive an approximate position from them
+  // (same small-extent approximation used throughout lib/sites) — plenty
+  // precise for a faint context circle, which needs no exact fix.
+  function destinationPoint(lat: number, lon: number, bearingDeg: number, distanceM: number) {
+    const bearing = (bearingDeg * Math.PI) / 180;
+    const dLat = (distanceM * Math.cos(bearing)) / 111_320;
+    const dLon = (distanceM * Math.sin(bearing)) / (111_320 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
+    return { lat: lat + dLat, lon: lon + dLon };
+  }
+
+  async function nearbyContext(lat: number, lon: number): Promise<NearbyContextItem[]> {
+    const suggestions = await suggestNearbyLocations(lat, lon, userId);
+    const items: NearbyContextItem[] = [];
+    for (const s of suggestions) {
+      if (!(level === "site" && s.id === id)) {
+        const pos = destinationPoint(lat, lon, s.bearingDeg, s.distanceM);
+        items.push({ ...pos, radiusM: radiusForKind("takeoff") });
+      }
+      for (const z of s.zones) {
+        if (!(level === "zone" && z.id === id)) {
+          const pos = destinationPoint(lat, lon, z.bearingDeg, z.distanceM);
+          items.push({ ...pos, radiusM: zoneRadiusForKind("takeoff") });
+        }
+      }
+    }
+    return items;
+  }
+
   if (level === "site") {
     const site = await prisma.site.findFirst({
       where: { id, ownerId: userId },
       select: { lat: true, lon: true, boundary: true },
     });
     if (!site) return null;
-    return { anchor: { lat: site.lat, lon: site.lon }, boundary: (site.boundary as Boundary | null) ?? null };
+    return {
+      anchor: { lat: site.lat, lon: site.lon },
+      boundary: (site.boundary as Boundary | null) ?? null,
+      nearby: await nearbyContext(site.lat, site.lon),
+    };
   }
 
   const zone = await prisma.zone.findFirst({
@@ -179,5 +232,9 @@ export async function getBoundaryForOwnedRow(
     select: { lat: true, lon: true, boundary: true },
   });
   if (!zone) return null;
-  return { anchor: { lat: zone.lat, lon: zone.lon }, boundary: (zone.boundary as Boundary | null) ?? null };
+  return {
+    anchor: { lat: zone.lat, lon: zone.lon },
+    boundary: (zone.boundary as Boundary | null) ?? null,
+    nearby: await nearbyContext(zone.lat, zone.lon),
+  };
 }
