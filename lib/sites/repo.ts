@@ -7,8 +7,11 @@ import {
   radiusForKind,
   zoneRadiusForKind,
   boundingBox,
-  withinRadius,
   compareSiteCandidates,
+  boundaryPrefilterWhere,
+  boundaryBoundingBox,
+  locationMatches,
+  isValidBoundaryShape,
   type MatchKind,
 } from "./geo";
 import { locationCachePatch, type SiteEndpoint, type LocationFieldPatch } from "./associate";
@@ -135,14 +138,25 @@ export async function suggestNearbyLocations(
 ): Promise<SiteSuggestion[]> {
   const box = boundingBox(lat, lon, SUGGEST_RADIUS_M);
   const lonWhere = lonWhereFor(box);
+  // SPRINT-006: a site/zone whose ANCHOR sits outside this bbox can still be
+  // the right suggestion when its drawn BOUNDARY contains the point — the
+  // boundary branch tests the row's own bbox columns directly, independent
+  // of the query-point-centred box above. Without this, the reuse-first
+  // dialog and the matcher (lib/sites/lookup.ts) would disagree about what's
+  // nearby, and a pilot could create a duplicate of a site the boundary
+  // feature was specifically drawn to reach.
+  const locationOr = [
+    { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhere] },
+    boundaryPrefilterWhere(lat, lon),
+  ];
 
   const [siteRows, zoneRows] = await Promise.all([
     prisma.site.findMany({
-      where: { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhere, siteVisibleWhere(viewerId)] },
+      where: { AND: [{ OR: locationOr }, siteVisibleWhere(viewerId)] },
       select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, license: true },
     }),
     prisma.zone.findMany({
-      where: { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhere, zoneVisibleWhere(viewerId)] },
+      where: { AND: [{ OR: locationOr }, zoneVisibleWhere(viewerId)] },
       select: {
         id: true,
         name: true,
@@ -151,12 +165,22 @@ export async function suggestNearbyLocations(
         kind: true,
         visibility: true,
         siteId: true,
+        boundary: true,
         site: { select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, license: true } },
       },
     }),
   ]);
 
-  const zoneRanked = withinRadius(zoneRows, lat, lon, SUGGEST_RADIUS_M).sort(compareSiteCandidates);
+  const zoneRanked = zoneRows
+    .flatMap((z) => {
+      if (z.boundary != null && !isValidBoundaryShape(z.boundary)) {
+        console.warn(`[sites] malformed stored boundary on Zone id=${z.id}; skipped from suggestions`);
+        return [];
+      }
+      const { matched, distanceM } = locationMatches(z, lat, lon, SUGGEST_RADIUS_M);
+      return matched ? [{ ...z, distanceM }] : [];
+    })
+    .sort(compareSiteCandidates);
 
   const siteById = new Map(siteRows.map((s) => [s.id, s]));
   for (const z of zoneRanked) {
@@ -227,14 +251,25 @@ function endpointCoord(
  */
 export async function reassociateOwnFlights(
   ownerId: string,
-  site: Pick<Site, "id" | "name" | "visibility" | "lat" | "lon">,
+  site: Pick<Site, "id" | "name" | "visibility" | "lat" | "lon" | "boundary">,
   endpoint: SiteEndpoint,
-  zone?: Pick<Zone, "id" | "name" | "visibility" | "siteId" | "lat" | "lon"> | null,
+  zone?: Pick<Zone, "id" | "name" | "visibility" | "siteId" | "lat" | "lon" | "boundary"> | null,
 ): Promise<{ updated: number; truncated: boolean }> {
   const matchKind: MatchKind = endpoint;
   const anchor = zone ?? site;
   const radius = zone ? zoneRadiusForKind(matchKind) : radiusForKind(matchKind);
-  const box = boundingBox(anchor.lat, anchor.lon, radius);
+  // SPRINT-006: scan by the boundary's own bbox (not the radius box) when
+  // the anchor row has one — a widened boundary can reach flights well past
+  // the old radius, and this is what lets "trace the ridge" pick up the
+  // pilot's own already-flown endpoints from both ends. Malformed stored
+  // geometry falls back to the radius box (a scan-scope decision, not a
+  // match decision — locationMatches below is still the actual authority
+  // and fails closed on the same malformed value).
+  const boundaryBox =
+    anchor.boundary != null && isValidBoundaryShape(anchor.boundary) ? boundaryBoundingBox(anchor.boundary) : null;
+  const box = boundaryBox
+    ? { latMin: boundaryBox.minLat, latMax: boundaryBox.maxLat, lonRanges: [{ min: boundaryBox.minLon, max: boundaryBox.maxLon }] }
+    : boundingBox(anchor.lat, anchor.lon, radius);
 
   const latField = endpoint === "takeoff" ? "takeoffLat" : "landingLat";
   const siteIdField = endpoint === "takeoff" ? "takeoffSiteId" : "landingSiteId";
@@ -264,7 +299,8 @@ export async function reassociateOwnFlights(
 
   const withinExact = candidates.filter((f) => {
     const coord = endpointCoord(f, endpoint);
-    return coord !== null && haversineM(anchor.lat, anchor.lon, coord.lat, coord.lon) <= radius;
+    if (coord === null) return false;
+    return locationMatches(anchor, coord.lat, coord.lon, radius).matched;
   });
 
   const truncated = withinExact.length > REASSOCIATE_CAP;
@@ -391,14 +427,26 @@ export async function createOrAttachSiteFromFlight(
       // Re-run the visible-candidate probe INSIDE the transaction — guards
       // two pilots creating the same site concurrently, and rejects a
       // proximity-scoped normalizedName conflict against a VISIBLE site
-      // with a steer to reuse instead.
+      // with a steer to reuse instead. SPRINT-006: the OR'd boundary branch
+      // means a site whose ANCHOR sits outside the suggest radius but whose
+      // drawn BOUNDARY contains this point still blocks a duplicate — the
+      // exact case decision 5's picker exists to make reachable in the
+      // first place.
       const box = boundingBox(lat, lon, SUGGEST_RADIUS_M);
       const lonWhere = lonWhereFor(box);
       const nearbyRows = await tx.site.findMany({
-        where: { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhere, siteVisibleWhere(ownerId)] },
-        select: { id: true, name: true, normalizedName: true, lat: true, lon: true },
+        where: {
+          AND: [
+            { OR: [{ AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhere] }, boundaryPrefilterWhere(lat, lon)] },
+            siteVisibleWhere(ownerId),
+          ],
+        },
+        select: { id: true, name: true, normalizedName: true, lat: true, lon: true, boundary: true },
       });
-      const nearby = withinRadius(nearbyRows, lat, lon, SUGGEST_RADIUS_M);
+      const nearby = nearbyRows.filter((s) => {
+        if (s.boundary != null && !isValidBoundaryShape(s.boundary)) return false;
+        return locationMatches(s, lat, lon, SUGGEST_RADIUS_M).matched;
+      });
       const conflict = nearby.find((s) => s.normalizedName === validated.normalizedName);
       if (conflict) {
         throw new Error(`"${conflict.name}" already exists nearby — reuse it instead of creating a duplicate.`);

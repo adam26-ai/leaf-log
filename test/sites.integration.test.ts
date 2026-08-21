@@ -6,12 +6,35 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
+import { validateBoundary, boundaryColumns } from "@/lib/sites/boundary";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for site integration tests.");
 }
 
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
+
+/** SPRINT-006: a valid canonical square boundary (and its derived bbox
+ *  columns) around (lat, lon), for building boundary-bearing test fixtures. */
+function testBoundaryColumns(lat: number, lon: number, halfSizeM: number, updatedById: string) {
+  const dLat = halfSizeM / 111_320;
+  const dLon = halfSizeM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const coords: [number, number][] = [
+    [lon - dLon, lat - dLat],
+    [lon + dLon, lat - dLat],
+    [lon + dLon, lat + dLat],
+    [lon - dLon, lat + dLat],
+    [lon - dLon, lat - dLat],
+  ];
+  const result = validateBoundary({ type: "Polygon", coordinates: [coords] }, "site", { lat, lon });
+  if (!result.ok) throw new Error(`test fixture boundary invalid: ${result.error}`);
+  return boundaryColumns(result.boundary, updatedById);
+}
+
+function requireOwnerForBoundary(ownerId: string | null): string {
+  if (!ownerId) throw new Error("test fixture: a boundary-bearing row needs a real ownerId");
+  return ownerId;
+}
 
 describe("sites: read-path firewall", () => {
   let prisma: import("@prisma/client").PrismaClient;
@@ -43,9 +66,15 @@ describe("sites: read-path firewall", () => {
     visibility: "private" | "public";
     ownerId: string | null;
     name?: string;
+    /** SPRINT-006: a square boundary (metre half-size) around (lat, lon), for
+     *  the boundary-bearing-row privacy re-run. */
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = opts.name ?? `Matrix Site ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const site = await prisma.site.create({
       data: {
         name,
@@ -56,6 +85,7 @@ describe("sites: read-path firewall", () => {
         visibility: opts.visibility,
         ownerId: opts.ownerId,
         source: "user",
+        ...boundaryCols,
       },
     });
     siteIds.push(site.id);
@@ -137,9 +167,13 @@ describe("sites: read-path firewall", () => {
     visibility: "private" | "public";
     ownerId: string | null;
     name?: string;
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = opts.name ?? `Matrix Zone ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const zone = await prisma.zone.create({
       data: {
         siteId: opts.siteId,
@@ -150,6 +184,7 @@ describe("sites: read-path firewall", () => {
         kind: opts.kind ?? "takeoff",
         visibility: opts.visibility,
         ownerId: opts.ownerId,
+        ...boundaryCols,
       },
     });
     zoneIds.push(zone.id);
@@ -2218,6 +2253,159 @@ describe("sites: read-path firewall", () => {
 
       const stillOtherZone = await prisma.flight.findUniqueOrThrow({ where: { id: alreadyZoned.id } });
       expect(stillOtherZone.takeoffZoneId).toBe(otherZone.id); // untouched — already zoned, not null
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-006: the privacy matrix, re-run with boundary-bearing rows.
+  // Decision 1 ("a boundary is geometry, never identity") is a claim about
+  // lib/flights/repo.ts's read-path firewall — which this sprint does not
+  // touch at all. These are the same core cells the SPRINT-004/005 matrix
+  // above already proves for circle-only rows, re-run against otherwise
+  // IDENTICAL fixtures that additionally carry a boundary — if a boundary's
+  // mere presence changed any of these outcomes, decision 1 would be wrong.
+  // ---------------------------------------------------------------------
+  describe("SPRINT-006: privacy matrix re-run with boundary-bearing rows", () => {
+    it("a PRIVATE boundary-bearing site is invisible to a stranger through a PUBLIC flight (the core shadowing case)", async () => {
+      const owner = await createPilot("b6privsiteowner");
+      const stranger = await createPilot("b6privsitestranger");
+      const site = await createSite({ lat: 70, lon: 70, visibility: "private", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffSiteName ?? null).toBeNull();
+
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffSiteName).toBe(site.name);
+
+      const anonView = await repo.getFlightForViewer(flight.id, null);
+      expect(anonView?.takeoffSiteName ?? null).toBeNull();
+    });
+
+    it("a PUBLIC boundary-bearing site is visible to everyone", async () => {
+      const owner = await createPilot("b6pubsiteowner");
+      const stranger = await createPilot("b6pubsitestranger");
+      const site = await createSite({ lat: 71, lon: 71, visibility: "public", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      for (const viewerId of [owner, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen?.takeoffSiteName).toBe(site.name);
+      }
+    });
+
+    it("zone conjunction holds for a boundary-bearing PRIVATE zone under a PUBLIC site — hidden from a stranger, visible to the zone owner", async () => {
+      const siteOwner = await createPilot("b6zoneconjsiteowner");
+      const zoneOwner = await createPilot("b6zoneconjzoneowner");
+      const stranger = await createPilot("b6zoneconjstranger");
+      const site = await createSite({ lat: 72, lon: 72, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({
+        siteId: site.id,
+        lat: 72,
+        lon: 72,
+        visibility: "private",
+        ownerId: zoneOwner,
+        boundaryHalfSizeM: 50,
+      });
+      const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const zoneOwnerView = await repo.getFlightForViewer(flight.id, zoneOwner);
+      expect(zoneOwnerView?.takeoffZoneName).toBe(zone.name);
+      expect(zoneOwnerView?.takeoffSiteName).toBe(site.name); // the site itself is public — still shown
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffZoneName ?? null).toBeNull();
+      expect(strangerView?.takeoffSiteName).toBe(site.name); // conjunction: only the ZONE name is stripped
+    });
+
+    it("zone conjunction holds for a boundary-bearing zone under a PRIVATE site — the site gate strips the zone too, even though the zone itself is public", async () => {
+      const owner = await createPilot("b6zoneconjprivsiteowner");
+      const stranger = await createPilot("b6zoneconjprivsitestranger");
+      const site = await createSite({ lat: 73, lon: 73, visibility: "private", ownerId: owner });
+      const zone = await createZone({
+        siteId: site.id,
+        lat: 73,
+        lon: 73,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 50,
+      });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffSiteName ?? null).toBeNull();
+      expect(strangerView?.takeoffZoneName ?? null).toBeNull(); // the parent gate strips the zone too
+
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffSiteName).toBe(site.name);
+      expect(ownerView?.takeoffZoneName).toBe(zone.name);
+    });
+
+    it("a boundary-bearing site/zone pair behaves identically whether or not either row actually carries a boundary", async () => {
+      // Two byte-identical scenarios except one pair of rows has boundaries
+      // and the other doesn't — same visibility inputs must produce the
+      // same read-path outcome.
+      const owner = await createPilot("b6identowner");
+      const stranger = await createPilot("b6identstranger");
+
+      const circleSite = await createSite({ lat: 74, lon: 74, visibility: "private", ownerId: owner });
+      const circleZone = await createZone({ siteId: circleSite.id, lat: 74, lon: 74, visibility: "public", ownerId: owner });
+      const circleFlight = await createFlightWithZone({
+        ownerId: owner,
+        visibility: "public",
+        site: circleSite,
+        zone: circleZone,
+        endpoint: "takeoff",
+      });
+
+      const boundarySite = await createSite({
+        lat: 75,
+        lon: 75,
+        visibility: "private",
+        ownerId: owner,
+        boundaryHalfSizeM: 100,
+      });
+      const boundaryZone = await createZone({
+        siteId: boundarySite.id,
+        lat: 75,
+        lon: 75,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 50,
+      });
+      const boundaryFlight = await createFlightWithZone({
+        ownerId: owner,
+        visibility: "public",
+        site: boundarySite,
+        zone: boundaryZone,
+        endpoint: "takeoff",
+      });
+
+      const circleStrangerView = await repo.getFlightForViewer(circleFlight.id, stranger);
+      const boundaryStrangerView = await repo.getFlightForViewer(boundaryFlight.id, stranger);
+      expect(boundaryStrangerView?.takeoffSiteName ?? null).toEqual(circleStrangerView?.takeoffSiteName ?? null);
+      expect(boundaryStrangerView?.takeoffZoneName ?? null).toEqual(circleStrangerView?.takeoffZoneName ?? null);
+
+      // Names are unique per fixture by construction — compare VISIBILITY
+      // (present vs. null), not the literal string, which is what actually
+      // exercises decision 1 ("a boundary is geometry, never identity").
+      const circleOwnerView = await repo.getFlightForViewer(circleFlight.id, owner);
+      const boundaryOwnerView = await repo.getFlightForViewer(boundaryFlight.id, owner);
+      expect(boundaryOwnerView?.takeoffSiteName != null).toBe(circleOwnerView?.takeoffSiteName != null);
+      expect(boundaryOwnerView?.takeoffZoneName != null).toBe(circleOwnerView?.takeoffZoneName != null);
+      expect(boundaryOwnerView?.takeoffSiteName).toBe(boundarySite.name);
+      expect(boundaryOwnerView?.takeoffZoneName).toBe(boundaryZone.name);
+    });
+
+    it("boundary JSON is never selected into a viewer-facing flight read", async () => {
+      const owner = await createPilot("b6noleakowner");
+      const site = await createSite({ lat: 76, lon: 76, visibility: "public", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen).not.toHaveProperty("boundary");
+      expect(seen).not.toHaveProperty("takeoffSite");
+      expect(JSON.stringify(seen)).not.toContain("coordinates");
     });
   });
 });

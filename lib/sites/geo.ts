@@ -310,6 +310,28 @@ export function ringSelfIntersects(ring: Ring): boolean {
   return false;
 }
 
+/**
+ * SPRINT-006: the boundary branch of a DB prefilter — a plain object, no DB
+ * import, consumed identically by lib/sites/lookup.ts (matching) and
+ * lib/sites/repo.ts (suggestions, dedup, re-association) so the rule can't
+ * drift between call sites. A boundary can reach far past its own anchor,
+ * so "point within R of anchor" no longer implies "row's box contains
+ * point" the way it does for a circle — this tests the row's OWN bbox
+ * columns against the query point directly. NULL bbox columns (circle-only
+ * rows) never satisfy this — lte/gte against NULL is never true — so this
+ * branch can only ever return boundary-bearing rows.
+ */
+export function boundaryPrefilterWhere(lat: number, lon: number) {
+  return {
+    AND: [
+      { boundaryMinLat: { lte: lat } },
+      { boundaryMaxLat: { gte: lat } },
+      { boundaryMinLon: { lte: lon } },
+      { boundaryMaxLon: { gte: lon } },
+    ],
+  };
+}
+
 export interface LocationMatchResult {
   matched: boolean;
   distanceM: number;
@@ -332,6 +354,23 @@ export interface LocationMatchResult {
  * this should log it; this function itself has no logging side effect
  * since it's called from hot, pure-context code paths.
  */
+/** Structural shape check only — does NOT re-run validateBoundary's caps or
+ *  self-intersection checks (a stored row already passed those at write
+ *  time). Exported so call sites can distinguish "no boundary" from "a
+ *  boundary that doesn't even parse" for logging, without duplicating this
+ *  check. */
+export function isValidBoundaryShape(value: unknown): value is Boundary {
+  if (typeof value !== "object" || value === null) return false;
+  const b = value as Boundary;
+  return (
+    b.v === 1 &&
+    b.kind === "polygon" &&
+    b.geometry?.type === "Polygon" &&
+    Array.isArray(b.geometry.coordinates) &&
+    b.geometry.coordinates.length === 1
+  );
+}
+
 export function locationMatches(
   row: { lat: number; lon: number; boundary: unknown },
   lat: number,
@@ -344,19 +383,11 @@ export function locationMatches(
     return { matched: distanceM <= radiusM, distanceM };
   }
 
-  const boundary = row.boundary as Boundary;
-  if (
-    typeof boundary !== "object" ||
-    boundary.v !== 1 ||
-    boundary.kind !== "polygon" ||
-    boundary.geometry?.type !== "Polygon" ||
-    !Array.isArray(boundary.geometry.coordinates) ||
-    boundary.geometry.coordinates.length !== 1
-  ) {
+  if (!isValidBoundaryShape(row.boundary)) {
     return { matched: false, distanceM }; // fail closed on malformed stored geometry
   }
 
-  return { matched: boundaryContains(boundary, lat, lon), distanceM };
+  return { matched: boundaryContains(row.boundary, lat, lon), distanceM };
 }
 
 export interface RankableSite {

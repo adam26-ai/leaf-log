@@ -4,12 +4,25 @@ import {
   radiusForKind,
   zoneRadiusForKind,
   boundingBox,
-  withinRadius,
   compareSiteCandidates,
   kindMatches,
+  locationMatches,
+  isValidBoundaryShape,
+  boundaryPrefilterWhere,
   type MatchKind,
 } from "./geo";
 import { normalizeSiteVisibility, canSeeZone, type SiteVisibility } from "./visibility";
+
+/**
+ * SPRINT-006 rollback kill switch: SITE_BOUNDARY_MATCHING=off treats every
+ * row as circle-only regardless of stored boundaries, with no data change
+ * and no redeploy — a matching-engine change on the ingest hot path needs a
+ * lever that isn't "revert and redeploy." Read fresh (not cached at module
+ * load) so it's also trivially testable.
+ */
+function boundaryMatchingEnabled(): boolean {
+  return process.env.SITE_BOUNDARY_MATCHING !== "off";
+}
 
 export interface SiteMatch {
   id: string;
@@ -81,6 +94,7 @@ interface SiteRow {
   kind: string;
   visibility: string;
   ownerId: string | null;
+  boundary: unknown;
   // Only meaningful for the site-only pass's tie-break (compareSiteCandidates);
   // the zone pass's joined parent doesn't select it since a zone win never
   // ranks its parent against another site.
@@ -95,11 +109,17 @@ async function siteCandidates(
   viewerId: string | null,
 ): Promise<SiteRow[]> {
   const box = boundingBox(lat, lon, radiusForKind(kind));
+  const locationOr = boundaryMatchingEnabled()
+    ? [
+        { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhereFor(box)] },
+        boundaryPrefilterWhere(lat, lon),
+      ]
+    : [{ AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhereFor(box)] }];
+
   return db.site.findMany({
     where: {
       AND: [
-        { lat: { gte: box.latMin, lte: box.latMax } },
-        lonWhereFor(box),
+        { OR: locationOr },
         { OR: [{ kind }, { kind: "both" }] },
         { OR: siteVisibilityOr(viewerId) },
       ],
@@ -113,6 +133,7 @@ async function siteCandidates(
       visibility: true,
       ownerId: true,
       license: true,
+      boundary: true,
     },
   });
 }
@@ -126,6 +147,7 @@ interface ZoneRow {
   visibility: string;
   ownerId: string | null;
   siteId: string;
+  boundary: unknown;
   site: {
     id: string;
     name: string;
@@ -145,11 +167,17 @@ async function zoneCandidates(
   viewerId: string | null,
 ): Promise<ZoneRow[]> {
   const box = boundingBox(lat, lon, zoneRadiusForKind(kind));
+  const locationOr = boundaryMatchingEnabled()
+    ? [
+        { AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhereFor(box)] },
+        boundaryPrefilterWhere(lat, lon),
+      ]
+    : [{ AND: [{ lat: { gte: box.latMin, lte: box.latMax } }, lonWhereFor(box)] }];
+
   return db.zone.findMany({
     where: {
       AND: [
-        { lat: { gte: box.latMin, lte: box.latMax } },
-        lonWhereFor(box),
+        { OR: locationOr },
         { OR: [{ kind }, { kind: "both" }] },
         // Own visibility AND the parent's, pushed down for efficiency — the
         // exact canSeeZone() re-check below is the actual authority (it also
@@ -169,6 +197,7 @@ async function zoneCandidates(
       visibility: true,
       ownerId: true,
       siteId: true,
+      boundary: true,
       site: {
         select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, ownerId: true },
       },
@@ -176,7 +205,35 @@ async function zoneCandidates(
   });
 }
 
-function toSiteMatch(row: SiteRow, distanceM: number): SiteMatch {
+/**
+ * Applies locationMatches to every candidate, logging (once per row) and
+ * skipping any row whose stored boundary doesn't even parse — fail closed,
+ * never thrown into ingest, never silently re-checked against the circle
+ * (which would undo a pilot's deliberate tightening).
+ */
+function matchAll<T extends { id: string; lat: number; lon: number; boundary: unknown }>(
+  rows: readonly T[],
+  lat: number,
+  lon: number,
+  radiusM: number,
+  table: "Site" | "Zone",
+): Array<T & { distanceM: number }> {
+  const out: Array<T & { distanceM: number }> = [];
+  for (const row of rows) {
+    if (row.boundary != null && !isValidBoundaryShape(row.boundary)) {
+      console.warn(`[sites] malformed stored boundary on ${table} id=${row.id}; skipped at match time`);
+      continue;
+    }
+    const { matched, distanceM } = locationMatches(row, lat, lon, radiusM);
+    if (matched) out.push({ ...row, distanceM });
+  }
+  return out;
+}
+
+function toSiteMatch(
+  row: Pick<SiteRow, "id" | "name" | "visibility" | "ownerId" | "kind">,
+  distanceM: number,
+): SiteMatch {
   return {
     id: row.id,
     name: row.name,
@@ -213,7 +270,7 @@ export async function findLocation(
     zoneCandidates(db, lat, lon, kind, viewerId),
   ]);
 
-  const zoneRanked = withinRadius(zoneRows, lat, lon, zoneRadiusForKind(kind))
+  const zoneRanked = matchAll(zoneRows, lat, lon, zoneRadiusForKind(kind), "Zone")
     .filter((z) => kindMatches(z.kind, kind))
     .filter((z) =>
       canSeeZone(
@@ -241,7 +298,7 @@ export async function findLocation(
     };
   }
 
-  const siteRanked = withinRadius(siteRows, lat, lon, radiusForKind(kind)).sort(compareSiteCandidates);
+  const siteRanked = matchAll(siteRows, lat, lon, radiusForKind(kind), "Site").sort(compareSiteCandidates);
   const siteWinner = siteRanked[0];
   if (!siteWinner) return null;
 
