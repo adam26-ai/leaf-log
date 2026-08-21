@@ -302,24 +302,24 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
   it("a zone beats its parent site at the same spot", async () => {
     const site = await createSite({
-      lat: 30.0,
-      lon: 30.0,
+      lat: -70,
+      lon: -70,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
     });
     const zone = await createZone({
       siteId: site.id,
-      lat: 30.0,
-      lon: 30.0,
+      lat: -70,
+      lon: -70,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
     });
 
     const match = await findLocation(prisma, {
-      lat: 30.0,
-      lon: 30.0,
+      lat: -70,
+      lon: -70,
       kind: "takeoff",
       viewerId: null,
     });
@@ -329,8 +329,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
   it("a site with a zone still matches a flight outside every zone radius but inside the site radius (no dead ends)", async () => {
     const site = await createSite({
-      lat: 31.0,
-      lon: 31.0,
+      lat: -69,
+      lon: -69,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
@@ -338,16 +338,16 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     await createZone({
       siteId: site.id,
       // ~350 m north of the site — outside the 300 m zone-takeoff radius.
-      lat: 31.0 + 350 / 111_320,
-      lon: 31.0,
+      lat: -69 + 350 / 111_320,
+      lon: -69,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
     });
 
     const match = await findLocation(prisma, {
-      lat: 31.0,
-      lon: 31.0,
+      lat: -69,
+      lon: -69,
       kind: "takeoff",
       viewerId: null,
     });
@@ -360,24 +360,24 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     const zoneOwner = await createPilot("zone-owner");
     const stranger = await createPilot("zone-stranger");
     const site = await createSite({
-      lat: 32.0,
-      lon: 32.0,
+      lat: -68,
+      lon: -68,
       kind: "takeoff",
       visibility: "public",
       ownerId: siteOwner,
     });
     const zone = await createZone({
       siteId: site.id,
-      lat: 32.0,
-      lon: 32.0,
+      lat: -68,
+      lon: -68,
       kind: "takeoff",
       visibility: "private",
       ownerId: zoneOwner,
     });
 
     const ownerMatch = await findLocation(prisma, {
-      lat: 32.0,
-      lon: 32.0,
+      lat: -68,
+      lon: -68,
       kind: "takeoff",
       viewerId: zoneOwner,
     });
@@ -385,8 +385,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
     for (const viewerId of [siteOwner, stranger, null]) {
       const match = await findLocation(prisma, {
-        lat: 32.0,
-        lon: 32.0,
+        lat: -68,
+        lon: -68,
         kind: "takeoff",
         viewerId,
       });
@@ -401,8 +401,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     const siteOwner = await createPilot("private-site-owner");
     const stranger = await createPilot("private-site-stranger");
     const site = await createSite({
-      lat: 33.0,
-      lon: 33.0,
+      lat: -67,
+      lon: -67,
       kind: "takeoff",
       visibility: "private",
       ownerId: siteOwner,
@@ -413,16 +413,16 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     // two-layer design.
     const zone = await createZone({
       siteId: site.id,
-      lat: 33.0,
-      lon: 33.0,
+      lat: -67,
+      lon: -67,
       kind: "takeoff",
       visibility: "public",
       ownerId: siteOwner,
     });
 
     const ownerMatch = await findLocation(prisma, {
-      lat: 33.0,
-      lon: 33.0,
+      lat: -67,
+      lon: -67,
       kind: "takeoff",
       viewerId: siteOwner,
     });
@@ -430,8 +430,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
     for (const viewerId of [stranger, null]) {
       const match = await findLocation(prisma, {
-        lat: 33.0,
-        lon: 33.0,
+        lat: -67,
+        lon: -67,
         kind: "takeoff",
         viewerId,
       });
@@ -442,8 +442,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
   it("an anonymous caller matches no private zone, orphaned or not", async () => {
     const owner = await createPilot("zone-orphan-source");
     const site = await createSite({
-      lat: 34.0,
-      lon: 34.0,
+      lat: -66,
+      lon: -66,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
@@ -452,16 +452,16 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     // state) — must be readable by nobody, including the site's own owner.
     await createZone({
       siteId: site.id,
-      lat: 34.0,
-      lon: 34.0,
+      lat: -66,
+      lon: -66,
       kind: "takeoff",
       visibility: "private",
       ownerId: null,
     });
 
     const anonMatch = await findLocation(prisma, {
-      lat: 34.0,
-      lon: 34.0,
+      lat: -66,
+      lon: -66,
       kind: "takeoff",
       viewerId: null,
     });
@@ -469,8 +469,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(anonMatch?.site.id).toBe(site.id);
 
     const ownerMatch = await findLocation(prisma, {
-      lat: 34.0,
-      lon: 34.0,
+      lat: -66,
+      lon: -66,
       kind: "takeoff",
       viewerId: owner,
     });
@@ -479,8 +479,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
   it("a zone under a different, farther site can beat a nearer bare site — accepted collision, tested", async () => {
     const nearSite = await createSite({
-      lat: 35.0,
-      lon: 35.0,
+      lat: -65,
+      lon: -65,
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
@@ -488,8 +488,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     const farSite = await createSite({
       // ~290 m east — within the far site's own 600 m site radius from ITS
       // own centre, but this test queries from nearSite's centre.
-      lat: 35.0,
-      lon: 35.0 + 290 / (111_320 * Math.cos((35.0 * Math.PI) / 180)),
+      lat: -65,
+      lon: -65 + 290 / (111_320 * Math.cos((-65 * Math.PI) / 180)),
       kind: "takeoff",
       visibility: "public",
       ownerId: null,
@@ -507,8 +507,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     // nearSite's bare-site radius, but farZone (≈240 m away) is still
     // within the zone radius and wins because zones always beat sites.
     const match = await findLocation(prisma, {
-      lat: 35.0 + 50 / 111_320,
-      lon: 35.0,
+      lat: -65 + 50 / 111_320,
+      lon: -65,
       kind: "takeoff",
       viewerId: null,
     });

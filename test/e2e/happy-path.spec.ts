@@ -27,7 +27,7 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(email);
   await page.getByRole("button", { name: /send magic link/i }).click();
-  await expect(page.getByText(/check your email/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
 
   // 2. Follow the magic link.
   const link = await getMagicLink();

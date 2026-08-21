@@ -68,7 +68,7 @@ test("bare-site path: skipping the zone step keeps the SPRINT-004 one-step outco
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(email);
   await page.getByRole("button", { name: /send magic link/i }).click();
-  await expect(page.getByText(/check your email/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
   const link = await getMagicLink();
   await page.goto(link);
   await page.getByRole("button", { name: /keep me signed in/i }).click();
@@ -118,7 +118,7 @@ test("two-level path: naming a zone renders 'Site — Zone' and a nearby distinc
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(email);
   await page.getByRole("button", { name: /send magic link/i }).click();
-  await expect(page.getByText(/check your email/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
   const link = await getMagicLink();
   await page.goto(link);
   await page.getByRole("button", { name: /keep me signed in/i }).click();

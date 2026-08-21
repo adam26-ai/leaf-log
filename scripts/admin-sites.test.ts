@@ -109,8 +109,8 @@ describe("admin-sites.ts — zone commands", () => {
   it("zone-rename updates the name and the cache on referencing flights", async () => {
     const { zoneRename } = await import("./admin-sites");
     const owner = await createPilot("adminrenameowner");
-    const site = await createSite({ lat: 1, lon: 1, visibility: "public", ownerId: owner });
-    const zone = await createZone({ siteId: site.id, lat: 1, lon: 1, visibility: "public", ownerId: owner });
+    const site = await createSite({ lat: -199, lon: -199, visibility: "public", ownerId: owner });
+    const zone = await createZone({ siteId: site.id, lat: -199, lon: -199, visibility: "public", ownerId: owner });
     const flight = await createFlightWithZone({ ownerId: owner, site, zone, endpoint: "takeoff" });
 
     await zoneRename(zone.id, "Operator Renamed Zone");
@@ -123,8 +123,8 @@ describe("admin-sites.ts — zone commands", () => {
     const { zoneForcePrivate } = await import("./admin-sites");
     const owner = await createPilot("adminforceprivowner");
     const other = await createPilot("adminforceprivother");
-    const site = await createSite({ lat: 2, lon: 2, visibility: "public", ownerId: owner });
-    const zone = await createZone({ siteId: site.id, lat: 2, lon: 2, visibility: "public", ownerId: owner });
+    const site = await createSite({ lat: -198, lon: -198, visibility: "public", ownerId: owner });
+    const zone = await createZone({ siteId: site.id, lat: -198, lon: -198, visibility: "public", ownerId: owner });
     await createFlightWithZone({ ownerId: owner, site, zone, endpoint: "takeoff" });
     const otherFlight = await createFlightWithZone({ ownerId: other, site, zone, endpoint: "takeoff" });
 
@@ -141,10 +141,10 @@ describe("admin-sites.ts — zone commands", () => {
   it("zone-merge reassigns flights (even across sites) and deletes the source zone", async () => {
     const { zoneMerge } = await import("./admin-sites");
     const owner = await createPilot("adminmergeowner");
-    const siteA = await createSite({ lat: 3, lon: 3, visibility: "public", ownerId: owner });
-    const siteB = await createSite({ lat: 4, lon: 4, visibility: "public", ownerId: owner });
-    const fromZone = await createZone({ siteId: siteA.id, lat: 3, lon: 3, visibility: "public", ownerId: owner, kind: "landing" });
-    const intoZone = await createZone({ siteId: siteB.id, lat: 4, lon: 4, visibility: "public", ownerId: owner, kind: "takeoff" });
+    const siteA = await createSite({ lat: -197, lon: -197, visibility: "public", ownerId: owner });
+    const siteB = await createSite({ lat: -196, lon: -196, visibility: "public", ownerId: owner });
+    const fromZone = await createZone({ siteId: siteA.id, lat: -197, lon: -197, visibility: "public", ownerId: owner, kind: "landing" });
+    const intoZone = await createZone({ siteId: siteB.id, lat: -196, lon: -196, visibility: "public", ownerId: owner, kind: "takeoff" });
     const flight = await createFlightWithZone({ ownerId: owner, site: siteA, zone: fromZone, endpoint: "takeoff" });
 
     await zoneMerge(fromZone.id, intoZone.id);
@@ -165,8 +165,8 @@ describe("admin-sites.ts — zone commands", () => {
   it("zone-merge refuses to merge a zone into itself", async () => {
     const { zoneMerge } = await import("./admin-sites");
     const owner = await createPilot("adminmergeselfowner");
-    const site = await createSite({ lat: 5, lon: 5, visibility: "public", ownerId: owner });
-    const zone = await createZone({ siteId: site.id, lat: 5, lon: 5, visibility: "public", ownerId: owner });
+    const site = await createSite({ lat: -195, lon: -195, visibility: "public", ownerId: owner });
+    const zone = await createZone({ siteId: site.id, lat: -195, lon: -195, visibility: "public", ownerId: owner });
 
     await expect(zoneMerge(zone.id, zone.id)).rejects.toThrow(/itself/);
   });

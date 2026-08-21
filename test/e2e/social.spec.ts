@@ -21,7 +21,7 @@ async function signUp(page: Page, email: string, handle: string, displayName: st
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(email);
   await page.getByRole("button", { name: /send magic link/i }).click();
-  await expect(page.getByText(/check your email/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
 
   await page.goto(await getMagicLink());
   // "Keep me signed in?" interstitial sits between the link and onboarding.
