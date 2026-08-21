@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-20",
+    title: "Launches and LZs, by name",
+    body: "Real sites usually have more than one spot — a north launch, a south bowl, a lower LZ. You can now name those too. Open a flight bound to a site you've already named, and you'll see an optional \"Which spot?\" step where you can add the exact launch or landing, public or private, same as naming the site itself. Skip it any time — a site with no named spots keeps working exactly as it always has. Once you've named a spot, your next flight from there (and your older flights nearby) pick it up automatically, showing \"Site — Spot\" instead of just the site name.",
+  },
+  {
     date: "2026-08-19",
     title: "Every site is pilot-named now",
     body: "We retired the small starter list of pre-loaded launches — Leaf Log's gazetteer is now built entirely by pilots, using the naming tool above. If a flight you upload from a well-known launch shows \"Unknown site,\" you're probably the first to log it here — go ahead and name it (see \"Name your own launch\" below) so it's ready for the next pilot too.",

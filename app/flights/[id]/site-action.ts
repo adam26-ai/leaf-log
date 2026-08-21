@@ -190,7 +190,11 @@ export async function getBoundLocationInfo(
     zone: zoneRow
       ? {
           id: zoneRow.id,
-          ownedByViewer: zoneRow.ownerId === userId,
+          // SPRINT-005 decision 4: the parent site's owner may also
+          // rename/unpublish/delete a zone they didn't create — mirrors the
+          // check lib/sites/associate.ts's findZoneEditableBy actually
+          // enforces, so this flag never promises a button that would fail.
+          ownedByViewer: zoneRow.ownerId === userId || siteRow?.ownerId === userId,
           visibility: zoneRow.visibility === "public" ? "public" : "private",
         }
       : null,

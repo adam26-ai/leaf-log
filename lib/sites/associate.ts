@@ -396,6 +396,28 @@ function zoneStillReferenced() {
 }
 
 /**
+ * A zone the caller may rename/unpublish/delete: either they created it, OR
+ * they own the PARENT SITE it lives under (SPRINT-005 decision 4). The site
+ * owner's power here is deliberately no broader in kind than what they
+ * already have — they can already demote or delete the whole site, taking
+ * every zone under it with it; this just makes that existing power
+ * targetable at one zone instead of all of them. Scoped strictly to zones
+ * under a site this caller actually owns — never a general moderation role.
+ */
+async function findZoneEditableBy(
+  tx: { zone: { findUnique(args: { where: { id: string } }): Promise<Zone | null> }; site: { findUnique(args: { where: { id: string }; select: { ownerId: true } }): Promise<{ ownerId: string | null } | null> } },
+  zoneId: string,
+  callerId: string,
+): Promise<Zone | null> {
+  const zone = await tx.zone.findUnique({ where: { id: zoneId } });
+  if (!zone) return null;
+  if (zone.ownerId === callerId) return zone;
+  const site = await tx.site.findUnique({ where: { id: zone.siteId }, select: { ownerId: true } });
+  if (site?.ownerId === callerId) return zone;
+  return null;
+}
+
+/**
  * True once no OTHER pilot's flight (either endpoint) references this
  * zone — the zone-level mirror of `referencedByOthers`.
  */
@@ -448,10 +470,11 @@ export async function setZoneVisibility(
 }
 
 /**
- * Rename a zone the caller owns. The cache follows for every referencing
- * flight only when the zone is EFFECTIVELY public (itself public AND its
- * parent site currently public) — a private-either-way zone's cache stays
- * NULL, mirroring SPRINT-004's site-level rule.
+ * Rename a zone the caller may edit — its own creator, OR the parent site's
+ * owner (decision 4). The cache follows for every referencing flight only
+ * when the zone is EFFECTIVELY public (itself public AND its parent site
+ * currently public) — a private-either-way zone's cache stays NULL,
+ * mirroring SPRINT-004's site-level rule.
  */
 export async function renameZone(
   zoneId: string,
@@ -460,7 +483,7 @@ export async function renameZone(
   normalizedName: string,
 ): Promise<Zone> {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.zone.findFirst({ where: { id: zoneId, ownerId } });
+    const existing = await findZoneEditableBy(tx, zoneId, ownerId);
     if (!existing) throw zoneNotFoundOrNotOwned();
 
     const updated = await tx.zone.update({
@@ -487,20 +510,25 @@ export async function renameZone(
 }
 
 /**
- * Delete a zone the caller owns. `onDelete: SetNull` on both Flight zone id
- * columns clears the id automatically; the cached *ZoneName is explicitly
- * nulled here FIRST (matching on the id about to disappear) — a deleted
- * zone's name is never kept as history, unlike a deleted site's. The
- * flight's SITE binding is untouched: falling back to "Mission Ridge" is
- * exactly what should happen when its "North Launch" is undone.
+ * Delete a zone the caller may edit — its own creator, OR the parent site's
+ * owner (decision 4). `onDelete: SetNull` on both Flight zone id columns
+ * clears the id automatically; the cached *ZoneName is explicitly nulled
+ * here FIRST (matching on the id about to disappear) — a deleted zone's
+ * name is never kept as history, unlike a deleted site's. The flight's SITE
+ * binding is untouched: falling back to "Mission Ridge" is exactly what
+ * should happen when its "North Launch" is undone — including when it was
+ * the LAST zone under that site, which leaves a fully functional bare site.
  *
  * Guarded the same way as `deleteSite`: once another pilot's flight depends
  * on this zone, it's community property and can no longer be deleted this
- * way.
+ * way. "Another pilot" excludes only the CALLER — so if the site owner is
+ * deleting a zone they didn't create, the zone's own creator having a
+ * flight bound to it still blocks the delete, exactly as it would block
+ * the creator themselves.
  */
 export async function deleteZone(zoneId: string, ownerId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const existing = await tx.zone.findFirst({ where: { id: zoneId, ownerId } });
+    const existing = await findZoneEditableBy(tx, zoneId, ownerId);
     if (!existing) throw zoneNotFoundOrNotOwned();
     if (await zoneReferencedByOthers(tx, zoneId, ownerId)) throw zoneStillReferenced();
 
@@ -511,13 +539,15 @@ export async function deleteZone(zoneId: string, ownerId: string): Promise<void>
 }
 
 /**
- * Unpublish (demote to private) a zone the caller owns, guarded the same
- * way as delete. The specific "creator undo" wrapper — `setZoneVisibility`
- * above stays unguarded for a future operator force-private remedy.
+ * Unpublish (demote to private) a zone the caller may edit — its own
+ * creator, OR the parent site's owner (decision 4) — guarded the same way
+ * as delete. The specific "creator undo" wrapper — `setZoneVisibility`
+ * above stays zone-owner-only, for a future "publish my own private zone"
+ * action, not a moderation power.
  */
 export async function unpublishOwnZone(zoneId: string, ownerId: string): Promise<Zone> {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.zone.findFirst({ where: { id: zoneId, ownerId } });
+    const existing = await findZoneEditableBy(tx, zoneId, ownerId);
     if (!existing) throw zoneNotFoundOrNotOwned();
     if (await zoneReferencedByOthers(tx, zoneId, ownerId)) throw zoneStillReferenced();
 

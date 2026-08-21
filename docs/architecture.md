@@ -46,44 +46,91 @@ enforcement, and every flight read goes through it:
 Proven by `test/privacy.integration.test.ts` (anon / non-owner / owner) and the
 Playwright happy-path.
 
-## Site privacy seam (SPRINT-004)
+## Site + zone privacy seam (SPRINT-004, extended two levels deep by SPRINT-005)
 
 Sites are the app's first shared, user-generated content: a public site is
 authored by one pilot and lands in **every** pilot's logbook. That mandates a
 second, narrower privacy seam alongside the flight one above — the same "no
-RLS, enforcement lives in one repo layer" shape, applied to `Site`.
+RLS, enforcement lives in one repo layer" shape, applied to `Site` and, since
+SPRINT-005, to `Zone` (a specific launch/landing spot *within* a site, e.g.
+"Mission Ridge — North Launch") one level down.
 
-- `Flight.{takeoff,landing}SiteId/SiteName` are a **cache**, not the source of
-  truth. `Site` (`ownerId`, `visibility`) is authoritative whenever the id is
-  non-null; the cached name is used only as the historical fallback when the
-  id is null (e.g. a deleted site).
-- `resolveSiteFields()` in `lib/flights/repo.ts` re-verifies **every**
-  non-null site id on a page against the live `Site` row for the current
-  viewer — not just rows whose cached name happens to be null — before it
-  reaches any caller. The `Site` row wins when visible; both the id and the
-  name are stripped when it isn't. This is what lets a public flight bound
-  to a private site render "Unknown site" to everyone but its owner.
-- `lib/sites/associate.ts`'s `siteCachePatch` is the **only** thing allowed
-  to write those four columns (an automated audit, `lib/sites/write-audit.test.ts`,
-  fails the build if any other file both writes `Flight` and assigns a
-  site-name value). Ingest re-reads a matched site **inside** its create
-  transaction and re-verifies it's still visible to the owner, so a
-  concurrent demotion between match and write can never cache a name the
-  owner no longer has any claim to.
-- Site read scoping (`siteVisibleWhere` / `canSeeSite`, `lib/sites/repo.ts`
-  and `lib/sites/visibility.ts`) is fail-closed: unknown visibility ⇒
-  private; no viewer ⇒ public only; a private site with a null owner (an
-  orphan) is visible to **nobody**, owner-shaped viewer included.
+- `Flight.{takeoff,landing}{Site,Zone}{Id,Name}` (eight columns) are a
+  **cache**, not the source of truth. `Site`/`Zone` (`ownerId`, `visibility`)
+  are authoritative whenever their id is non-null. The cached **site** name
+  is the historical fallback when the site id is null (e.g. a deleted site);
+  the cached **zone** name has no such fallback — `deleteZone` explicitly
+  nulls it, because a deleted spot has nothing to remember, unlike a deleted
+  place.
+- `resolveLocationFields()` in `lib/flights/repo.ts` re-verifies **every**
+  non-null site id AND zone id on a page against the live rows for the
+  current viewer — not just rows whose cached name happens to be null —
+  before either reaches any caller. **Stripping the parent always strips the
+  child**, applied as a single early return rather than a condition repeated
+  per surface: a readable zone with an unreadable parent is impossible by
+  construction. This is what lets a public flight bound to a private site
+  (or a private zone under a public site) render "Unknown site" / the
+  bare site name to everyone but the row's owner.
+- **Zone visibility is independent of its parent's; effective visibility is
+  the conjunction**: `canSeeSite(site, viewer) AND canSeeSite(zone, viewer)`
+  (`lib/sites/visibility.ts`'s `canSeeZone`). This is deliberate, not an
+  oversight — it's what lets a private spot exist under an otherwise-public
+  site ("everyone knows Mission Ridge; my own launch spot is mine"). The
+  inverse (a public zone under a private site) is incoherent, since the
+  roll-up label renders the parent's name — refused at the point a pilot
+  tries to create it, and independently neutralized by the read-time
+  conjunction if such a row is ever reached anyway.
+- `lib/sites/associate.ts`'s `locationCachePatch` is the **only** thing
+  allowed to write those eight columns (an automated audit,
+  `lib/sites/write-audit.test.ts`, fails the build if any other file both
+  writes `Flight` and assigns a `*SiteName`/`*ZoneName` value — including
+  via raw SQL, which the site-visibility-transition writer uses to
+  recompute every zone cache under a promoted/demoted site in one
+  correlated statement). Ingest re-reads a matched site *and* zone **inside**
+  its create transaction and re-verifies both are still visible to the
+  owner; a zone that's since been demoted or deleted degrades the cache to
+  site-only, never to nothing.
+- Site AND zone read scoping (`siteVisibleWhere`/`zoneVisibleWhere`,
+  `lib/sites/repo.ts` and `lib/sites/visibility.ts`) is fail-closed: unknown
+  visibility ⇒ private; no viewer ⇒ public only; an orphaned private row (a
+  null owner) is visible to **nobody**, owner-shaped viewer included.
 - Write-time and read-time scoping are deliberately separate. Ingest and the
-  "name this site" flow bind within `public ∪ the owner's own private
-  sites`; display always re-scopes to whoever is actually looking.
+  "name this site" flow bind within `public ∪ the owner's own private`
+  rows, at both levels; display always re-scopes to whoever is actually
+  looking.
+- Matching is zone-first at a tighter radius (300 m takeoff / 400 m landing,
+  vs. the site radius's 600 m / 900 m) with the site pass **always** running
+  as a fallback — whether or not the winning site has zones. A bare site (no
+  zones at all) matches and displays exactly as SPRINT-004 produces, with
+  zero behavioural change; naming a zone only ever adds precision, never
+  removes a match a pilot already had.
+- A site's own owner may also rename/unpublish/delete a zone a *different*
+  pilot contributed under their site (`lib/sites/associate.ts`'s
+  `findZoneEditableBy`) — a deliberately scoped exception to the
+  no-pilot-moderation stance SPRINT-004 held, justified because it grants no
+  capability the site owner didn't already have in aggregate (they can
+  already demote/delete the whole site, taking every zone with it); this
+  just makes that existing power targetable at one zone. `deleteSite`/
+  `unpublishOwnSite` are additionally guarded against orphaning a zone
+  another pilot owns, independent of whether a flight currently references
+  it — protecting the *contribution*, not just live references.
 
 Proven by `test/sites.integration.test.ts`: an owner/friend/stranger/anonymous
-× private/public site × flight-visibility matrix (asserted on the flight
-gate, logbook, profile list, and feed), a leak sweep (no flight carries a
-cached name whose site isn't public), and a stale-row defence test — a
-hand-written row with a poisoned cached name is still stripped by the read
-path, which is the property that actually matters here.
+× (site visibility × zone visibility, all four combinations including the
+incoherent one) × flight-visibility matrix (asserted on the flight gate,
+logbook, profile list, feed, and every other list function), an extended
+leak sweep, stale-row defence tests at both levels (including a
+mismatched-parent zone id), and transition tests proving a site
+demote/re-promote cycle never has to touch a zone's own `visibility` column.
+
+A genuine Postgres limitation surfaced building this: deleting a site whose
+flight is bound to both the site directly and a zone under it hits two FK
+cascade paths (`Flight.takeoffSiteId` SET NULL, and `Zone`'s CASCADE
+indirectly triggering `Flight.takeoffZoneId` SET NULL) converging on the
+same row — empirically an FK violation rather than a resolved order.
+`deleteSite` works around it by explicitly nulling the zone id/name for
+affected flights *before* the site delete, so the native zone cascade has
+nothing left to touch.
 
 ## Auth
 

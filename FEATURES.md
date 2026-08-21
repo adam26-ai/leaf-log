@@ -129,3 +129,21 @@ Completed ideas (see git history / PRs for detail):
   Updated the tests/fixtures that assumed curated data existed (the E2E happy-path and social
   specs, and `lib/sites/lookup.test.ts`'s curated-launch tests, now use dynamically-created
   community sites instead). (PR #40)
+- Two-level site hierarchy — `Zone`, a specific launch/landing spot within a `Site` (e.g. "Mission
+  Ridge — North Launch"). Matching is zone-first at a tighter radius (300 m takeoff / 400 m
+  landing) with the site pass **always** running as a fallback, whether or not the winning site
+  has zones — a bare site keeps matching and displaying exactly as SPRINT-004 produces, with zero
+  behaviour change. Zone visibility is independent of its parent's; effective visibility is the
+  conjunction (`canSeeSite(site) AND canSeeSite(zone)`), which is what lets a private spot exist
+  under an otherwise-public site — the read-path firewall (`lib/flights/repo.ts`) extends to
+  re-verify both levels on every read, stripping a zone whenever its site isn't visible. The
+  naming dialog becomes an optional two-step flow ("Which spot?", with **Skip — just the site** as
+  a first-class action); creating a zone retroactively upgrades the creator's own
+  *already-site-bound* back-catalog at that spot, not only previously-unmatched flights — the fix
+  for the split-logbook problem the sprint exists to solve. A site's own owner can also
+  rename/unpublish/delete a zone another pilot contributed under their site, alongside the zone's
+  own creator; `scripts/admin-sites.ts` gains `zone-rename` / `zone-force-private` / `zone-merge`
+  (which also handles reparenting a zone to a different site) / `list` for what neither reaches.
+  Along the way, found and fixed a real Postgres limitation (two FK cascade paths converging on
+  one `Flight` row during a site delete) and a latent regex bug in the SPRINT-004 write-audit that
+  silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005)

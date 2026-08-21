@@ -1655,6 +1655,111 @@ describe("sites: read-path firewall", () => {
       await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
       await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
     });
+
+    // -------------------------------------------------------------------
+    // Decision 4: the PARENT SITE'S owner may also rename/unpublish/delete
+    // a zone they didn't create.
+    // -------------------------------------------------------------------
+    it("the site's owner can rename a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerrename");
+      const zoneCreator = await createPilot("zonecreatorrename");
+      const site = await createSite({ lat: 87.5, lon: 87.5, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 87.5, lon: 87.5, visibility: "public", ownerId: zoneCreator });
+
+      const newName = `Site Owner Renamed ${seq}${suffix}`;
+      const updated = await associate.renameZone(zone.id, siteOwner, newName, newName.toLowerCase());
+      expect(updated.name).toBe(newName);
+      expect(updated.ownerId).toBe(zoneCreator); // ownership itself is untouched
+    });
+
+    it("the site's owner can unpublish a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerunpub");
+      const zoneCreator = await createPilot("zonecreatorunpub");
+      const site = await createSite({ lat: 87.6, lon: 87.6, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 87.6, lon: 87.6, visibility: "public", ownerId: zoneCreator });
+      // Bound to the CALLER's (site owner's) own flight — the zone creator
+      // themselves has no flight referencing it yet, so the guard passes.
+      const flight = await createFlightWithZone({ ownerId: siteOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const updated = await associate.unpublishOwnZone(zone.id, siteOwner);
+      expect(updated.visibility).toBe("private");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBeNull();
+    });
+
+    it("the site's owner can delete a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerdel");
+      const zoneCreator = await createPilot("zonecreatordel");
+      const site = await createSite({ lat: 87.7, lon: 87.7, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 87.7, lon: 87.7, visibility: "public", ownerId: zoneCreator });
+
+      await associate.deleteZone(zone.id, siteOwner);
+      zoneIds.splice(zoneIds.indexOf(zone.id), 1);
+
+      const zoneRow = await prisma.zone.findUnique({ where: { id: zone.id } });
+      expect(zoneRow).toBeNull();
+    });
+
+    it("the site owner's delete is STILL blocked while the zone creator's own flight depends on it", async () => {
+      const siteOwner = await createPilot("siteownerblocked");
+      const zoneCreator = await createPilot("zonecreatorblocked");
+      const site = await createSite({ lat: 87.8, lon: 87.8, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 87.8, lon: 87.8, visibility: "public", ownerId: zoneCreator });
+      await createFlightWithZone({ ownerId: zoneCreator, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      // The site owner did not create this reference — it's the ZONE
+      // creator's own flight — but "another pilot" is anyone but the
+      // CALLER, so it still blocks the site owner's delete too.
+      await expect(associate.deleteZone(zone.id, siteOwner)).rejects.toThrow(/depends on this zone/);
+    });
+
+    it("a stranger who owns neither the zone nor its parent site still cannot edit it", async () => {
+      const zoneCreator = await createPilot("neitherzonecreator");
+      const siteOwner = await createPilot("neithersiteowner");
+      const stranger = await createPilot("neitherstranger");
+      const site = await createSite({ lat: 87.9, lon: 87.9, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 87.9, lon: 87.9, visibility: "public", ownerId: zoneCreator });
+
+      await expect(associate.renameZone(zone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+      await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
+      await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
+    });
+
+    // -------------------------------------------------------------------
+    // Deleting the LAST zone under a site leaves a fully functional bare
+    // site — decision 1's whole point, re-verified end to end here.
+    // -------------------------------------------------------------------
+    it("deleting the last zone under a site leaves a fully functional bare site", async () => {
+      const owner = await createPilot("lastzoneowner");
+      const site = await createSite({ lat: 88.5, lon: 88.5, visibility: "public", ownerId: owner });
+      const onlyZone = await createZone({ siteId: site.id, lat: 88.5, lon: 88.5, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: onlyZone, endpoint: "takeoff" });
+
+      await associate.deleteZone(onlyZone.id, owner);
+      zoneIds.splice(zoneIds.indexOf(onlyZone.id), 1);
+
+      // The flight falls back cleanly to the site.
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id);
+      expect(row.takeoffSiteName).toBe(site.name);
+      expect(row.takeoffZoneId).toBeNull();
+      const seen = await repo.getFlightForViewer(flight.id, null);
+      expect(seen?.takeoffSiteId).toBe(site.id);
+
+      // The now-zoneless site still matches a brand-new flight at the same spot.
+      const { findLocation } = await import("@/lib/sites/lookup");
+      const { prisma: appPrisma } = await import("@/lib/prisma");
+      const match = await findLocation(appPrisma, { lat: 88.5, lon: 88.5, kind: "takeoff", viewerId: null });
+      expect(match?.site.id).toBe(site.id);
+      expect(match?.zone).toBeNull();
+
+      // The site itself can still be renamed/deleted/undone normally — it's
+      // a fully first-class bare site, not a leftover husk.
+      const newName = `Bare Now ${seq}${suffix}`;
+      const renamed = await associate.renameSite(site.id, owner, newName, newName.toLowerCase());
+      expect(renamed.name).toBe(newName);
+    });
   });
 
   // ---------------------------------------------------------------------

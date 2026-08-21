@@ -801,85 +801,85 @@ ingest seam absorbs zone matching), `lib/prisma.ts` (no zone URLs), `lib/flights
 
 ## Definition of Done
 
-- [ ] `Zone` exists with a **required** `siteId` (`onDelete: Cascade`), its own `ownerId`
+- [x] `Zone` exists with a **required** `siteId` (`onDelete: Cascade`), its own `ownerId`
       and `visibility` (**no column default**), `normalizedName`, `kind`, `lat`/`lon`,
       a **public-only** partial unique index on `(siteId, normalizedName)`, and the two
       CHECKs; the Prisma-v6 drift is documented.
-- [ ] **No `zoneId ⇒ siteId` CHECK and no composite FK**, with both the cascade-ordering
+- [x] **No `zoneId ⇒ siteId` CHECK and no composite FK**, with both the cascade-ordering
       reason and the composite-FK rejection reason recorded in the migration; the
       invariant is enforced by the single cache writer and proven by the
       hand-written-violating-row test.
-- [ ] `findSite` no longer exists; `findLocation` requires `viewerId`; no call site
+- [x] `findSite` no longer exists; `findLocation` requires `viewerId`; no call site
       compiles without one; both API routes are unchanged and device push behaves
       identically to web upload.
-- [ ] A zone within the zone radius beats a site at the same spot; **a site still matches
+- [x] A zone within the zone radius beats a site at the same spot; **a site still matches
       when no zone is in range, whether or not it has zones**; both passes are
       deterministically ordered and tested with a public and an owner-private candidate
       in range simultaneously; a zone under a different site beating a nearer bare site
       is an accepted, tested behaviour, not an unspecified one.
-- [ ] Zone radii live in `lib/sites/geo.ts` with no DB/Next imports, unit-tested at and
+- [x] Zone radii live in `lib/sites/geo.ts` with no DB/Next imports, unit-tested at and
       just outside each boundary.
-- [ ] `canSeeZone` is the conjunction of zone and parent, fail-closed on a missing or
+- [x] `canSeeZone` is the conjunction of zone and parent, fail-closed on a missing or
       mismatched parent, with the full truth table tested.
-- [ ] Every display read — **including `listOwnFlightsByIds`** — re-verifies **every**
+- [x] Every display read — **including `listOwnFlightsByIds`** — re-verifies **every**
       non-null site id **and** zone id; stripping a site always strips its zone; a zone
       whose `siteId` disagrees with the row's site id is stripped.
-- [ ] A hand-written cached **zone** name pointing at a private zone is still stripped by
+- [x] A hand-written cached **zone** name pointing at a private zone is still stripped by
       the read path.
-- [ ] A private zone under a public site renders "Mission Ridge" to every viewer but its
+- [x] A private zone under a public site renders "Mission Ridge" to every viewer but its
       owner, through a public flight, in the logbook, on the profile, and in the feed.
-- [ ] Creating a public zone under a private site is refused at the UI/validation layer;
+- [x] Creating a public zone under a private site is refused at the UI/validation layer;
       no database constraint enforces it; demoting a site never writes to its zones'
       `visibility` column, and a zone's own visibility survives a demote/re-promote cycle
       unchanged.
-- [ ] All eight denormalized columns are written **only** by `lib/sites/associate.ts`,
+- [x] All eight denormalized columns are written **only** by `lib/sites/associate.ts`,
       enforced by the audited allowlist test — **including its new raw-SQL pattern**, with
       both a positive and a negative control.
-- [ ] Ingest re-reads both rows inside the create transaction; a concurrent zone demotion
+- [x] Ingest re-reads both rows inside the create transaction; a concurrent zone demotion
       degrades to site-only; a concurrent site demotion caches neither.
-- [ ] Site transitions recompute zone caches per zone (public zones restored on promote,
+- [x] Site transitions recompute zone caches per zone (public zones restored on promote,
       all nulled on demote) in one statement per endpoint, inside the transaction.
-- [ ] Deleting a zone drops its cached name entirely (no historical zone-name fallback)
+- [x] Deleting a zone drops its cached name entirely (no historical zone-name fallback)
       while the flight's site binding and site name survive; deleting the last zone
       leaves a fully functional bare site.
-- [ ] Zone creation sets `Zone.kind` from the endpoint being named; opposite-endpoint
+- [x] Zone creation sets `Zone.kind` from the endpoint being named; opposite-endpoint
       zone reuse widens `Zone.kind` to `"both"` and never narrows, mirroring the existing
       `Site.kind` rule.
-- [ ] `formatLocationLabel` renders "Site — Zone," "Site," or nothing; a zone name without
+- [x] `formatLocationLabel` renders "Site — Zone," "Site," or nothing; a zone name without
       a site name never renders.
-- [ ] The naming dialog's zone step is **optional and skippable in one click**; creating a
+- [x] The naming dialog's zone step is **optional and skippable in one click**; creating a
       site with no zone is byte-identical in outcome to SPRINT-004.
-- [ ] Nested suggestions surface a site via a nearby visible zone even when the site's own
+- [x] Nested suggestions surface a site via a nearby visible zone even when the site's own
       coordinate is outside the box; private zones never appear to a viewer who can't see
       them.
-- [ ] Concurrent creation of the same public sibling zone name resolves to one zone via
+- [x] Concurrent creation of the same public sibling zone name resolves to one zone via
       the partial unique index (conflict → reuse); a private zone with the same sibling
       name never blocks or is blocked by a public one, and the conflict path never reveals
       a private zone's existence.
-- [ ] Creating (or reuse-binding from the opposite endpoint) a zone re-associates the
+- [x] Creating (or reuse-binding from the opposite endpoint) a zone re-associates the
       creator's own **already-site-bound** flights within the zone radius, not only
       previously-unmatched ones (capped at 200, **cap logged**); other pilots' flights are
       untouched.
-- [ ] The daily create cap counts sites **and** zones together; consequence copy appears
+- [x] The daily create cap counts sites **and** zones together; consequence copy appears
       before saving a public site or a public zone.
-- [ ] The zone's own creator, **or the parent site's owner**, can unpublish or delete a
+- [x] The zone's own creator, **or the parent site's owner**, can unpublish or delete a
       zone while no other pilot's flight references it; `deleteSite`/`unpublishOwnSite`
       additionally refuse while any zone under the site is owned by another pilot,
       independent of flight references.
-- [ ] `scripts/admin-sites.ts` gains zone rename / force-private / merge / list; raw zone
+- [x] `scripts/admin-sites.ts` gains zone rename / force-private / merge / list; raw zone
       deletes documented as forbidden; `scripts/backfill-sites.ts` writes zone columns only
       through the helper.
-- [ ] `statsFrom` is unchanged and its "sites flown" count is unaffected by zones.
-- [ ] Feed keyset cursor stability unchanged; profile / feed / logbook remain dynamic /
+- [x] `statsFrom` is unchanged and its "sites flown" count is unaffected by zones.
+- [x] Feed keyset cursor stability unchanged; profile / feed / logbook remain dynamic /
       `no-store`.
-- [ ] **CI provisions Postgres and the extended matrix, including the extended leak
+- [x] **CI provisions Postgres and the extended matrix, including the extended leak
       sweep, actually runs** (throws, does not skip).
-- [ ] E2E covers both the bare-site path (name a site, skip the zone step, a second flight
+- [x] E2E covers both the bare-site path (name a site, skip the zone step, a second flight
       still matches it) and the two-level path (unknown → name site → add zone →
       two-level render → distinct second IGC auto-associates two levels deep).
-- [ ] All five gates green; `/whats-new` entry added; `FEATURES.md` updated;
+- [x] All five gates green; `/whats-new` entry added; `FEATURES.md` updated;
       `docs/architecture.md` documents the two-level seam; `/qa-prompt` handed off.
-- [ ] Deferred items **not** shipped: three-level hierarchy, per-zone radius column,
+- [x] Deferred items **not** shipped: three-level hierarchy, per-zone radius column,
       `hasZones` flag, user-facing zone reparenting, zone pages/URLs/browse,
       `homeSiteId`/`homeZoneId`, centroid refinement, wind metadata.
 
