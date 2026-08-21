@@ -2617,5 +2617,77 @@ describe("sites: read-path firewall", () => {
         associate.setSiteBoundary(overCap.id, owner, squarePolygon(overCap.lat, overCap.lon, 50)),
       ).rejects.toThrow(/daily boundary-edit limit/i);
     });
+
+    it("suggestNearbyLocations offers a site whose boundary contains the point even when its anchor is outside the 2km suggest radius", async () => {
+      const owner = await createPilot("b6suggestowner");
+      const site = await createSite({
+        lat: 55,
+        lon: 55,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 3000, // reaches well past the 2km suggest radius
+      });
+
+      // A point 2.5km east of the anchor — outside SUGGEST_RADIUS_M (2km)
+      // from the anchor, but inside the 3km-half boundary.
+      const farLon = 55 + 2500 / (111_320 * Math.cos((55 * Math.PI) / 180));
+      const suggestions = await siteRepo.suggestNearbyLocations(55, farLon, owner);
+      expect(suggestions.some((s) => s.id === site.id)).toBe(true);
+    });
+
+    it("the in-transaction duplicate-name probe rejects a name conflict against a boundary-reaching site outside the suggest radius", async () => {
+      const owner = await createPilot("b6dedupowner");
+      const site = await createSite({
+        lat: 55.1,
+        lon: 55.1,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 3000,
+        name: `B6 Dedup Ridge ${suffix}`,
+      });
+
+      const farLon = 55.1 + 2500 / (111_320 * Math.cos((55.1 * Math.PI) / 180));
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 55.1, takeoffLon: farLon });
+
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "create", name: site.name, visibility: "public" },
+        }),
+      ).rejects.toThrow(/already exists nearby/i);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-006: a kind:"both" row's boundary governs BOTH takeoff and
+  // landing matching (interview decision 3 — one shared boundary, not an
+  // endpoint-specific pair). Coordinate band 56.x.
+  // ---------------------------------------------------------------------
+  describe("SPRINT-006: kind:\"both\" boundary applies to both endpoints", () => {
+    it("a single boundary on a kind:both site matches both a takeoff and a landing endpoint", async () => {
+      const owner = await createPilot("b6bothkindowner");
+      const site = await createSite({
+        lat: 56,
+        lon: 56,
+        kind: "both",
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 1500, // past both the 600m takeoff AND 900m landing circle
+      });
+
+      const farLon = 56 + 1200 / (111_320 * Math.cos((56 * Math.PI) / 180));
+      // Uses the app's extended client (lib/prisma), not this file's raw
+      // PrismaClient — findLocation's Db type requires it structurally.
+      const { findLocation } = await import("@/lib/sites/lookup");
+      const { prisma: appPrisma } = await import("@/lib/prisma");
+
+      const takeoffMatch = await findLocation(appPrisma, { lat: 56, lon: farLon, kind: "takeoff", viewerId: null });
+      expect(takeoffMatch?.site.id).toBe(site.id);
+
+      const landingMatch = await findLocation(appPrisma, { lat: 56, lon: farLon, kind: "landing", viewerId: null });
+      expect(landingMatch?.site.id).toBe(site.id);
+    });
   });
 });
