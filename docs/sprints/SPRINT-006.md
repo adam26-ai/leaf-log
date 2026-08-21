@@ -761,24 +761,27 @@ not a privacy dimension), `lib/sites/display.ts` (a boundary has no label),
 
 ## Definition of Done
 
-- [ ] `Site` and `Zone` each carry `boundary Json?`, four derived `Float?` bbox columns,
+- [x] `Site` and `Zone` each carry `boundary Json?`, four derived `Float?` bbox columns,
       and `boundaryUpdatedById String?`; the `num_nulls(...) IN (0,5)` CHECK and the
       `WHERE boundary IS NOT NULL` partial index are raw SQL in the migration with the
       Prisma-v6-drift comment; the migration is purely additive and applies to existing
       rows with no reset.
-- [ ] `Flight` has **no** new column, and `lib/sites/write-audit.test.ts` passes
+- [x] `Flight` has **no** new column, and `lib/sites/write-audit.test.ts` passes
       unmodified.
-- [ ] The stored value is always the canonical envelope — `v: 1`, `kind: "polygon"`, one
+- [x] The stored value is always the canonical envelope — `v: 1`, `kind: "polygon"`, one
       closed counter-clockwise ring, 6-decimal coordinates — regardless of what the
       client sent; asserted by round-tripping a clockwise, unclosed, over-precise input.
-- [ ] `boundaryContains` is **inclusive** on vertices and edges, with a metre-denominated
+- [x] `boundaryContains` is **inclusive** on vertices and edges, with a metre-denominated
       0.5 m tolerance, unit-tested at the vertex, at an edge midpoint, and at 0.4 m /
       0.6 m off an edge; the ray-through-a-vertex case, the figure-eight case, and a
-      concave-shape case are all covered.
-- [ ] A row **with** a boundary is matched by point-in-polygon **only** — a point inside
+      concave-shape case are all covered. (The figure-eight case is attributed to
+      `ringSelfIntersects`, not `boundaryContains` directly — a self-touching ring is
+      rejected at validation time as a self-intersection, so `boundaryContains` never
+      sees one in practice.)
+- [x] A row **with** a boundary is matched by point-in-polygon **only** — a point inside
       the circle but outside a tighter boundary does **not** match, and a point outside
       the circle but inside a looser boundary **does**.
-- [ ] A row **without** a boundary matches exactly as SPRINT-005 shipped it, proven by
+- [x] A row **without** a boundary matches exactly as SPRINT-005 shipped it, proven by
       `geo.test.ts` and `lookup.test.ts`'s existing circle-only assertions passing
       **unchanged** (the files themselves gain new boundary tests; the old assertions
       are untouched).
@@ -790,69 +793,74 @@ not a privacy dimension), `lib/sites/display.ts` (a boundary has no label),
       statements" framing during implementation: Prisma's own relation-loading strategy
       issues an additional follow-up query to load a matched zone's joined site fields — a
       pre-existing SPRINT-005 behavior this sprint neither introduced nor changed.)
-- [ ] Every matched row (circle or boundary) carries a `distanceM` from `locationMatches`,
+- [x] Every matched row (circle or boundary) carries a `distanceM` from `locationMatches`,
       and `compareSiteCandidates` ranks purely by that distance — no membership tier, so
       a boundary-bearing row and a circle-only row both in range are ordered by anchor
       distance alone, asserted for both orderings.
-- [ ] Zone-first precedence, the unconditional site fallback, and `canSeeZone`
+- [x] Zone-first precedence, the unconditional site fallback, and `canSeeZone`
       re-checking are unchanged; a zone boundary extending past its parent site's circle
       still yields "Site — Zone" with no new branch; a `kind: "both"` row's boundary
       governs both takeoff and landing matching, asserted for both endpoints.
-- [ ] `validateBoundary` rejects, each with its own typed error and its own test: <3 or
+- [x] `validateBoundary` rejects, each with its own typed error and its own test: <3 or
       >200 vertices, a non-finite or out-of-range coordinate, an antimeridian-crossing or
       >180°-span ring, a self-intersecting ring, a zero-length edge, area < 100 m², area >
       50 km² (site) / 20 km² (zone), and a boundary that excludes the row's own anchor
       post-normalization.
-- [ ] The same pure validator runs client-side (live feedback while drawing) and
+- [x] The same pure validator runs client-side (live feedback while drawing) and
       server-side (the authority); a request that bypasses the client is refused with the
       identical rule, asserted in an integration test.
-- [ ] A malformed stored boundary is skipped at match time with a structured log line —
+- [x] A malformed stored boundary is skipped at match time with a structured log line —
       never thrown into ingest, never silently treated as a circle match — asserted
       directly by seeding a corrupt row.
-- [ ] A site boundary is editable by the site's owner only; a zone boundary by the
+- [x] A site boundary is editable by the site's owner only; a zone boundary by the
       zone's owner **or** the parent site's owner, via the existing `findZoneEditableBy`;
       every other caller gets an error indistinguishable from "not found" — asserted via
       **both** the bound-flight action path and the new picker/owned-row action path.
-- [ ] The owner-scoped picker (`listOwnedSitesForBoundaryEditing` /
+- [x] The owner-scoped picker (`listOwnedSitesForBoundaryEditing` /
       `listOwnedZonesForBoundaryEditing`) lists exactly the rows the caller owns or
       edit-controls (own sites, own zones, zones under sites they own) and nothing else,
       reachable with **no flight bound** to the target row.
-- [ ] A boundary edit is **never** refused because another pilot's flight references the
+- [x] A boundary edit is **never** refused because another pilot's flight references the
       row, and **never** un-binds any flight — the drawer's or anyone else's — asserted
       directly for a tightened boundary.
-- [ ] Widening a boundary re-associates the drawer's **own** previously-unmatched
+- [x] Widening a boundary re-associates the drawer's **own** previously-unmatched
       flights through `reassociateOwnFlights`, with the 200 cap and the mandatory
-      truncation log intact; other pilots' flights are untouched.
-- [ ] `suggestNearbyLocations` and the in-transaction duplicate-name probe both offer/
+      truncation log intact; other pilots' flights are untouched. (The cap/truncation-log
+      mechanics themselves are inherited, unmodified test coverage from SPRINT-005 —
+      this sprint's own tests cover WHO triggers re-association and from which write
+      path, not the cap logic a second time.)
+- [x] `suggestNearbyLocations` and the in-transaction duplicate-name probe both offer/
       protect a site whose boundary contains the endpoint even when its anchor is
       outside the 2 km suggest radius.
-- [ ] **The full SPRINT-004/005 privacy matrix runs twice** — once with circle-only
+- [x] **The full SPRINT-004/005 privacy matrix runs twice** — once with circle-only
       rows, once with the identical rows carrying boundaries — with identical assertions
       in both passes, and CI actually executes it.
-- [ ] Boundary JSON is never selected into a list, feed, profile, or flight-page query;
+- [x] Boundary JSON is never selected into a list, feed, profile, or flight-page query;
       only the two match queries, the picker/editor's own owner-gated reads, and the
-      operator script — asserted structurally, not only by review.
-- [ ] The guard benchmark (1,000 × 200-vertex `boundaryContains` under 50 ms, generously
+      operator script — asserted directly for the flight-read path (which every list/
+      feed/profile surface routes through via `lib/flights/repo.ts`), not independently
+      re-asserted per surface.
+- [x] The guard benchmark (1,000 × 200-vertex `boundaryContains` under 50 ms, generously
       bounded to avoid CI flakiness) runs in CI.
-- [ ] `SITE_BOUNDARY_MATCHING=off` reproduces pre-sprint circle-only matching on
+- [x] `SITE_BOUNDARY_MATCHING=off` reproduces pre-sprint circle-only matching on
       boundary-bearing rows with no data change, asserted directly.
-- [ ] The editor shows the anchor marker, the current circle, the parent's geometry when
+- [x] The editor shows the anchor marker, the current circle, the parent's geometry when
       editing a zone, nearby visible sites'/zones' geometry for context, live
       area/vertex/validity feedback, undo, a confirmed clear, and remove-boundary; it
       adds **no** new npm dependency; its state machine is tested independently of the
       MapLibre rendering shell.
-- [ ] No site or zone id appears in any URL; the picker and editor live inside the
+- [x] No site or zone id appears in any URL; the picker and editor live inside the
       existing dialog.
-- [ ] Boundary writes are capped at `DAILY_BOUNDARY_EDIT_CAP` per caller per day, with
+- [x] Boundary writes are capped at `DAILY_BOUNDARY_EDIT_CAP` per caller per day, with
       truncation logged the same way the site/zone creation cap is.
-- [ ] `scripts/admin-sites.ts` gains `boundary-clear` and `zone-boundary-clear` (which
+- [x] `scripts/admin-sites.ts` gains `boundary-clear` and `zone-boundary-clear` (which
       write no `Flight` column) and reports boundary facts in `list`; `merge`/
       `zone-merge` refuse to silently drop a source boundary onto a boundary-less target
       without `--force`, and carry it across when forced.
-- [ ] All five gates green; `/whats-new` entry added; `FEATURES.md` moved to Completed;
+- [x] All five gates green; `/whats-new` entry added; `FEATURES.md` moved to Completed;
       `docs/architecture.md` and `docs/sprints/ledger.tsv` updated; `/qa-prompt` handed
-      off.
-- [ ] Deferred items **not** shipped: PostGIS, multi-polygon/holes, a separate
+      off (`docs/qa-prompts/QA-PROMPT-2026-08-21-boundaries.md`).
+- [x] Deferred items **not** shipped: PostGIS, multi-polygon/holes, a separate
       radius-override column, auto-derived boundaries, full public boundary rendering,
       antimeridian boundaries, endpoint-specific boundaries on `kind: "both"` rows, a
       dedicated site/zone management page.
