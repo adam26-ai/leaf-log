@@ -267,3 +267,101 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   await expect(page.getByText(/has to include the site's own location/i)).toBeVisible({ timeout: 5_000 });
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 });
+
+test("re-opening an already-boundary-bearing site shows the saved shape as a dashed reference, not just the live draft", async ({
+  page,
+}) => {
+  const runOffset = Date.now();
+  const suffix = `${runOffset}b6reopen`;
+  const email = `boundaries_e2e_reopen_${suffix}@test.local`;
+  const handle = `b6ro${suffix}`.slice(0, 18);
+  rmSync(LINK_FILE, { force: true });
+  await stubBasemapTiles(page);
+
+  const anchorLat = 40.5 + (runOffset % 5000) * 0.001;
+  const anchorLon = -170.0;
+
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(email);
+  await page.getByRole("button", { name: /send magic link/i }).click();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
+  const link = await getMagicLink();
+  await page.goto(link);
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+  await page.locator('input[name="handle"]').fill(handle);
+  await page.locator('input[name="display_name"]').fill("Boundaries Reopen E2E Pilot");
+  await page.getByRole("button", { name: /create my logbook/i }).click();
+  await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+
+  await page.goto("/upload");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "b6ro-1.igc",
+    mimeType: "text/plain",
+    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
+  });
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+
+  const siteName = `E2E Reopen Ridge ${suffix}`;
+  await page.locator("h1 button").click();
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
+  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+
+  // First edit: no boundary exists yet — the dashed reference should be
+  // the CIRCLE, and the "currently saved boundary" legend must be absent.
+  await page.locator("h1 button").click();
+  await page.getByRole("button", { name: "Edit site boundary" }).click();
+  const mapLocator = page.getByTestId("boundary-editor-map");
+  await mapLocator.waitFor({ timeout: 10_000 });
+  await expect(page.getByText(/currently saved boundary/i)).not.toBeVisible();
+
+  const box = await mapLocator.boundingBox();
+  if (!box) throw new Error("map container has no bounding box");
+  const container = { width: box.width, height: box.height };
+  const zoom = 15;
+  const square: [number, number][] = [
+    [anchorLon - metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(150)],
+    [anchorLon + metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(150)],
+    [anchorLon + metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(150)],
+    [anchorLon - metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(150)],
+  ];
+  for (const [lon, lat] of square) {
+    const px = pixelFor(lon, lat, { lng: anchorLon, lat: anchorLat }, zoom, container);
+    await page.mouse.click(box.x + px.x, box.y + px.y);
+  }
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  // Saving returns to the zone step rather than closing the whole dialog
+  // (onSaved -> onBack -> the step captured before the editor opened) — so
+  // "Edit site boundary" is immediately clickable again with no need to
+  // re-open the dialog from the h1.
+  await expect(page.getByRole("button", { name: "Edit site boundary" })).toBeVisible({ timeout: 10_000 });
+
+  // Second edit: the site now has a saved boundary — re-opening must show
+  // it as a static dashed reference (the fix under test), and the vertex
+  // count must reflect the shape that was actually loaded from the save
+  // above, not an empty draft.
+  await page.getByRole("button", { name: "Edit site boundary" }).click();
+  await page.getByTestId("boundary-editor-map").waitFor({ timeout: 10_000 });
+  await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+
+  // Third edit: fully close the dialog and the page (a real page reload,
+  // not just staying within one dialog session) then come back — proves
+  // the reference is loaded from what's actually persisted, not carried
+  // over in component state. "Close" (BoundaryStep's own header button)
+  // closes the whole dialog, unlike the editor's "Cancel" which only
+  // returns to the zone step.
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 15_000 });
+  await page.locator("h1 button").click();
+  await page.getByRole("button", { name: "Edit site boundary" }).click();
+  await page.getByTestId("boundary-editor-map").waitFor({ timeout: 10_000 });
+  await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+});
