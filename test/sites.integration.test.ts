@@ -20,6 +20,7 @@ describe("sites: read-path firewall", () => {
   let siteRepo: typeof import("@/lib/sites/repo");
   const ids: string[] = [];
   const siteIds: string[] = [];
+  const zoneIds: string[] = [];
   const flightIds: string[] = [];
   let seq = 0;
 
@@ -67,8 +68,12 @@ describe("sites: read-path firewall", () => {
     status?: string;
     takeoffSiteId?: string | null;
     takeoffSiteName?: string | null;
+    takeoffZoneId?: string | null;
+    takeoffZoneName?: string | null;
     landingSiteId?: string | null;
     landingSiteName?: string | null;
+    landingZoneId?: string | null;
+    landingZoneName?: string | null;
     takeoffLat?: number | null;
     takeoffLon?: number | null;
     landingLat?: number | null;
@@ -86,8 +91,12 @@ describe("sites: read-path firewall", () => {
         takeoffAt: new Date("2026-06-01T10:00:00.000Z"),
         takeoffSiteId: opts.takeoffSiteId ?? null,
         takeoffSiteName: opts.takeoffSiteName ?? null,
+        takeoffZoneId: opts.takeoffZoneId ?? null,
+        takeoffZoneName: opts.takeoffZoneName ?? null,
         landingSiteId: opts.landingSiteId ?? null,
         landingSiteName: opts.landingSiteName ?? null,
+        landingZoneId: opts.landingZoneId ?? null,
+        landingZoneName: opts.landingZoneName ?? null,
         takeoffLat: opts.takeoffLat ?? null,
         takeoffLon: opts.takeoffLon ?? null,
         landingLat: opts.landingLat ?? null,
@@ -111,8 +120,52 @@ describe("sites: read-path firewall", () => {
     site: { id: string; name: string; visibility: string };
     endpoint: "takeoff" | "landing";
   }) {
-    const { siteCachePatch } = associate;
-    const patch = siteCachePatch(opts.site, opts.endpoint);
+    const { locationCachePatch } = associate;
+    const patch = locationCachePatch(opts.site, null, opts.endpoint);
+    return createFlight({
+      ownerId: opts.ownerId,
+      visibility: opts.visibility,
+      ...patch,
+    });
+  }
+
+  async function createZone(opts: {
+    siteId: string;
+    lat: number;
+    lon: number;
+    kind?: "takeoff" | "landing" | "both";
+    visibility: "private" | "public";
+    ownerId: string | null;
+    name?: string;
+  }) {
+    seq += 1;
+    const name = opts.name ?? `Matrix Zone ${seq}${suffix}`;
+    const zone = await prisma.zone.create({
+      data: {
+        siteId: opts.siteId,
+        name,
+        normalizedName: name.toLowerCase(),
+        lat: opts.lat,
+        lon: opts.lon,
+        kind: opts.kind ?? "takeoff",
+        visibility: opts.visibility,
+        ownerId: opts.ownerId,
+      },
+    });
+    zoneIds.push(zone.id);
+    return zone;
+  }
+
+  /** A flight bound to a site AND zone the way real app code would. */
+  async function createFlightWithZone(opts: {
+    ownerId: string;
+    visibility: "private" | "friends" | "public";
+    site: { id: string; name: string; visibility: string };
+    zone: { id: string; name: string; visibility: string; siteId: string };
+    endpoint: "takeoff" | "landing";
+  }) {
+    const { locationCachePatch } = associate;
+    const patch = locationCachePatch(opts.site, opts.zone, opts.endpoint);
     return createFlight({
       ownerId: opts.ownerId,
       visibility: opts.visibility,
@@ -135,6 +188,7 @@ describe("sites: read-path firewall", () => {
       where: { OR: [{ requesterId: { in: ids } }, { addresseeId: { in: ids } }] },
     });
     await prisma.flight.deleteMany({ where: { id: { in: flightIds } } });
+    await prisma.zone.deleteMany({ where: { id: { in: zoneIds } } });
     await prisma.site.deleteMany({ where: { id: { in: siteIds } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
@@ -466,15 +520,15 @@ describe("sites: read-path firewall", () => {
   // transaction's re-check must never cache a now-forbidden name.
   // ---------------------------------------------------------------------
   describe("ingest race", () => {
-    it("resolveSiteCache reflects a demotion that happened after an earlier match", async () => {
+    it("resolveLocationCache reflects a demotion that happened after an earlier match", async () => {
       const siteOwner = await createPilot("raceowner");
       const flightOwner = await createPilot("raceflightowner");
       const site = await createSite({ lat: 17, lon: 17, visibility: "public", ownerId: siteOwner });
 
-      // T0: matches while public — this is what findSite would have returned
-      // before the transaction, i.e. the value ingestFlight would carry into
-      // its transaction as `takeoffMatch`.
-      const atMatchTime = await associate.resolveSiteCache(prisma, site.id, "takeoff", flightOwner);
+      // T0: matches while public — this is what findLocation would have
+      // returned before the transaction, i.e. the value ingestFlight would
+      // carry into its transaction as `takeoffMatch`.
+      const atMatchTime = await associate.resolveLocationCache(prisma, site.id, null, "takeoff", flightOwner);
       expect(atMatchTime.takeoffSiteId).toBe(site.id);
       expect(atMatchTime.takeoffSiteName).toBe(site.name);
 
@@ -484,34 +538,90 @@ describe("sites: read-path firewall", () => {
 
       // T2: the re-check inside the create transaction — must now resolve to
       // "no match at all", not a stale public name.
-      const atWriteTime = await associate.resolveSiteCache(prisma, site.id, "takeoff", flightOwner);
+      const atWriteTime = await associate.resolveLocationCache(prisma, site.id, null, "takeoff", flightOwner);
       expect(atWriteTime.takeoffSiteId).toBeNull();
       expect(atWriteTime.takeoffSiteName).toBeNull();
     });
 
-    it("resolveSiteCache still binds (without caching a name) when the flight's own owner demoted their own site", async () => {
+    it("resolveLocationCache still binds (without caching a name) when the flight's own owner demoted their own site", async () => {
       const owner = await createPilot("raceownsite");
       const site = await createSite({ lat: 18, lon: 18, visibility: "public", ownerId: owner });
 
-      await associate.resolveSiteCache(prisma, site.id, "takeoff", owner);
+      await associate.resolveLocationCache(prisma, site.id, null, "takeoff", owner);
       await associate.setSiteVisibility(site.id, owner, "private");
 
-      const afterDemotion = await associate.resolveSiteCache(prisma, site.id, "takeoff", owner);
+      const afterDemotion = await associate.resolveLocationCache(prisma, site.id, null, "takeoff", owner);
       // The owner can still legitimately bind to their own now-private site —
       // the id stays, but the cache correctly withholds the name.
       expect(afterDemotion.takeoffSiteId).toBe(site.id);
       expect(afterDemotion.takeoffSiteName).toBeNull();
     });
 
-    it("resolveSiteCache resolves to no match when the site was deleted concurrently", async () => {
+    it("resolveLocationCache resolves to no match when the site was deleted concurrently", async () => {
       const owner = await createPilot("racedeleted");
       const site = await createSite({ lat: 19, lon: 19, visibility: "public", ownerId: owner });
       await associate.deleteSite(site.id, owner);
       siteIds.splice(siteIds.indexOf(site.id), 1);
 
-      const patch = await associate.resolveSiteCache(prisma, site.id, "takeoff", owner);
+      const patch = await associate.resolveLocationCache(prisma, site.id, null, "takeoff", owner);
       expect(patch.takeoffSiteId).toBeNull();
       expect(patch.takeoffSiteName).toBeNull();
+    });
+
+    it("a zone demoted between match and create degrades to SITE-ONLY, not to nothing", async () => {
+      const zoneOwner = await createPilot("racezoneowner");
+      const flightOwner = await createPilot("racezoneflightowner");
+      const site = await createSite({ lat: 17.5, lon: 17.5, visibility: "public", ownerId: zoneOwner });
+      const zone = await createZone({ siteId: site.id, lat: 17.5, lon: 17.5, visibility: "public", ownerId: zoneOwner });
+
+      // T0: matches while public, as seen by a DIFFERENT pilot's flight.
+      const atMatchTime = await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", flightOwner);
+      expect(atMatchTime.takeoffZoneId).toBe(zone.id);
+      expect(atMatchTime.takeoffZoneName).toBe(zone.name);
+
+      // T1: the zone's owner demotes it — flightOwner has no claim to a
+      // private zone owned by someone else.
+      await associate.setZoneVisibility(zone.id, zoneOwner, "private");
+
+      const atWriteTime = await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", flightOwner);
+      // Degrades to site-only — the site binding survives, the zone doesn't.
+      expect(atWriteTime.takeoffSiteId).toBe(site.id);
+      expect(atWriteTime.takeoffSiteName).toBe(site.name);
+      expect(atWriteTime.takeoffZoneId).toBeNull();
+      expect(atWriteTime.takeoffZoneName).toBeNull();
+    });
+
+    it("resolveLocationCache still binds a zone (without caching a name) when the flight's own owner demoted their own zone", async () => {
+      const owner = await createPilot("racezoneownsite");
+      const site = await createSite({ lat: 17.55, lon: 17.55, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: 17.55, lon: 17.55, visibility: "public", ownerId: owner });
+
+      await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", owner);
+      await associate.setZoneVisibility(zone.id, owner, "private");
+
+      const afterDemotion = await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", owner);
+      // The owner can still legitimately bind to their own now-private zone.
+      expect(afterDemotion.takeoffZoneId).toBe(zone.id);
+      expect(afterDemotion.takeoffZoneName).toBeNull();
+    });
+
+    it("a site demoted between match and create caches NEITHER the site nor its zone", async () => {
+      const owner = await createPilot("racesitezonedemote");
+      const site = await createSite({ lat: 17.6, lon: 17.6, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: 17.6, lon: 17.6, visibility: "public", ownerId: owner });
+
+      await associate.setSiteVisibility(site.id, owner, "private");
+      const owned = owner; // the owner's OWN site — they can still bind, just no name
+      const asOwner = await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", owned);
+      expect(asOwner.takeoffSiteId).toBe(site.id); // still bound, owner's own private site
+      expect(asOwner.takeoffSiteName).toBeNull();
+      expect(asOwner.takeoffZoneId).toBe(zone.id); // zone id follows the owner's own claim
+      expect(asOwner.takeoffZoneName).toBeNull();
+
+      const stranger = await createPilot("racesitezonestranger");
+      const asStranger = await associate.resolveLocationCache(prisma, site.id, zone.id, "takeoff", stranger);
+      expect(asStranger.takeoffSiteId).toBeNull(); // not the stranger's to bind at all
+      expect(asStranger.takeoffZoneId).toBeNull();
     });
   });
 
@@ -596,17 +706,15 @@ describe("sites: read-path firewall", () => {
       const owner = await createPilot("createpub");
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 30, takeoffLon: 30 });
 
-      const { site, created } = await siteRepo.createOrAttachSiteFromFlight({
+      const { site, createdSite } = await siteRepo.createOrAttachSiteFromFlight({
         flightId: flight.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Create Pub Ridge",
-        visibility: "public",
+        site: { mode: "create", name: "Create Pub Ridge", visibility: "public" },
       });
       siteIds.push(site.id);
 
-      expect(created).toBe(true);
+      expect(createdSite).toBe(true);
       expect(site.visibility).toBe("public");
 
       const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
@@ -622,9 +730,7 @@ describe("sites: read-path firewall", () => {
         flightId: flight.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Create Priv Ridge",
-        visibility: "private",
+        site: { mode: "create", name: "Create Priv Ridge", visibility: "private" },
       });
       siteIds.push(site.id);
 
@@ -643,9 +749,7 @@ describe("sites: read-path firewall", () => {
             flightId: flight.id,
             ownerId: owner,
             endpoint: "takeoff",
-            mode: "create",
-            name: badName,
-            visibility: "public",
+            site: { mode: "create", name: badName, visibility: "public" },
           }),
         ).rejects.toThrow();
       }
@@ -658,9 +762,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightA.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Duplicate Ridge",
-        visibility: "public",
+        site: { mode: "create", name: "Duplicate Ridge", visibility: "public" },
       });
       siteIds.push(site.id);
 
@@ -670,9 +772,7 @@ describe("sites: read-path firewall", () => {
           flightId: flightB.id,
           ownerId: owner,
           endpoint: "takeoff",
-          mode: "create",
-          name: "duplicate ridge", // same normalizedName, different case
-          visibility: "public",
+          site: { mode: "create", name: "duplicate ridge", visibility: "public" }, // same normalizedName, different case
         }),
       ).rejects.toThrow(/already exists nearby/);
 
@@ -690,9 +790,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightA.id,
         ownerId: pilotA,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Shared Launch",
-        visibility: "public",
+        site: { mode: "create", name: "Shared Launch", visibility: "public" },
       });
       siteIds.push(siteA.id);
 
@@ -702,19 +800,16 @@ describe("sites: read-path firewall", () => {
           flightId: flightB.id,
           ownerId: pilotB,
           endpoint: "takeoff",
-          mode: "create",
-          name: "Shared Launch",
-          visibility: "public",
+          site: { mode: "create", name: "Shared Launch", visibility: "public" },
         }),
       ).rejects.toThrow();
 
       // Pilot B reuses the existing site instead — resolves to exactly one site.
-      const { site: siteB, created: createdB } = await siteRepo.createOrAttachSiteFromFlight({
+      const { site: siteB, createdSite: createdB } = await siteRepo.createOrAttachSiteFromFlight({
         flightId: flightB.id,
         ownerId: pilotB,
         endpoint: "takeoff",
-        mode: "reuse",
-        existingSiteId: siteA.id,
+        site: { mode: "reuse", id: siteA.id },
       });
       expect(createdB).toBe(false);
       expect(siteB.id).toBe(siteA.id);
@@ -734,9 +829,7 @@ describe("sites: read-path firewall", () => {
           flightId: flight.id,
           ownerId: owner,
           endpoint: "takeoff",
-          mode: "create",
-          name: `Cap Site ${i}`,
-          visibility: "public",
+          site: { mode: "create", name: `Cap Site ${i}`, visibility: "public" },
         });
         siteIds.push(site.id);
       }
@@ -747,9 +840,7 @@ describe("sites: read-path firewall", () => {
           flightId: overflowFlight.id,
           ownerId: owner,
           endpoint: "takeoff",
-          mode: "create",
-          name: "One Too Many",
-          visibility: "public",
+          site: { mode: "create", name: "One Too Many", visibility: "public" },
         }),
       ).rejects.toThrow(/limit/i);
     });
@@ -764,9 +855,7 @@ describe("sites: read-path firewall", () => {
           flightId: flight.id,
           ownerId: stranger,
           endpoint: "takeoff",
-          mode: "create",
-          name: "Hijacked Site",
-          visibility: "public",
+          site: { mode: "create", name: "Hijacked Site", visibility: "public" },
         }),
       ).rejects.toThrow();
 
@@ -784,20 +873,18 @@ describe("sites: read-path firewall", () => {
           flightId: flight.id,
           ownerId: owner,
           endpoint: "landing",
-          mode: "create",
-          name: "No Fix LZ",
-          visibility: "public",
+          site: { mode: "create", name: "No Fix LZ", visibility: "public" },
         }),
       ).rejects.toThrow(/landing coordinate/);
     });
   });
 
-  describe("suggestNearbySites — the reuse-first dialog step", () => {
+  describe("suggestNearbyLocations — the reuse-first dialog step", () => {
     it("surfaces a nearby visible site with distance and bearing", async () => {
       const owner = await createPilot("suggestowner");
       const site = await createSite({ lat: 37, lon: 37, visibility: "public", ownerId: owner });
 
-      const suggestions = await siteRepo.suggestNearbySites(37.01, 37.01, owner);
+      const suggestions = await siteRepo.suggestNearbyLocations(37.01, 37.01, owner);
       const match = suggestions.find((s) => s.id === site.id);
       expect(match).toBeTruthy();
       expect(match?.distanceM).toBeGreaterThan(0);
@@ -808,7 +895,7 @@ describe("sites: read-path firewall", () => {
       const owner = await createPilot("suggestkind");
       const site = await createSite({ lat: 38, lon: 38, kind: "landing", visibility: "public", ownerId: owner });
 
-      const suggestions = await siteRepo.suggestNearbySites(38.001, 38.001, owner);
+      const suggestions = await siteRepo.suggestNearbyLocations(38.001, 38.001, owner);
       expect(suggestions.some((s) => s.id === site.id)).toBe(true);
     });
 
@@ -817,11 +904,11 @@ describe("sites: read-path firewall", () => {
       const stranger = await createPilot("suggestprivstranger");
       const site = await createSite({ lat: 39, lon: 39, visibility: "private", ownerId: owner });
 
-      const suggestions = await siteRepo.suggestNearbySites(39.001, 39.001, stranger);
+      const suggestions = await siteRepo.suggestNearbyLocations(39.001, 39.001, stranger);
       expect(suggestions.some((s) => s.id === site.id)).toBe(false);
 
       // Positive control: the owner does see it.
-      const ownSuggestions = await siteRepo.suggestNearbySites(39.001, 39.001, owner);
+      const ownSuggestions = await siteRepo.suggestNearbyLocations(39.001, 39.001, owner);
       expect(ownSuggestions.some((s) => s.id === site.id)).toBe(true);
     });
   });
@@ -834,9 +921,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightA.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Widen Site",
-        visibility: "public",
+        site: { mode: "create", name: "Widen Site", visibility: "public" },
       });
       siteIds.push(site.id);
       expect(site.kind).toBe("takeoff");
@@ -846,8 +931,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightB.id,
         ownerId: owner,
         endpoint: "landing",
-        mode: "reuse",
-        existingSiteId: site.id,
+        site: { mode: "reuse", id: site.id },
       });
       expect(widened.kind).toBe("both");
     });
@@ -861,8 +945,7 @@ describe("sites: read-path firewall", () => {
         flightId: flight.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "reuse",
-        existingSiteId: site.id,
+        site: { mode: "reuse", id: site.id },
       });
       expect(result.kind).toBe("both");
     });
@@ -895,9 +978,7 @@ describe("sites: read-path firewall", () => {
         flightId: current.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Retro Site",
-        visibility: "public",
+        site: { mode: "create", name: "Retro Site", visibility: "public" },
       });
       siteIds.push(site.id);
 
@@ -924,9 +1005,7 @@ describe("sites: read-path firewall", () => {
         flightId: flight.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Undo Pub Site",
-        visibility: "public",
+        site: { mode: "create", name: "Undo Pub Site", visibility: "public" },
       });
       siteIds.push(site.id);
 
@@ -950,9 +1029,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightA.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Undo Blocked Site",
-        visibility: "public",
+        site: { mode: "create", name: "Undo Blocked Site", visibility: "public" },
       });
       siteIds.push(site.id);
 
@@ -962,8 +1039,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightB.id,
         ownerId: other,
         endpoint: "takeoff",
-        mode: "reuse",
-        existingSiteId: site.id,
+        site: { mode: "reuse", id: site.id },
       });
 
       await expect(associate.unpublishOwnSite(site.id, owner)).rejects.toThrow(/depends on this site/);
@@ -989,9 +1065,7 @@ describe("sites: read-path firewall", () => {
         flightId: flight.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Undo Delete Site",
-        visibility: "public",
+        site: { mode: "create", name: "Undo Delete Site", visibility: "public" },
       });
 
       await associate.deleteSite(site.id, owner);
@@ -1012,9 +1086,7 @@ describe("sites: read-path firewall", () => {
         flightId: flightA.id,
         ownerId: owner,
         endpoint: "takeoff",
-        mode: "create",
-        name: "Undo Delete Blocked",
-        visibility: "public",
+        site: { mode: "create", name: "Undo Delete Blocked", visibility: "public" },
       });
       siteIds.push(site.id);
 
@@ -1023,14 +1095,1129 @@ describe("sites: read-path firewall", () => {
         flightId: flightB.id,
         ownerId: other,
         endpoint: "takeoff",
-        mode: "reuse",
-        existingSiteId: site.id,
+        site: { mode: "reuse", id: site.id },
       });
 
       await expect(associate.deleteSite(site.id, owner)).rejects.toThrow(/depends on this site/);
 
       const stillThere = await prisma.site.findUnique({ where: { id: site.id } });
       expect(stillThere).not.toBeNull();
+    });
+  });
+
+  // =======================================================================
+  // SPRINT-005 PR2 — the two-level read-path firewall
+  // =======================================================================
+
+  // ---------------------------------------------------------------------
+  // Matrix, second dimension: site visibility × zone visibility
+  // ---------------------------------------------------------------------
+  describe("zone matrix — (public site, public zone)", () => {
+    it("owner, friend, stranger, and anonymous all see the zone name", async () => {
+      const owner = await createPilot("zmx-pubpub-owner");
+      const friendViewer = await createPilot("zmx-pubpub-friend");
+      const stranger = await createPilot("zmx-pubpub-stranger");
+      await befriend(owner, friendViewer);
+
+      const site = await createSite({ lat: -140, lon: -140, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -140, lon: -140, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      for (const viewerId of [owner, friendViewer, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen?.takeoffSiteId).toBe(site.id);
+        expect(seen?.takeoffZoneId).toBe(zone.id);
+        expect(seen?.takeoffZoneName).toBe(zone.name);
+      }
+    });
+  });
+
+  describe("zone matrix — (public site, private zone)", () => {
+    it("only the zone's own owner sees the zone; everyone else falls back to the site name", async () => {
+      const siteOwner = await createPilot("zmx-pubpriv-siteowner");
+      const zoneOwner = await createPilot("zmx-pubpriv-zoneowner");
+      const stranger = await createPilot("zmx-pubpriv-stranger");
+      const site = await createSite({ lat: -139, lon: -139, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -139, lon: -139, visibility: "private", ownerId: zoneOwner });
+      const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const zoneOwnerView = await repo.getFlightForViewer(flight.id, zoneOwner);
+      expect(zoneOwnerView?.takeoffZoneId).toBe(zone.id);
+      expect(zoneOwnerView?.takeoffZoneName).toBe(zone.name);
+
+      for (const viewerId of [siteOwner, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen).not.toBeNull(); // positive control: the public FLIGHT is visible
+        expect(seen?.takeoffSiteId).toBe(site.id); // the site itself is still public
+        expect(seen?.takeoffSiteName).toBe(site.name);
+        expect(seen?.takeoffZoneId).toBeNull(); // but the private zone never leaks
+        expect(seen?.takeoffZoneName).toBeNull();
+      }
+    });
+  });
+
+  describe("zone matrix — (private site, private zone, same owner)", () => {
+    it("only the shared owner sees both; everyone else sees Unknown site entirely", async () => {
+      const owner = await createPilot("zmx-privpriv-owner");
+      const stranger = await createPilot("zmx-privpriv-stranger");
+      const site = await createSite({ lat: -138, lon: -138, visibility: "private", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -138, lon: -138, visibility: "private", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffSiteId).toBe(site.id);
+      expect(ownerView?.takeoffZoneId).toBe(zone.id);
+
+      for (const viewerId of [stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen).not.toBeNull(); // positive control
+        expect(seen?.takeoffSiteId).toBeNull();
+        expect(seen?.takeoffSiteName).toBeNull();
+        expect(seen?.takeoffZoneId).toBeNull();
+        expect(seen?.takeoffZoneName).toBeNull();
+      }
+    });
+  });
+
+  describe("zone matrix — (private site, public zone — the incoherent row)", () => {
+    it("is neutralized at read time: visible only to the SITE's owner, never to the zone's own owner if different", async () => {
+      const siteOwner = await createPilot("zmx-privpub-siteowner");
+      const zoneOwner = await createPilot("zmx-privpub-zoneowner");
+      const stranger = await createPilot("zmx-privpub-stranger");
+      const site = await createSite({ lat: -137, lon: -137, visibility: "private", ownerId: siteOwner });
+      // This row should never be reachable through PR3's create flow (refused
+      // at write time); written directly here to prove the READ side closes
+      // it independently, per SPRINT-005's two-layer design.
+      const zone = await createZone({ siteId: site.id, lat: -137, lon: -137, visibility: "public", ownerId: zoneOwner });
+      const flight = await createFlightWithZone({ ownerId: siteOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const siteOwnerView = await repo.getFlightForViewer(flight.id, siteOwner);
+      expect(siteOwnerView?.takeoffSiteId).toBe(site.id);
+      expect(siteOwnerView?.takeoffZoneId).toBe(zone.id);
+
+      for (const viewerId of [zoneOwner, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen).not.toBeNull();
+        expect(seen?.takeoffSiteId).toBeNull();
+        expect(seen?.takeoffZoneId).toBeNull();
+      }
+    });
+  });
+
+  describe("zone matrix — logbook, profile list, feed, and listOwnFlightsByIds all agree", () => {
+    it("a private zone under a public site never appears on any surface but its owner's", async () => {
+      const siteOwner = await createPilot("zmx-surfaces-siteowner");
+      const zoneOwner = await createPilot("zmx-surfaces-zoneowner");
+      const friendViewer = await createPilot("zmx-surfaces-friend");
+      await befriend(zoneOwner, friendViewer);
+
+      const site = await createSite({ lat: -136, lon: -136, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -136, lon: -136, visibility: "private", ownerId: zoneOwner });
+      const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      // Owner's own logbook: full visibility, via listOwnFlights.
+      const ownLogbook = await repo.listOwnFlights(zoneOwner);
+      const ownRow = ownLogbook.find((f) => f.id === flight.id);
+      expect(ownRow?.takeoffZoneName).toBe(zone.name);
+
+      // listOwnFlightsByIds: same owner-scoped resolver, same guarantee.
+      const byIds = await repo.listOwnFlightsByIds(zoneOwner, [flight.id]);
+      expect(byIds[0]?.takeoffZoneId).toBe(zone.id);
+      expect(byIds[0]?.takeoffZoneName).toBe(zone.name);
+
+      // Friend viewing the zone owner's profile: zone hidden, site survives.
+      const profileRows = await repo.listProfileFlightsForViewer(zoneOwner, friendViewer);
+      const profileRow = profileRows.find((f) => f.id === flight.id);
+      expect(profileRow?.takeoffSiteId).toBe(site.id);
+      expect(profileRow?.takeoffZoneId).toBeNull();
+
+      // Friend's feed: same guarantee.
+      const feed = await repo.listFeedForViewer(friendViewer);
+      const feedRow = feed.rows.find((r) => r.id === flight.id);
+      expect(feedRow).toBeTruthy();
+      expect(feedRow?.takeoffZoneId).toBeNull();
+      expect(feedRow?.takeoffZoneName).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Leak sweep, extended to zones
+  // ---------------------------------------------------------------------
+  describe("leak sweep — zones", () => {
+    it("no flight created through the real cache writer carries a cached zone name whose zone (or parent site) is not public", async () => {
+      const owner = await createPilot("sweepzoneowner");
+      const pubSite = await createSite({ lat: -135, lon: -135, visibility: "public", ownerId: owner });
+      const privSite = await createSite({ lat: -134, lon: -134, visibility: "private", ownerId: owner });
+      const pubZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -135, lon: -135, visibility: "public", ownerId: owner });
+      const privZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -134.999, lon: -134.999, visibility: "private", ownerId: owner });
+      // The incoherent row: a public zone under a private site. Written
+      // directly via locationCachePatch (not the create flow, which refuses
+      // it) — the sweep must still prove no leak reaches the cache.
+      const pubZoneUnderPrivSite = await createZone({ siteId: privSite.id, lat: -134, lon: -134, visibility: "public", ownerId: owner });
+
+      await createFlightWithZone({ ownerId: owner, visibility: "public", site: pubSite, zone: pubZoneUnderPubSite, endpoint: "takeoff" });
+      await createFlightWithZone({ ownerId: owner, visibility: "public", site: pubSite, zone: privZoneUnderPubSite, endpoint: "landing" });
+      await createFlightWithZone({ ownerId: owner, visibility: "public", site: privSite, zone: pubZoneUnderPrivSite, endpoint: "takeoff" });
+
+      const rows = await prisma.flight.findMany({
+        where: { id: { in: flightIds } },
+        select: {
+          id: true,
+          takeoffZoneId: true,
+          takeoffZoneName: true,
+          landingZoneId: true,
+          landingZoneName: true,
+        },
+      });
+      const zoneRows = await prisma.zone.findMany({
+        where: { id: { in: zoneIds } },
+        select: { id: true, visibility: true, siteId: true },
+      });
+      const siteRows = await prisma.site.findMany({
+        where: { id: { in: siteIds } },
+        select: { id: true, visibility: true },
+      });
+      const zoneById = new Map(zoneRows.map((z) => [z.id, z]));
+      const siteVisibilityById = new Map(siteRows.map((s) => [s.id, s.visibility]));
+
+      for (const row of rows) {
+        for (const [zoneId, zoneName] of [
+          [row.takeoffZoneId, row.takeoffZoneName],
+          [row.landingZoneId, row.landingZoneName],
+        ] as const) {
+          if (!zoneId || !zoneName) continue;
+          const zone = zoneById.get(zoneId);
+          expect(zone).toBeTruthy();
+          expect(zone?.visibility).toBe("public");
+          expect(siteVisibilityById.get(zone!.siteId)).toBe("public");
+        }
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Stale-row defence — zones
+  // ---------------------------------------------------------------------
+  describe("stale-row defence — zones", () => {
+    it("strips a hand-written cached zone name pointing at a private zone", async () => {
+      const owner = await createPilot("stalezoneowner");
+      const stranger = await createPilot("stalezonestranger");
+      const site = await createSite({ lat: -133, lon: -133, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -133, lon: -133, visibility: "private", ownerId: owner });
+
+      // Hand-write a row that never went through locationCachePatch — a
+      // poisoned cache column, exactly what a bug or a direct DB edit could
+      // produce.
+      const flight = await createFlight({
+        ownerId: owner,
+        visibility: "public",
+        takeoffSiteId: site.id,
+        takeoffSiteName: site.name,
+        takeoffZoneId: zone.id,
+        takeoffZoneName: zone.name, // <- the poison: cached name for a private zone
+      });
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffSiteId).toBe(site.id); // the public site survives
+      expect(strangerView?.takeoffZoneId).toBeNull(); // the private zone does not
+      expect(strangerView?.takeoffZoneName).toBeNull();
+
+      // Positive control: the owner still sees it.
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffZoneName).toBe(zone.name);
+    });
+
+    it("strips a hand-written zone id whose siteId disagrees with the row's takeoffSiteId (mismatch, not a leak)", async () => {
+      const owner = await createPilot("mismatchowner");
+      const siteA = await createSite({ lat: -132, lon: -132, visibility: "public", ownerId: owner });
+      const siteB = await createSite({ lat: -131, lon: -131, visibility: "public", ownerId: owner });
+      // A zone that REALLY belongs to siteB...
+      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -131, lon: -131, visibility: "public", ownerId: owner });
+
+      // ...hand-written onto a flight whose takeoffSiteId is siteA instead.
+      const flight = await createFlight({
+        ownerId: owner,
+        visibility: "public",
+        takeoffSiteId: siteA.id,
+        takeoffSiteName: siteA.name,
+        takeoffZoneId: zoneUnderB.id,
+        takeoffZoneName: zoneUnderB.name,
+      });
+
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen?.takeoffSiteId).toBe(siteA.id); // the site itself still resolves
+      expect(seen?.takeoffZoneId).toBeNull(); // the mismatched zone is stripped
+      expect(seen?.takeoffZoneName).toBeNull();
+    });
+
+    it("a zone id with a NULL site id renders 'Unknown site', not a dangling zone name (the absent CHECK's job)", async () => {
+      const owner = await createPilot("danglingzoneowner");
+      const site = await createSite({ lat: -130, lon: -130, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -130, lon: -130, visibility: "public", ownerId: owner });
+
+      // The invariant zoneId ⇒ siteId is enforced by the single writer, not a
+      // DB CHECK — hand-write the row a CHECK would have blocked.
+      const flight = await createFlight({
+        ownerId: owner,
+        visibility: "public",
+        takeoffSiteId: null,
+        takeoffSiteName: null,
+        takeoffZoneId: zone.id,
+        takeoffZoneName: zone.name,
+      });
+
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen?.takeoffSiteId).toBeNull();
+      expect(seen?.takeoffSiteName).toBeNull();
+      expect(seen?.takeoffZoneId).toBeNull();
+      expect(seen?.takeoffZoneName).toBeNull(); // never rendered bare
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Conjunction: a public zone under a demoted site
+  // ---------------------------------------------------------------------
+  describe("conjunction — demote/re-promote", () => {
+    it("a public zone under a demoted site is invisible to everyone but the owner, in matching AND display, with no write to the zone's own visibility", async () => {
+      const owner = await createPilot("conjowner");
+      const stranger = await createPilot("conjstranger");
+      const site = await createSite({ lat: -129, lon: -129, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -129, lon: -129, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      await associate.setSiteVisibility(site.id, owner, "private");
+
+      // The zone's OWN visibility column is untouched by the demote.
+      const zoneRow = await prisma.zone.findUniqueOrThrow({ where: { id: zone.id } });
+      expect(zoneRow.visibility).toBe("public");
+
+      // Matching: findLocation for a stranger no longer finds it. Uses the
+      // app's extended client (lib/prisma), not this file's raw
+      // PrismaClient — findLocation's Db type requires it structurally.
+      const { findLocation } = await import("@/lib/sites/lookup");
+      const { prisma: appPrisma } = await import("@/lib/prisma");
+      const strangerMatch = await findLocation(appPrisma, { lat: -129, lon: -129, kind: "takeoff", viewerId: stranger });
+      expect(strangerMatch).toBeNull();
+      const ownerMatch = await findLocation(appPrisma, { lat: -129, lon: -129, kind: "takeoff", viewerId: owner });
+      expect(ownerMatch?.zone?.id).toBe(zone.id);
+
+      // Display: the cache was nulled by the demote transaction.
+      const rowAfterDemote = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(rowAfterDemote.takeoffZoneName).toBeNull();
+
+      // Re-promotion restores it automatically — no write to the zone needed.
+      await associate.setSiteVisibility(site.id, owner, "public");
+      const rowAfterPromote = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(rowAfterPromote.takeoffZoneName).toBe(zone.name);
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffZoneName).toBe(zone.name);
+    });
+
+    it("re-promoting a site restores ONLY its still-public zones' names, not a zone that was demoted independently", async () => {
+      const owner = await createPilot("conjselective");
+      const site = await createSite({ lat: -128, lon: -128, visibility: "public", ownerId: owner });
+      const stillPublicZone = await createZone({ siteId: site.id, lat: -128, lon: -128, visibility: "public", ownerId: owner });
+      const nowPrivateZone = await createZone({ siteId: site.id, lat: -127.999, lon: -127.999, visibility: "public", ownerId: owner });
+      const flightA = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: stillPublicZone, endpoint: "takeoff" });
+      const flightB = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: nowPrivateZone, endpoint: "takeoff" });
+
+      // Independently demote ONE of the two zones before the site demote/promote cycle.
+      await associate.setZoneVisibility(nowPrivateZone.id, owner, "private");
+      await associate.setSiteVisibility(site.id, owner, "private");
+      await associate.setSiteVisibility(site.id, owner, "public");
+
+      const rowA = await prisma.flight.findUniqueOrThrow({ where: { id: flightA.id } });
+      const rowB = await prisma.flight.findUniqueOrThrow({ where: { id: flightB.id } });
+      expect(rowA.takeoffZoneName).toBe(stillPublicZone.name); // restored
+      expect(rowB.takeoffZoneName).toBeNull(); // stays hidden — it's private on its own merits now
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Transitions: zone promote / demote / rename / delete
+  // ---------------------------------------------------------------------
+  describe("zone transitions", () => {
+    it("promoting a private zone to public populates the cache when the parent site is public", async () => {
+      const owner = await createPilot("zonepromote");
+      const site = await createSite({ lat: -127, lon: -127, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -127, lon: -127, visibility: "private", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      let row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBeNull();
+
+      await associate.setZoneVisibility(zone.id, owner, "public");
+
+      row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBe(zone.name);
+    });
+
+    it("promoting a zone whose PARENT site is private does not populate the cache (the write-time conjunction)", async () => {
+      const owner = await createPilot("zonepromoteprivsite");
+      const site = await createSite({ lat: -126, lon: -126, visibility: "private", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -126, lon: -126, visibility: "private", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      await associate.setZoneVisibility(zone.id, owner, "public");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBeNull(); // parent still private — conjunction withholds it
+    });
+
+    it("demoting a public zone nulls the cache on every referencing flight", async () => {
+      const owner = await createPilot("zonedemote");
+      const site = await createSite({ lat: -125, lon: -125, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -125, lon: -125, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      await associate.setZoneVisibility(zone.id, owner, "private");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneId).toBe(zone.id); // id stays bound
+      expect(row.takeoffZoneName).toBeNull(); // name stripped
+    });
+
+    it("renaming a public zone updates the cache on every referencing flight", async () => {
+      const owner = await createPilot("zonerename");
+      const site = await createSite({ lat: -124, lon: -124, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -124, lon: -124, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const newName = `Renamed Zone ${seq}${suffix}`;
+      await associate.renameZone(zone.id, owner, newName, newName.toLowerCase());
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBe(newName);
+    });
+
+    it("renaming a private zone never populates the cache", async () => {
+      const owner = await createPilot("zonerenameprivate");
+      const site = await createSite({ lat: -123, lon: -123, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -123, lon: -123, visibility: "private", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const newName = `RenamedPriv Zone ${seq}${suffix}`;
+      await associate.renameZone(zone.id, owner, newName, newName.toLowerCase());
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBeNull();
+    });
+
+    it("a non-owner cannot rename or promote someone else's zone", async () => {
+      const owner = await createPilot("zonenonowner");
+      const stranger = await createPilot("zonenonownerstr");
+      const site = await createSite({ lat: -122, lon: -122, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -122, lon: -122, visibility: "public", ownerId: owner });
+
+      await expect(associate.renameZone(zone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+      await expect(associate.setZoneVisibility(zone.id, stranger, "private")).rejects.toThrow();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Deletes: zone delete vs. site delete
+  // ---------------------------------------------------------------------
+  describe("deletes", () => {
+    it("deleting a zone keeps the flight's SITE binding but drops the zone name entirely (no history)", async () => {
+      const owner = await createPilot("deletezone");
+      const site = await createSite({ lat: -121, lon: -121, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -121, lon: -121, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+      const deletedZoneName = zone.name;
+
+      await associate.deleteZone(zone.id, owner);
+      zoneIds.splice(zoneIds.indexOf(zone.id), 1);
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id); // site binding survives
+      expect(row.takeoffSiteName).toBe(site.name);
+      expect(row.takeoffZoneId).toBeNull();
+      expect(row.takeoffZoneName).toBeNull(); // NOT kept as history, unlike a deleted site
+
+      const seen = await repo.getFlightForViewer(flight.id, null);
+      expect(seen?.takeoffSiteName).toBe(site.name);
+      expect(seen?.takeoffZoneName).not.toBe(deletedZoneName);
+    });
+
+    it("deleting a site cascades its zones, keeps the site name as history, and drops the zone names", async () => {
+      const owner = await createPilot("deletesitewithzone");
+      const site = await createSite({ lat: -120, lon: -120, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -120, lon: -120, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+      const deletedSiteName = site.name;
+
+      await associate.deleteSite(site.id, owner);
+      siteIds.splice(siteIds.indexOf(site.id), 1);
+      zoneIds.splice(zoneIds.indexOf(zone.id), 1); // cascade-deleted with the site
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBeNull();
+      expect(row.takeoffSiteName).toBe(deletedSiteName); // site name kept as history
+      expect(row.takeoffZoneId).toBeNull();
+      expect(row.takeoffZoneName).toBeNull(); // zone name is NOT kept as history
+
+      const zoneRow = await prisma.zone.findUnique({ where: { id: zone.id } });
+      expect(zoneRow).toBeNull(); // cascaded away
+    });
+
+    it("deleting a site refuses while another pilot owns a zone under it, even with no flight referencing either", async () => {
+      const siteOwner = await createPilot("deletesiteotherzone");
+      const otherZoneOwner = await createPilot("deletesiteotherzoneowner");
+      const site = await createSite({ lat: -119, lon: -119, visibility: "public", ownerId: siteOwner });
+      // No flight references this zone at all — the guard must still fire,
+      // because it protects the CONTRIBUTION, not just current references.
+      await createZone({ siteId: site.id, lat: -119, lon: -119, visibility: "public", ownerId: otherZoneOwner });
+
+      await expect(associate.deleteSite(site.id, siteOwner)).rejects.toThrow(/depends on this site/);
+
+      const stillThere = await prisma.site.findUnique({ where: { id: site.id } });
+      expect(stillThere).not.toBeNull();
+    });
+
+    it("unpublishing a site refuses while another pilot owns a zone under it", async () => {
+      const siteOwner = await createPilot("unpubsiteotherzone");
+      const otherZoneOwner = await createPilot("unpubsiteotherzoneowner");
+      const site = await createSite({ lat: -118, lon: -118, visibility: "public", ownerId: siteOwner });
+      await createZone({ siteId: site.id, lat: -118, lon: -118, visibility: "public", ownerId: otherZoneOwner });
+
+      await expect(associate.unpublishOwnSite(site.id, siteOwner)).rejects.toThrow(/depends on this site/);
+
+      const stillPublic = await prisma.site.findUniqueOrThrow({ where: { id: site.id } });
+      expect(stillPublic.visibility).toBe("public");
+    });
+
+    it("deleting a site succeeds once the other-owned zone is gone (the operator-remedy escape hatch)", async () => {
+      const siteOwner = await createPilot("delsiteafterzone1");
+      const otherZoneOwner = await createPilot("delsiteafterzone2");
+      const site = await createSite({ lat: -117, lon: -117, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -117, lon: -117, visibility: "public", ownerId: otherZoneOwner });
+
+      await expect(associate.deleteSite(site.id, siteOwner)).rejects.toThrow();
+
+      // The other pilot's own zone-delete clears the block (or, in
+      // production, an operator's zone-force-private/merge would).
+      await associate.deleteZone(zone.id, otherZoneOwner);
+      zoneIds.splice(zoneIds.indexOf(zone.id), 1);
+
+      await associate.deleteSite(site.id, siteOwner);
+      siteIds.splice(siteIds.indexOf(site.id), 1);
+
+      const stillThere = await prisma.site.findUnique({ where: { id: site.id } });
+      expect(stillThere).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Creator undo — zones
+  // ---------------------------------------------------------------------
+  describe("zone creator undo", () => {
+    it("unpublishes a zone with no other pilot's flight attached", async () => {
+      const owner = await createPilot("zoneundopub");
+      const site = await createSite({ lat: -116, lon: -116, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -116, lon: -116, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const updated = await associate.unpublishOwnZone(zone.id, owner);
+      expect(updated.visibility).toBe("private");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneId).toBe(zone.id); // still bound
+      expect(row.takeoffZoneName).toBeNull(); // cache stripped
+
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen?.takeoffZoneName).toBe(zone.name); // live resolver still shows the owner
+    });
+
+    it("refuses to unpublish or delete a zone once another pilot's flight depends on it", async () => {
+      const owner = await createPilot("zoneundoblocked");
+      const other = await createPilot("zoneundoblockedother");
+      const site = await createSite({ lat: -115, lon: -115, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -115, lon: -115, visibility: "public", ownerId: owner });
+      await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      // Another pilot's flight now depends on the zone directly.
+      await createFlightWithZone({ ownerId: other, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      await expect(associate.unpublishOwnZone(zone.id, owner)).rejects.toThrow(/depends on this zone/);
+      await expect(associate.deleteZone(zone.id, owner)).rejects.toThrow(/depends on this zone/);
+
+      const row = await prisma.zone.findUniqueOrThrow({ where: { id: zone.id } });
+      expect(row.visibility).toBe("public"); // unchanged
+    });
+
+    it("a non-owner cannot unpublish or delete someone else's zone", async () => {
+      const owner = await createPilot("zoneundononowner");
+      const stranger = await createPilot("zoneundononownerstr");
+      const site = await createSite({ lat: -114, lon: -114, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -114, lon: -114, visibility: "public", ownerId: owner });
+
+      await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
+      await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
+    });
+
+    // -------------------------------------------------------------------
+    // Decision 4: the PARENT SITE'S owner may also rename/unpublish/delete
+    // a zone they didn't create.
+    // -------------------------------------------------------------------
+    it("the site's owner can rename a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerrename");
+      const zoneCreator = await createPilot("zonecreatorrename");
+      const site = await createSite({ lat: -112.5, lon: -112.5, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -112.5, lon: -112.5, visibility: "public", ownerId: zoneCreator });
+
+      const newName = `Site Owner Renamed ${seq}${suffix}`;
+      const updated = await associate.renameZone(zone.id, siteOwner, newName, newName.toLowerCase());
+      expect(updated.name).toBe(newName);
+      expect(updated.ownerId).toBe(zoneCreator); // ownership itself is untouched
+    });
+
+    it("the site's owner can unpublish a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerunpub");
+      const zoneCreator = await createPilot("zonecreatorunpub");
+      const site = await createSite({ lat: -112.4, lon: -112.4, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -112.4, lon: -112.4, visibility: "public", ownerId: zoneCreator });
+      // Bound to the CALLER's (site owner's) own flight — the zone creator
+      // themselves has no flight referencing it yet, so the guard passes.
+      const flight = await createFlightWithZone({ ownerId: siteOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const updated = await associate.unpublishOwnZone(zone.id, siteOwner);
+      expect(updated.visibility).toBe("private");
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneName).toBeNull();
+    });
+
+    it("the site's owner can delete a zone contributed by a different pilot", async () => {
+      const siteOwner = await createPilot("siteownerdel");
+      const zoneCreator = await createPilot("zonecreatordel");
+      const site = await createSite({ lat: -112.3, lon: -112.3, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -112.3, lon: -112.3, visibility: "public", ownerId: zoneCreator });
+
+      await associate.deleteZone(zone.id, siteOwner);
+      zoneIds.splice(zoneIds.indexOf(zone.id), 1);
+
+      const zoneRow = await prisma.zone.findUnique({ where: { id: zone.id } });
+      expect(zoneRow).toBeNull();
+    });
+
+    it("the site owner's delete is STILL blocked while the zone creator's own flight depends on it", async () => {
+      const siteOwner = await createPilot("siteownerblocked");
+      const zoneCreator = await createPilot("zonecreatorblocked");
+      const site = await createSite({ lat: -112.2, lon: -112.2, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -112.2, lon: -112.2, visibility: "public", ownerId: zoneCreator });
+      await createFlightWithZone({ ownerId: zoneCreator, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      // The site owner did not create this reference — it's the ZONE
+      // creator's own flight — but "another pilot" is anyone but the
+      // CALLER, so it still blocks the site owner's delete too.
+      await expect(associate.deleteZone(zone.id, siteOwner)).rejects.toThrow(/depends on this zone/);
+    });
+
+    it("a stranger who owns neither the zone nor its parent site still cannot edit it", async () => {
+      const zoneCreator = await createPilot("neitherzonecreator");
+      const siteOwner = await createPilot("neithersiteowner");
+      const stranger = await createPilot("neitherstranger");
+      const site = await createSite({ lat: -112.1, lon: -112.1, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -112.1, lon: -112.1, visibility: "public", ownerId: zoneCreator });
+
+      await expect(associate.renameZone(zone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+      await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
+      await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
+    });
+
+    // -------------------------------------------------------------------
+    // Deleting the LAST zone under a site leaves a fully functional bare
+    // site — decision 1's whole point, re-verified end to end here.
+    // -------------------------------------------------------------------
+    it("deleting the last zone under a site leaves a fully functional bare site", async () => {
+      const owner = await createPilot("lastzoneowner");
+      const site = await createSite({ lat: -111.5, lon: -111.5, visibility: "public", ownerId: owner });
+      const onlyZone = await createZone({ siteId: site.id, lat: -111.5, lon: -111.5, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: onlyZone, endpoint: "takeoff" });
+
+      await associate.deleteZone(onlyZone.id, owner);
+      zoneIds.splice(zoneIds.indexOf(onlyZone.id), 1);
+
+      // The flight falls back cleanly to the site.
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(site.id);
+      expect(row.takeoffSiteName).toBe(site.name);
+      expect(row.takeoffZoneId).toBeNull();
+      const seen = await repo.getFlightForViewer(flight.id, null);
+      expect(seen?.takeoffSiteId).toBe(site.id);
+
+      // The now-zoneless site still matches a brand-new flight at the same spot.
+      const { findLocation } = await import("@/lib/sites/lookup");
+      const { prisma: appPrisma } = await import("@/lib/prisma");
+      const match = await findLocation(appPrisma, { lat: -111.5, lon: -111.5, kind: "takeoff", viewerId: null });
+      expect(match?.site.id).toBe(site.id);
+      expect(match?.zone).toBeNull();
+
+      // The site itself can still be renamed/deleted/undone normally — it's
+      // a fully first-class bare site, not a leftover husk.
+      const newName = `Bare Now ${seq}${suffix}`;
+      const renamed = await associate.renameSite(site.id, owner, newName, newName.toLowerCase());
+      expect(renamed.name).toBe(newName);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Feed cursor stability, unchanged by two-level resolution
+  // ---------------------------------------------------------------------
+  describe("feed cursor stability — zones", () => {
+    it("pagination is stable across a page boundary once zone fields are resolved too", async () => {
+      const owner = await createPilot("zonecursorowner");
+      const viewer = await createPilot("zonecursorviewer");
+      await befriend(owner, viewer);
+
+      const site = await createSite({ lat: -113, lon: -113, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -113, lon: -113, visibility: "private", ownerId: owner });
+      const dates = ["2026-05-04", "2026-05-05", "2026-05-06"];
+      for (const d of dates) {
+        seq += 1;
+        const f = await prisma.flight.create({
+          data: {
+            ownerId: owner,
+            visibility: "public",
+            status: "ready",
+            igcSha256: `zonecursor${suffix}${seq}`,
+            flightDate: new Date(`${d}T00:00:00.000Z`),
+            takeoffAt: new Date(`${d}T10:00:00.000Z`),
+            takeoffSiteId: site.id,
+            takeoffSiteName: site.name,
+            takeoffZoneId: zone.id,
+            takeoffZoneName: null,
+          },
+        });
+        flightIds.push(f.id);
+      }
+
+      const page1 = await repo.listFeedForViewer(viewer, { limit: 2 });
+      expect(page1.rows.length).toBe(2);
+      expect(page1.nextCursor).toBeTruthy();
+      for (const row of page1.rows) {
+        expect(row.takeoffZoneId).toBeNull(); // private zone, viewer isn't the owner
+      }
+
+      const page2 = await repo.listFeedForViewer(viewer, { limit: 2, cursor: page1.nextCursor });
+      expect(page2.rows.length).toBeGreaterThan(0);
+      const page1Ids = new Set(page1.rows.map((r) => r.id));
+      for (const row of page2.rows) {
+        expect(page1Ids.has(row.id)).toBe(false);
+      }
+    });
+  });
+
+  // =======================================================================
+  // SPRINT-005 PR3 — "Which spot?" (create, dedup, re-associate)
+  // =======================================================================
+  describe("createOrAttachSiteFromFlight — zones", () => {
+    it("creates a site AND a first zone together in one call", async () => {
+      const owner = await createPilot("createsitezone");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 90, takeoffLon: 90 });
+
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "create", name: "Combo Ridge", visibility: "public" },
+        zone: { mode: "create", name: "Combo Launch", visibility: "public" },
+      });
+      siteIds.push(result.site.id);
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      expect(result.createdSite).toBe(true);
+      expect(result.createdZone).toBe(true);
+      expect(result.zone?.siteId).toBe(result.site.id);
+      expect(result.zone?.kind).toBe("takeoff"); // set from the endpoint, not left at "unknown"
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffSiteId).toBe(result.site.id);
+      expect(row.takeoffZoneId).toBe(result.zone?.id);
+      expect(row.takeoffZoneName).toBe("Combo Launch");
+    });
+
+    it("adds a zone to an EXISTING visible site, including one owned by a different pilot", async () => {
+      const siteOwner = await createPilot("existingsiteowner");
+      const zoneCreator = await createPilot("existingsitezonecreator");
+      const site = await createSite({ lat: -109, lon: -109, visibility: "public", ownerId: siteOwner });
+
+      const flight = await createFlight({ ownerId: zoneCreator, visibility: "public", takeoffLat: 91, takeoffLon: 91 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: zoneCreator,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "Contributed Spot", visibility: "public" },
+      });
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      expect(result.createdSite).toBe(false);
+      expect(result.zone?.ownerId).toBe(zoneCreator); // the CONTRIBUTOR owns the zone, not the site owner
+      expect(result.zone?.siteId).toBe(site.id);
+    });
+
+    it("reuses a sibling zone under the resolved site", async () => {
+      const owner = await createPilot("reusezone");
+      const site = await createSite({ lat: -108, lon: -108, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -108, lon: -108, visibility: "public", ownerId: owner });
+
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 92, takeoffLon: 92 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "reuse", id: zone.id },
+      });
+
+      expect(result.createdZone).toBe(false);
+      expect(result.zone?.id).toBe(zone.id);
+    });
+
+    it("refuses to reuse a zone under the WRONG site", async () => {
+      const owner = await createPilot("reusewrongzone");
+      const siteA = await createSite({ lat: -107, lon: -107, visibility: "public", ownerId: owner });
+      const siteB = await createSite({ lat: -106, lon: -106, visibility: "public", ownerId: owner });
+      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -106, lon: -106, visibility: "public", ownerId: owner });
+
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 93, takeoffLon: 93 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: siteA.id },
+          zone: { mode: "reuse", id: zoneUnderB.id },
+        }),
+      ).rejects.toThrow(/zone/i);
+    });
+
+    it("a public zone name colliding with a PUBLIC sibling is refused with a steer to reuse", async () => {
+      const owner = await createPilot("zonecollidepublic");
+      const site = await createSite({ lat: -105, lon: -105, visibility: "public", ownerId: owner });
+      await createZone({ siteId: site.id, lat: -105, lon: -105, visibility: "public", ownerId: owner, name: "Shared Zone Name" });
+
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 95, takeoffLon: 95 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "shared zone name", visibility: "public" },
+        }),
+      ).rejects.toThrow(/already exists/);
+
+      const countAtLocation = await prisma.zone.count({ where: { siteId: site.id, normalizedName: "shared zone name" } });
+      expect(countAtLocation).toBe(1);
+    });
+
+    it("a public zone name matching a DIFFERENT pilot's PRIVATE sibling succeeds — a second row, no leak", async () => {
+      const privateZoneOwner = await createPilot("privzonenameowner");
+      const publicZoneCreator = await createPilot("pubzonenamecreator");
+      const site = await createSite({ lat: -104, lon: -104, visibility: "public", ownerId: privateZoneOwner });
+      await createZone({
+        siteId: site.id,
+        lat: -104,
+        lon: -104,
+        visibility: "private",
+        ownerId: privateZoneOwner,
+        name: "Ambiguous Name",
+      });
+
+      const flight = await createFlight({ ownerId: publicZoneCreator, visibility: "public", takeoffLat: 96, takeoffLon: 96 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: publicZoneCreator,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "Ambiguous Name", visibility: "public" },
+      });
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      expect(result.createdZone).toBe(true); // NOT refused — the private sibling is invisible to this pilot
+      const countAtLocation = await prisma.zone.count({ where: { siteId: site.id, normalizedName: "ambiguous name" } });
+      expect(countAtLocation).toBe(2); // two distinct rows now exist
+    });
+
+    it("refuses to create a PUBLIC zone under a PRIVATE site", async () => {
+      const owner = await createPilot("pubzoneprivsite");
+      const site = await createSite({ lat: -103, lon: -103, visibility: "private", ownerId: owner });
+
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 97, takeoffLon: 97 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "Should Fail", visibility: "public" },
+        }),
+      ).rejects.toThrow(/publish the site first/i);
+
+      const created = await prisma.zone.findFirst({ where: { siteId: site.id, normalizedName: "should fail" } });
+      expect(created).toBeNull();
+    });
+
+    it("a PRIVATE zone under a private site succeeds (the coherent private/private case)", async () => {
+      const owner = await createPilot("privzoneprivsite");
+      const site = await createSite({ lat: -102, lon: -102, visibility: "private", ownerId: owner });
+
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 98, takeoffLon: 98 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "Private Spot", visibility: "private" },
+      });
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      expect(result.createdZone).toBe(true);
+      expect(result.zone?.visibility).toBe("private");
+    });
+
+    it("opposite-endpoint zone reuse widens Zone.kind to 'both', never narrows", async () => {
+      const owner = await createPilot("widenzonekind");
+      const site = await createSite({ lat: -101, lon: -101, visibility: "public", ownerId: owner });
+      const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 99, takeoffLon: 99 });
+      const created = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightA.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "Widen Zone", visibility: "public" },
+      });
+      if (created.zone) zoneIds.push(created.zone.id);
+      expect(created.zone?.kind).toBe("takeoff");
+
+      const flightB = await createFlight({ ownerId: owner, visibility: "public", landingLat: 99, landingLon: 99 });
+      const widened = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightB.id,
+        ownerId: owner,
+        endpoint: "landing",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "reuse", id: created.zone!.id },
+      });
+      expect(widened.zone?.kind).toBe("both");
+
+      // Never narrows back down on a subsequent takeoff reuse.
+      const flightC = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 99, takeoffLon: 99 });
+      const stillBoth = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flightC.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "reuse", id: created.zone!.id },
+      });
+      expect(stillBoth.zone?.kind).toBe("both");
+    });
+
+    it("concurrent same-name public zone creation never produces more than one row (partial index enforced)", async () => {
+      // A genuine race between two open transactions: whichever code path
+      // actually fires depends on real timing (the loser either hits the
+      // in-transaction pre-probe, which throws a steer-to-reuse error, or
+      // slips past it and hits the DB-level partial unique index, which
+      // createOrAttachSiteFromFlight catches and resolves to a reuse). Both
+      // outcomes are correct; what must hold regardless is the DB
+      // invariant: never more than one public "Race Zone" under this site.
+      const pilotA = await createPilot("concurrentzoneA");
+      const pilotB = await createPilot("concurrentzoneB");
+      const site = await createSite({ lat: -100, lon: -100, visibility: "public", ownerId: pilotA });
+
+      const flightA = await createFlight({ ownerId: pilotA, visibility: "public", takeoffLat: 100, takeoffLon: 100 });
+      const flightB = await createFlight({ ownerId: pilotB, visibility: "public", takeoffLat: 100.0002, takeoffLon: 100.0002 });
+
+      const results = await Promise.allSettled([
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flightA.id,
+          ownerId: pilotA,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "Race Zone", visibility: "public" },
+        }),
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flightB.id,
+          ownerId: pilotB,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "Race Zone", visibility: "public" },
+        }),
+      ]);
+
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.zone) zoneIds.push(r.value.zone.id);
+      }
+      // At least one side must have succeeded — the race can't fail both.
+      expect(results.some((r) => r.status === "fulfilled")).toBe(true);
+
+      const zones = await prisma.zone.findMany({ where: { siteId: site.id, normalizedName: "race zone" } });
+      expect(zones.length).toBe(1);
+    });
+
+    it("a non-owner cannot name a zone on someone else's flight", async () => {
+      const owner = await createPilot("zonehijackowner");
+      const stranger = await createPilot("zonehijackstranger");
+      const site = await createSite({ lat: -99, lon: -99, visibility: "public", ownerId: owner });
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 101, takeoffLon: 101 });
+
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: stranger,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "Hijacked Spot", visibility: "public" },
+        }),
+      ).rejects.toThrow();
+
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneId).toBeNull();
+    });
+
+    it("the shared daily cap refuses across sites AND zones combined", async () => {
+      const owner = await createPilot("sharedcap");
+      const site = await createSite({ lat: -98, lon: -98, visibility: "public", ownerId: owner });
+
+      // One site already "used" one slot conceptually; fill the rest with
+      // zones under the same site (spread out so none collide on proximity).
+      for (let i = 0; i < siteRepo.DAILY_CREATE_CAP - 1; i++) {
+        const lat = 102 + i * 0.01; // ~1.1 km apart — outside SUGGEST_RADIUS_M
+        const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: lat, takeoffLon: 102 });
+        const result = await siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "create", name: `Cap Zone Site ${i}`, visibility: "public" },
+        });
+        siteIds.push(result.site.id);
+      }
+
+      const overflowFlight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 103.5, takeoffLon: 102 });
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: overflowFlight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "reuse", id: site.id },
+          zone: { mode: "create", name: "One Too Many Zone", visibility: "public" },
+        }),
+      ).rejects.toThrow(/limit/i);
+    });
+  });
+
+  describe("suggestNearbyLocations — nested zones under sites", () => {
+    it("surfaces a site's visible zones nested underneath it", async () => {
+      const owner = await createPilot("nestedsuggest");
+      const site = await createSite({ lat: -96, lon: -96, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -96, lon: -96, visibility: "public", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbyLocations(-95.999, -95.999, owner);
+      const match = suggestions.find((s) => s.id === site.id);
+      expect(match).toBeTruthy();
+      expect(match?.zones.some((z) => z.id === zone.id)).toBe(true);
+    });
+
+    it("surfaces a site via a nearby visible zone even when the site's own coordinate is outside the box", async () => {
+      const owner = await createPilot("farsitesuggest");
+      // Site anchor far from the query point (just past SUGGEST_RADIUS_M),
+      // but its zone sits right at the query point.
+      const site = await createSite({ lat: -95, lon: -95, visibility: "public", ownerId: owner });
+      const zone = await createZone({
+        siteId: site.id,
+        lat: -94.98, // ~2.2 km away — outside SUGGEST_RADIUS_M from the site's OWN anchor
+        lon: -95,
+        visibility: "public",
+        ownerId: owner,
+      });
+
+      const suggestions = await siteRepo.suggestNearbyLocations(-94.98, -95, owner);
+      const match = suggestions.find((s) => s.id === site.id);
+      expect(match).toBeTruthy();
+      expect(match?.zones.some((z) => z.id === zone.id)).toBe(true);
+    });
+
+    it("never surfaces a private zone the viewer cannot see, even nested under a visible site", async () => {
+      const owner = await createPilot("privzonesuggestowner");
+      const stranger = await createPilot("privzonesuggeststranger");
+      const site = await createSite({ lat: -94, lon: -94, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -94, lon: -94, visibility: "private", ownerId: owner });
+
+      const strangerSuggestions = await siteRepo.suggestNearbyLocations(-93.999, -93.999, stranger);
+      const strangerMatch = strangerSuggestions.find((s) => s.id === site.id);
+      expect(strangerMatch?.zones.some((z) => z.id === zone.id)).toBe(false);
+
+      const ownSuggestions = await siteRepo.suggestNearbyLocations(-93.999, -93.999, owner);
+      const ownMatch = ownSuggestions.find((s) => s.id === site.id);
+      expect(ownMatch?.zones.some((z) => z.id === zone.id)).toBe(true);
+    });
+  });
+
+  describe("reassociateOwnFlights — zone upgrades the creator's already-site-bound back-catalog", () => {
+    it("upgrades the creator's own already-site-bound flights to the new zone; another pilot's stay at the site level", async () => {
+      const owner = await createPilot("upgradeowner");
+      const other = await createPilot("upgradeother");
+      const site = await createSite({ lat: -93, lon: -93, visibility: "public", ownerId: owner });
+
+      // The creator's own OLDER flight, already bound to the bare site
+      // (takeoffZoneId null) — exactly the split-logbook state SPRINT-005
+      // exists to fix.
+      const olderOwnAtSite = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+      // Another pilot's flight, also already bound to the bare site — must
+      // NOT be touched.
+      const othersAtSite = await createFlightWithSite({ ownerId: other, visibility: "public", site, endpoint: "takeoff" });
+      // Set their coordinates to the site's own spot so they fall within
+      // the new zone's radius once one is created there.
+      await prisma.flight.update({ where: { id: olderOwnAtSite.id }, data: { takeoffLat: -93, takeoffLon: -93 } });
+      await prisma.flight.update({ where: { id: othersAtSite.id }, data: { takeoffLat: -93, takeoffLon: -93 } });
+
+      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: -93, takeoffLon: -93 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: current.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "Upgrade Zone", visibility: "public" },
+      });
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      expect(result.reassociated.updated).toBeGreaterThanOrEqual(1);
+
+      const olderRow = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwnAtSite.id } });
+      expect(olderRow.takeoffZoneId).toBe(result.zone?.id);
+      expect(olderRow.takeoffZoneName).toBe("Upgrade Zone");
+
+      const othersRow = await prisma.flight.findUniqueOrThrow({ where: { id: othersAtSite.id } });
+      expect(othersRow.takeoffZoneId).toBeNull(); // another pilot's flight is never touched
+      expect(othersRow.takeoffSiteId).toBe(site.id); // still correctly at the site level
+    });
+
+    it("does NOT upgrade a flight already bound to a DIFFERENT zone under the same site", async () => {
+      const owner = await createPilot("noupgradeowner");
+      const site = await createSite({ lat: -92, lon: -92, visibility: "public", ownerId: owner });
+      const otherZone = await createZone({ siteId: site.id, lat: -92, lon: -92, visibility: "public", ownerId: owner });
+      const alreadyZoned = await createFlightWithZone({
+        ownerId: owner,
+        visibility: "public",
+        site,
+        zone: otherZone,
+        endpoint: "takeoff",
+      });
+
+      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: -92, takeoffLon: -92 });
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: current.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "reuse", id: site.id },
+        zone: { mode: "create", name: "New Sibling Zone", visibility: "public" },
+      });
+      if (result.zone) zoneIds.push(result.zone.id);
+
+      const stillOtherZone = await prisma.flight.findUniqueOrThrow({ where: { id: alreadyZoned.id } });
+      expect(stillOtherZone.takeoffZoneId).toBe(otherZone.id); // untouched — already zoned, not null
     });
   });
 });

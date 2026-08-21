@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
-import { findSite } from "@/lib/sites/lookup";
-import { resolveSiteCache } from "@/lib/sites/associate";
+import { findLocation } from "@/lib/sites/lookup";
+import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 
@@ -68,20 +68,24 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const metrics = deriveMetrics(parsed);
 
   // Write-time scope: what the flight's OWNER can name for their own flight —
-  // public sites plus their own private ones. Distinct from the read-time
-  // scope applied later per viewer in lib/flights/repo.ts. This is a
-  // best-effort pre-match outside the transaction; it's re-verified below
+  // public sites/zones plus their own private ones. Distinct from the
+  // read-time scope applied later per viewer in lib/flights/repo.ts. This is
+  // a best-effort pre-match outside the transaction; it's re-verified below
   // inside the create transaction, since a site can be demoted or deleted
   // between this match and the write.
+  //
+  // SPRINT-005: findLocation resolves a zone-first match with a site
+  // fallback; resolveLocationCache below re-verifies and writes both levels
+  // inside the create transaction.
   const [takeoffMatch, landingMatch] = metrics
     ? await Promise.all([
-        findSite(prisma, {
+        findLocation(prisma, {
           lat: metrics.takeoff.lat,
           lon: metrics.takeoff.lon,
           kind: "takeoff",
           viewerId: ownerId,
         }),
-        findSite(prisma, {
+        findLocation(prisma, {
           lat: metrics.landing.lat,
           lon: metrics.landing.lon,
           kind: "landing",
@@ -95,13 +99,15 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const flightDateMs = parsed.headers.dateMs ?? metrics?.takeoffAtMs ?? 0;
 
   const flight = await prisma.$transaction(async (tx) => {
-    // Re-read each matched site INSIDE the transaction and re-verify it's
-    // still visible to the owner (not just that it still exists) — a demote
-    // to private-owned-by-someone-else between match and create must never
-    // cache a name the flight's owner no longer has any claim to.
+    // Re-read each matched site (and zone, if any) INSIDE the transaction
+    // and re-verify it's still visible to the owner (not just that it still
+    // exists) — a demote to private-owned-by-someone-else between match and
+    // create must never cache a name the flight's owner no longer has any
+    // claim to. A zone demoted or deleted in that window degrades to
+    // site-only, never to nothing.
     const [takeoffPatch, landingPatch] = await Promise.all([
-      resolveSiteCache(tx, takeoffMatch?.id ?? null, "takeoff", ownerId),
-      resolveSiteCache(tx, landingMatch?.id ?? null, "landing", ownerId),
+      resolveLocationCache(tx, takeoffMatch?.site.id ?? null, takeoffMatch?.zone?.id ?? null, "takeoff", ownerId),
+      resolveLocationCache(tx, landingMatch?.site.id ?? null, landingMatch?.zone?.id ?? null, "landing", ownerId),
     ]);
 
     return tx.flight.create({

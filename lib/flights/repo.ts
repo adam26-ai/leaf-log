@@ -4,7 +4,7 @@ import {
   normalizeVisibility,
   type FlightVisibility,
 } from "@/lib/flights/visibility";
-import { canSeeSite, normalizeSiteVisibility } from "@/lib/sites/visibility";
+import { canSeeSite, canSeeZone, normalizeSiteVisibility } from "@/lib/sites/visibility";
 import { kudoCountsFor } from "@/lib/social/kudos";
 
 /**
@@ -12,12 +12,15 @@ import { kudoCountsFor } from "@/lib/social/kudos";
  * through here with an explicit viewer id, and the visibility predicate is always
  * applied. Friends-only visibility resolves here, not in pages/routes/actions.
  *
- * Site names get the same treatment (SPRINT-004): Flight.{takeoff,landing}SiteName
- * is a public-name CACHE, not the source of truth. Every row returned from here
- * has had resolveSiteFields() re-verify each non-null site id against the live
- * Site row for THIS viewer — the Site row wins when visible, and both id and
- * name are stripped when it isn't. Never return a raw Prisma Flight/site read to
- * a caller without going through this.
+ * Site AND zone names get the same treatment (SPRINT-004, extended by SPRINT-005):
+ * Flight.{takeoff,landing}{Site,Zone}Name are public-name CACHES, not the source
+ * of truth. Every row returned from here has had resolveLocationFields()
+ * re-verify each non-null site id AND zone id against the live rows for THIS
+ * viewer — the live row wins when visible, and both id and name are stripped
+ * when it isn't. A readable zone with an unreadable parent is impossible by
+ * construction: stripping the site always strips its zone too (the conjunction,
+ * applied as a single early return). Never return a raw Prisma Flight/site/zone
+ * read to a caller without going through this.
  */
 
 const LIST_SELECT = {
@@ -26,8 +29,12 @@ const LIST_SELECT = {
   takeoffAt: true,
   takeoffSiteName: true,
   takeoffSiteId: true,
+  takeoffZoneName: true,
+  takeoffZoneId: true,
   landingSiteName: true,
   landingSiteId: true,
+  landingZoneName: true,
+  landingZoneId: true,
   durationS: true,
   maxAltM: true,
   visibility: true,
@@ -133,11 +140,15 @@ function feedCursorWhere(cursor: FeedCursor | null): Prisma.FlightWhereInput {
   };
 }
 
-interface SiteFieldRow {
+interface LocationFieldRow {
   takeoffSiteId: string | null;
   takeoffSiteName: string | null;
+  takeoffZoneId: string | null;
+  takeoffZoneName: string | null;
   landingSiteId: string | null;
   landingSiteName: string | null;
+  landingZoneId: string | null;
+  landingZoneName: string | null;
 }
 
 interface VisibleSiteRow {
@@ -147,64 +158,143 @@ interface VisibleSiteRow {
   ownerId: string | null;
 }
 
+interface VisibleZoneRow {
+  id: string;
+  name: string;
+  visibility: string;
+  ownerId: string | null;
+  siteId: string;
+}
+
+interface ResolvedEndpoint {
+  siteId: string | null;
+  siteName: string | null;
+  zoneId: string | null;
+  zoneName: string | null;
+}
+
+const STRIPPED_ENDPOINT: ResolvedEndpoint = { siteId: null, siteName: null, zoneId: null, zoneName: null };
+
+/**
+ * Resolves one endpoint (takeoff or landing) against the live Site/Zone rows
+ * for `viewerId`. Stripping the parent always strips the child — there is no
+ * code path in which a zone name survives a hidden site, because the
+ * conjunction is a single early return here, not a condition repeated per
+ * caller. The cached `*ZoneName` is NEVER read as a historical fallback —
+ * unlike a deleted SITE (whose cached name survives so old flights don't
+ * lose all context), a deleted ZONE's cached name is explicitly nulled by
+ * `lib/sites/associate.ts`'s deleteZone at delete time, so there is nothing
+ * to fall back to.
+ */
 function resolveEndpoint(
   siteId: string | null,
-  cachedName: string | null,
+  cachedSiteName: string | null,
+  zoneId: string | null,
   sites: Map<string, VisibleSiteRow>,
+  zones: Map<string, VisibleZoneRow>,
   viewerId: string | null,
-): { id: string | null; name: string | null } {
-  if (siteId === null) return { id: null, name: cachedName }; // historical fallback
+): ResolvedEndpoint {
+  if (siteId === null) {
+    // Historical fallback for a deleted SITE — cache-only, and deliberately
+    // site-name-only (see the doc comment above for why the zone name never
+    // takes this path).
+    return { siteId: null, siteName: cachedSiteName, zoneId: null, zoneName: null };
+  }
 
   const site = sites.get(siteId);
-  if (site && canSeeSite(normalizeSiteVisibility(site.visibility), site.ownerId, viewerId)) {
-    return { id: siteId, name: site.name }; // the Site row wins
+  if (!site || !canSeeSite(normalizeSiteVisibility(site.visibility), site.ownerId, viewerId)) {
+    return STRIPPED_ENDPOINT; // not visible (or deleted concurrently): nothing leaves, zone included
   }
-  return { id: null, name: null }; // not visible (or deleted concurrently): nothing leaves
+
+  const resolvedSite: ResolvedEndpoint = { siteId, siteName: site.name, zoneId: null, zoneName: null };
+  if (zoneId === null) return resolvedSite;
+
+  const zone = zones.get(zoneId);
+  const zoneVisible =
+    zone !== undefined &&
+    canSeeZone(
+      { visibility: normalizeSiteVisibility(zone.visibility), ownerId: zone.ownerId, siteId: zone.siteId },
+      { id: site.id, visibility: normalizeSiteVisibility(site.visibility), ownerId: site.ownerId },
+      viewerId,
+    );
+  if (!zoneVisible) return resolvedSite; // site alone survives; the zone doesn't
+
+  return { ...resolvedSite, zoneId, zoneName: zone!.name };
 }
 
 /**
- * The read-path firewall for site names. Re-verifies EVERY non-null site id
- * on the page against the live Site row — not just rows whose cached name is
- * null — so a stale or hand-written row can never leak a private site's
- * identity through the denormalized cache column. Returns viewer-safe DTOs;
- * `takeoffSiteId`/`landingSiteId` may be nulled relative to the DB row.
+ * The read-path firewall for site AND zone names. Re-verifies EVERY non-null
+ * site id and zone id on the page against the live rows — not just rows
+ * whose cached name is null — so a stale or hand-written row can never leak
+ * a private site's or zone's identity through the denormalized cache
+ * columns. Returns viewer-safe DTOs; the four id/name pairs may be nulled
+ * relative to the DB row.
  */
-async function resolveSiteFields<T extends SiteFieldRow>(
+async function resolveLocationFields<T extends LocationFieldRow>(
   rows: T[],
   viewerId: string | null,
 ): Promise<T[]> {
-  const ids = new Set<string>();
+  const zoneIds = new Set<string>();
+  const siteIds = new Set<string>();
   for (const row of rows) {
-    if (row.takeoffSiteId) ids.add(row.takeoffSiteId);
-    if (row.landingSiteId) ids.add(row.landingSiteId);
+    if (row.takeoffSiteId) siteIds.add(row.takeoffSiteId);
+    if (row.landingSiteId) siteIds.add(row.landingSiteId);
+    if (row.takeoffZoneId) zoneIds.add(row.takeoffZoneId);
+    if (row.landingZoneId) zoneIds.add(row.landingZoneId);
   }
-  if (ids.size === 0) return rows;
+  if (siteIds.size === 0 && zoneIds.size === 0) return rows;
 
-  const siteRows = await prisma.site.findMany({
-    where: { id: { in: Array.from(ids) } },
-    select: { id: true, name: true, visibility: true, ownerId: true },
-  });
+  const zoneRows =
+    zoneIds.size === 0
+      ? []
+      : await prisma.zone.findMany({
+          where: { id: { in: Array.from(zoneIds) } },
+          select: { id: true, name: true, visibility: true, ownerId: true, siteId: true },
+        });
+  // A zone id can appear on a row whose site id was already stripped
+  // upstream in a bad row — union the zones' own parent ids into the site
+  // fetch so canSeeZone's parent gate always has a live row to compare
+  // against, even when the flight's cached siteId disagrees with it.
+  for (const z of zoneRows) siteIds.add(z.siteId);
+
+  const siteRows =
+    siteIds.size === 0
+      ? []
+      : await prisma.site.findMany({
+          where: { id: { in: Array.from(siteIds) } },
+          select: { id: true, name: true, visibility: true, ownerId: true },
+        });
+
   const sites = new Map(siteRows.map((s) => [s.id, s]));
+  const zones = new Map(zoneRows.map((z) => [z.id, z]));
 
   return rows.map((row) => {
     const takeoff = resolveEndpoint(
       row.takeoffSiteId,
       row.takeoffSiteName,
+      row.takeoffZoneId,
       sites,
+      zones,
       viewerId,
     );
     const landing = resolveEndpoint(
       row.landingSiteId,
       row.landingSiteName,
+      row.landingZoneId,
       sites,
+      zones,
       viewerId,
     );
     return {
       ...row,
-      takeoffSiteId: takeoff.id,
-      takeoffSiteName: takeoff.name,
-      landingSiteId: landing.id,
-      landingSiteName: landing.name,
+      takeoffSiteId: takeoff.siteId,
+      takeoffSiteName: takeoff.siteName,
+      takeoffZoneId: takeoff.zoneId,
+      takeoffZoneName: takeoff.zoneName,
+      landingSiteId: landing.siteId,
+      landingSiteName: landing.siteName,
+      landingZoneId: landing.zoneId,
+      landingZoneName: landing.zoneName,
     };
   });
 }
@@ -243,7 +333,7 @@ export async function getFlightForViewer(
 
   if (!isOwner && !isPublic && !isFriendVisible) return null;
 
-  const [resolved] = await resolveSiteFields([flight], viewerId);
+  const [resolved] = await resolveLocationFields([flight], viewerId);
   return resolved;
 }
 
@@ -270,7 +360,7 @@ export async function listProfileFlightsForViewer(
     orderBy: [{ flightDate: "desc" }, { takeoffAt: "desc" }, { id: "desc" }],
     select: LIST_SELECT,
   });
-  return resolveSiteFields(rows, viewerId);
+  return resolveLocationFields(rows, viewerId);
 }
 
 /** The owner's own logbook — all of their flights. */
@@ -280,19 +370,28 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
     orderBy: [{ flightDate: "desc" }, { takeoffAt: "desc" }],
     select: LIST_SELECT,
   });
-  return resolveSiteFields(rows, ownerId);
+  return resolveLocationFields(rows, ownerId);
 }
 
-/** Owner-scoped flight summaries for references stored outside the flight model. */
-export function listOwnFlightsByIds(
+/**
+ * Owner-scoped flight summaries for references stored outside the flight
+ * model (e.g. a device token's "last flight"). Routed through the same
+ * resolver as every other list — SPRINT-004 left this one returning raw
+ * `LIST_SELECT` rows directly; owner-scoped made it harmless in practice
+ * (an owner can always see their own flights' current site), but SPRINT-005
+ * widens `LIST_SELECT` to carry zone data too, and "every display read is
+ * resolved" should have no unstated exceptions.
+ */
+export async function listOwnFlightsByIds(
   ownerId: string,
   flightIds: string[],
 ): Promise<FlightListItem[]> {
-  if (flightIds.length === 0) return Promise.resolve([]);
-  return prisma.flight.findMany({
+  if (flightIds.length === 0) return [];
+  const rows = await prisma.flight.findMany({
     where: { id: { in: flightIds }, ownerId },
     select: LIST_SELECT,
   });
+  return resolveLocationFields(rows, ownerId);
 }
 
 /** A pilot's public ready flights. */
@@ -338,7 +437,7 @@ export async function listFeedForViewer(
     select: FEED_SELECT,
   });
 
-  const visible = await resolveSiteFields(page.slice(0, limit), viewerId);
+  const visible = await resolveLocationFields(page.slice(0, limit), viewerId);
   const counts = await kudoCountsFor(visible.map((flight) => flight.id));
   const rows = visible.map((flight) => ({
     ...flight,

@@ -6,6 +6,7 @@ import {
   formatLocalDate,
 } from "@/lib/flights/format";
 import type { FlightListItem } from "@/lib/flights/repo";
+import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 
 interface FlightRowOwner {
@@ -49,7 +50,7 @@ export function FlightRow({
       )}
       <Link href={`/flights/${flight.id}`} className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-condensed text-lg font-bold text-ink hover:text-leaf-strong">
-          {flight.takeoffSiteName ?? "Unknown site"}
+          {formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site"}
         </span>
         <span className="text-sm text-gray-500">
           {formatLocalDate(
