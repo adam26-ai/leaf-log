@@ -88,12 +88,18 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
-  // 3. Name it, public, in place — no navigation.
+  // 3. Name it, public, in place — no navigation. SPRINT-005's dialog is a
+  // two-step flow: the site step advances with "Next", then the optional
+  // "Which spot?" zone step offers "Skip — just the site" as a first-class
+  // action, whose outcome must be byte-identical to SPRINT-004's one-step
+  // flow.
   await page.locator("h1 button").click();
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   const siteName = `E2E Desert Ridge ${suffix}`;
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
+  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // 4. A distinct second IGC nearby (same pilot) auto-associates on upload —

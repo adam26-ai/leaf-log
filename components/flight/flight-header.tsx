@@ -1,7 +1,6 @@
 import { AccentBar } from "@/components/ui/accent-bar";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
-import { formatLocationLabel } from "@/lib/sites/display";
 import type { Flight } from "@prisma/client";
 
 export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boolean }) {
@@ -17,7 +16,8 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
           as="h1"
           flightId={flight.id}
           endpoint="takeoff"
-          initialName={formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName)}
+          initialSiteName={flight.takeoffSiteName}
+          initialZoneName={flight.takeoffZoneName}
           isOwner={isOwner}
           className="font-condensed text-4xl font-bold tracking-tight text-ink"
         />
@@ -37,7 +37,8 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
           <SiteNameControl
             flightId={flight.id}
             endpoint="landing"
-            initialName={formatLocationLabel(flight.landingSiteName, flight.landingZoneName)}
+            initialSiteName={flight.landingSiteName}
+            initialZoneName={flight.landingZoneName}
             isOwner={isOwner}
             className="font-medium text-gray-700"
           />
