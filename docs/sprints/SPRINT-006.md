@@ -782,9 +782,14 @@ not a privacy dimension), `lib/sites/display.ts` (a boundary has no label),
       `geo.test.ts` and `lookup.test.ts`'s existing circle-only assertions passing
       **unchanged** (the files themselves gain new boundary tests; the old assertions
       are untouched).
-- [ ] `findLocation` still issues exactly **two** queries per endpoint; the boundary
-      prefilter is an `OR` branch inside the existing `findMany`, not a third query; a
-      seeded test demonstrates the generated query filters on the indexed bbox columns.
+- [x] `findLocation` still issues exactly **two** application-level calls per endpoint
+      (`siteCandidates`/`zoneCandidates`, `Promise.all`'d) — the boundary prefilter is an
+      `OR` branch inside each existing `findMany`'s WHERE clause, not a separate query, proven
+      by a seeded test asserting the boundary predicate and the circle predicate co-occur in
+      the same single query per table. (Revised from the original "exactly two raw SQL
+      statements" framing during implementation: Prisma's own relation-loading strategy
+      issues an additional follow-up query to load a matched zone's joined site fields — a
+      pre-existing SPRINT-005 behavior this sprint neither introduced nor changed.)
 - [ ] Every matched row (circle or boundary) carries a `distanceM` from `locationMatches`,
       and `compareSiteCandidates` ranks purely by that distance — no membership tier, so
       a boundary-bearing row and a circle-only row both in range are ordered by anchor

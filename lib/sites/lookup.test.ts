@@ -723,4 +723,78 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       delete process.env.SITE_BOUNDARY_MATCHING;
     }
   });
+
+  it("the boundary prefilter is an OR branch inside the existing site/zone WHERE clauses, not a separate query", async () => {
+    const owner = await createPilot("b6-query-count");
+    const site = await createSite({
+      lat: 87,
+      lon: 87,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 200,
+    });
+    await createZone({
+      siteId: site.id,
+      lat: 87,
+      lon: 87,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 100,
+    });
+
+    // A throwaway, independently-instantiated client (not the shared
+    // lib/prisma.ts export) purely to attach a query-event listener for
+    // this one assertion — self-contained, touches no production code.
+    const { PrismaClient } = await import("@prisma/client");
+    const countingClient = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
+    // Count queries whose WHERE clause carries the boundary-prefilter OR
+    // branch (identifiable by the boundaryMinLat predicate) per base table
+    // — proving that branch lives INSIDE the same query as the existing
+    // circle-bbox predicate, not a separate query. (Prisma's query engine
+    // may still issue its own additional, unrelated round trip to load a
+    // matched zone's joined site fields — a pre-existing relation-loading
+    // detail this sprint's boundary work neither introduced nor changed;
+    // asserting a literal total SQL statement count would conflate the
+    // two.)
+    let siteBoundaryQueries = 0;
+    let zoneBoundaryQueries = 0;
+    let siteBoundaryQueryAlsoHasCircleClause = false;
+    let zoneBoundaryQueryAlsoHasCircleClause = false;
+    countingClient.$on("query", (e: { query: string }) => {
+      const hasBoundaryClause = /"boundaryMinLat"/.test(e.query);
+      if (!hasBoundaryClause) return;
+      const hasCircleClause = /"lat"\s*>=/.test(e.query);
+      if (/FROM\s+"public"\."Site"\s+WHERE/.test(e.query)) {
+        siteBoundaryQueries++;
+        siteBoundaryQueryAlsoHasCircleClause = hasCircleClause;
+      }
+      if (/FROM\s+"public"\."Zone"/.test(e.query)) {
+        zoneBoundaryQueries++;
+        zoneBoundaryQueryAlsoHasCircleClause = hasCircleClause;
+      }
+    });
+
+    // Structurally identical .site/.zone delegates to the app's extended
+    // client at runtime — the generic type-argument mismatch between a raw
+    // PrismaClient and lib/prisma.ts's extended Db type is a type-level
+    // artifact only, the same recurring "extended client" gap this sprint
+    // hit elsewhere (lib/sites/associate.ts's LocationCacheDb).
+    try {
+      await findLocation(countingClient as unknown as Pick<import("@/lib/prisma").Db, "site" | "zone">, {
+        lat: 87,
+        lon: 87,
+        kind: "takeoff",
+        viewerId: null,
+      });
+    } finally {
+      await countingClient.$disconnect();
+    }
+
+    expect(siteBoundaryQueries).toBe(1);
+    expect(siteBoundaryQueryAlsoHasCircleClause).toBe(true);
+    expect(zoneBoundaryQueries).toBe(1);
+    expect(zoneBoundaryQueryAlsoHasCircleClause).toBe(true);
+  });
 });
