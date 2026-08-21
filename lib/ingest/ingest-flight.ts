@@ -4,7 +4,7 @@ import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { findLocation } from "@/lib/sites/lookup";
-import { resolveSiteCache } from "@/lib/sites/associate";
+import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 
@@ -75,9 +75,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   // between this match and the write.
   //
   // SPRINT-005: findLocation resolves a zone-first match with a site
-  // fallback, but this PR (PR1) writes the SITE portion only — the zone
-  // cache columns stay unwritten until PR2's two-level read-path firewall
-  // exists to protect them. The ordering is the safety property.
+  // fallback; resolveLocationCache below re-verifies and writes both levels
+  // inside the create transaction.
   const [takeoffMatch, landingMatch] = metrics
     ? await Promise.all([
         findLocation(prisma, {
@@ -100,13 +99,15 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const flightDateMs = parsed.headers.dateMs ?? metrics?.takeoffAtMs ?? 0;
 
   const flight = await prisma.$transaction(async (tx) => {
-    // Re-read each matched site INSIDE the transaction and re-verify it's
-    // still visible to the owner (not just that it still exists) — a demote
-    // to private-owned-by-someone-else between match and create must never
-    // cache a name the flight's owner no longer has any claim to.
+    // Re-read each matched site (and zone, if any) INSIDE the transaction
+    // and re-verify it's still visible to the owner (not just that it still
+    // exists) — a demote to private-owned-by-someone-else between match and
+    // create must never cache a name the flight's owner no longer has any
+    // claim to. A zone demoted or deleted in that window degrades to
+    // site-only, never to nothing.
     const [takeoffPatch, landingPatch] = await Promise.all([
-      resolveSiteCache(tx, takeoffMatch?.site.id ?? null, "takeoff", ownerId),
-      resolveSiteCache(tx, landingMatch?.site.id ?? null, "landing", ownerId),
+      resolveLocationCache(tx, takeoffMatch?.site.id ?? null, takeoffMatch?.zone?.id ?? null, "takeoff", ownerId),
+      resolveLocationCache(tx, landingMatch?.site.id ?? null, landingMatch?.zone?.id ?? null, "landing", ownerId),
     ]);
 
     return tx.flight.create({

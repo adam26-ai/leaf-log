@@ -259,14 +259,19 @@ would null **both** `Flight` columns together, so deleting a zone would also det
 flight's site binding, contradicting "deleting a zone leaves a working bare site."
 Separately, deleting a `Site` fires two referential actions against the same `Flight`
 row — `CASCADE` to `Zone` (which then `SET NULL`s the zone id) and `SET NULL` on the
-site id — and Postgres does not guarantee their relative order within the statement; a
-non-deferrable `CHECK` could abort a legitimate delete on an unlucky ordering. This is
-the same class of reasoning that made SPRINT-004 reject the "private ⇒ owned" CHECK: *a
-constraint that fights the schema's own cascade behaviour costs more than it protects.*
-The invariant is enforced instead at the application layer — the single cache writer
-physically cannot emit a zone id without its site id (they are produced by one function
-from one resolved pair) — and asserted by an integration test that hand-writes the
-violating row and proves the read path strips it anyway.
+site id — and this isn't just a theoretical ordering risk: letting Postgres run both as
+native cascades **empirically raises a `Flight_takeoffZoneId_fkey` violation** on a
+flight bound to both levels. A non-deferrable `CHECK` on top of that would only add a
+second way for the same delete to fail. This is the same class of reasoning that made
+SPRINT-004 reject the "private ⇒ owned" CHECK: *a constraint that fights the schema's
+own cascade behaviour costs more than it protects.* The invariant is enforced instead at
+the application layer — the single cache writer physically cannot emit a zone id
+without its site id (they are produced by one function from one resolved pair) — and
+asserted by an integration test that hand-writes the violating row and proves the read
+path strips it anyway. `deleteSite` itself works around the cascade-ordering failure by
+explicitly nulling every flight's `*ZoneId`/`*ZoneName` for zones under the site
+*before* deleting it, so the native zone cascade has nothing left to touch (see
+[Undo and operator remedy](#undo-and-operator-remedy) and the matching Risks entry).
 
 **No CHECK on the cached-name columns either,** for the reason SPRINT-004 already
 established: all combinations of `(id, name)` are legitimately reachable, so no
@@ -895,11 +900,20 @@ ingest seam absorbs zone matching), `lib/prisma.ts` (no zone URLs), `lib/flights
   *Mitigation:* the audit's second pattern, with positive and negative controls; the
   statement is confined to `associate.ts` and covered by transition tests in both
   directions.
-- **Referential-action ordering during a site delete.** Cascade-to-`Zone` and
-  `SetNull`-on-`Flight` touch the same row. *Mitigation:* no non-deferrable CHECK
-  depends on their order (the reason we don't add one — and the reason the composite-FK
-  alternative was rejected too), and the delete path is asserted end-to-end in the
-  integration suite.
+- **Referential-action ordering during a site delete — confirmed, not just theoretical.**
+  When a flight is bound to both a site directly (`takeoffSiteId`) and a zone under that
+  same site (`takeoffZoneId`), deleting the site fires two FK actions that converge on
+  the same `Flight` row: `SetNull` on `takeoffSiteId` directly, and `SetNull` on
+  `takeoffZoneId` indirectly (via `Zone.siteId`'s `Cascade`). Empirically, on Postgres
+  18, letting both run as native cascades raises `Flight_takeoffZoneId_fkey` violations
+  — this is exactly why there's no non-deferrable CHECK depending on their order (the
+  reason the composite-FK alternative was rejected too), but the finding is stronger
+  than "a CHECK would be risky": the native double-cascade itself isn't reliable here.
+  *Mitigation:* `deleteSite` explicitly nulls both `*ZoneId` and `*ZoneName` for every
+  flight referencing a zone under the site, in the same transaction, BEFORE the site
+  delete — so the zone cascade has nothing left to touch on any `Flight` row by the
+  time it fires. The delete path is asserted end-to-end in the integration suite,
+  including the specific case (a flight bound to both levels) that surfaces this.
 - **Site ownership now grants moderation power over another pilot's zone (decision 4).**
   A site owner could rename or delete a good-faith contribution they simply dislike.
   *Mitigation, and an accepted product bet:* this is strictly narrower than the power a

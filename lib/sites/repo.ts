@@ -10,7 +10,7 @@ import {
   compareSiteCandidates,
   type MatchKind,
 } from "./geo";
-import { siteCachePatch, type SiteEndpoint, type SiteFieldPatch } from "./associate";
+import { locationCachePatch, type SiteEndpoint, type LocationFieldPatch } from "./associate";
 import { normalizeSiteVisibility, canSeeSite, type SiteVisibility } from "./visibility";
 import { validateSiteName } from "./name";
 
@@ -192,7 +192,7 @@ export async function reassociateOwnFlights(
   const toUpdate = withinExact.slice(0, REASSOCIATE_CAP);
   if (toUpdate.length === 0) return { updated: 0, truncated: false };
 
-  const patch = siteCachePatch(site, endpoint);
+  const patch = locationCachePatch(site, null, endpoint);
   await prisma.flight.updateMany({
     where: { id: { in: toUpdate.map((f) => f.id) } },
     data: patch,
@@ -319,10 +319,10 @@ export async function createOrAttachSiteFromFlight(
     return { site, created: true };
   });
 
-  // Link the CURRENT flight; the cache is written only through siteCachePatch.
+  // Link the CURRENT flight; the cache is written only through locationCachePatch.
   await prisma.flight.update({
     where: { id: flightId },
-    data: siteCachePatch(site, endpoint) as SiteFieldPatch,
+    data: locationCachePatch(site, null, endpoint) as LocationFieldPatch,
   });
 
   // Retroactively fill in the creator's own other unmatched flights.

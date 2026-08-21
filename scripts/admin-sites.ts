@@ -19,7 +19,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 import { prisma } from "@/lib/prisma";
 import { validateSiteName } from "@/lib/sites/name";
-import { siteCachePatch } from "@/lib/sites/associate";
+import { locationCachePatch } from "@/lib/sites/associate";
 
 async function rename(siteId: string, rawName: string) {
   const validated = validateSiteName(rawName);
@@ -44,6 +44,11 @@ async function forcePrivate(siteId: string) {
     await tx.site.update({ where: { id: siteId }, data: { visibility: "private" } });
     await tx.flight.updateMany({ where: { takeoffSiteId: siteId }, data: { takeoffSiteName: null } });
     await tx.flight.updateMany({ where: { landingSiteId: siteId }, data: { landingSiteName: null } });
+    // SPRINT-005: a demoted site must also null every zone cache under it —
+    // the conjunction means no zone stays effectively public once its
+    // parent isn't, regardless of the zone's own (untouched) visibility.
+    await tx.flight.updateMany({ where: { takeoffSiteId: siteId }, data: { takeoffZoneName: null } });
+    await tx.flight.updateMany({ where: { landingSiteId: siteId }, data: { landingZoneName: null } });
   });
   console.log(`forced ${siteId} to private`);
 }
@@ -62,13 +67,20 @@ async function merge(fromSiteId: string, intoSiteId: string) {
       into = await tx.site.update({ where: { id: intoSiteId }, data: { kind: "both" } });
     }
 
+    // Reassigning to a different parent site drops any zone binding this
+    // flight had (a zone belongs to exactly one site, and locationCachePatch
+    // with a null zone unconditionally clears both the id and name) — the
+    // merge target has no equivalent zone to offer, so this is a deliberate
+    // downgrade to bare-site precision, not a bug. It also means every zone
+    // that was under fromSiteId is unreferenced by the time site.delete
+    // cascades to it below, so no stale zone-name cache survives the merge.
     await tx.flight.updateMany({
       where: { takeoffSiteId: fromSiteId },
-      data: siteCachePatch(into, "takeoff"),
+      data: locationCachePatch(into, null, "takeoff"),
     });
     await tx.flight.updateMany({
       where: { landingSiteId: fromSiteId },
-      data: siteCachePatch(into, "landing"),
+      data: locationCachePatch(into, null, "landing"),
     });
 
     // Now unreferenced (every flight was just reassigned above, in this same

@@ -2,8 +2,9 @@
  * Backfill named sites for flights missing a takeoff or landing site (e.g.
  * ingested before site lookup existed, or after the site catalogue grows).
  * Idempotent — only touches flights missing at least one endpoint's site.
- * Writes only through lib/sites/associate.ts's siteCachePatch, the sole
- * writer of the denormalized Flight.{takeoff,landing}Site{Id,Name} columns.
+ * Writes only through lib/sites/associate.ts's locationCachePatch, the sole
+ * writer of the denormalized Flight.{takeoff,landing}{Site,Zone}{Id,Name}
+ * columns.
  *
  *   pnpm exec tsx scripts/backfill-sites.ts
  *   pnpm exec tsx scripts/backfill-sites.ts --site-id <id>    # only flights that match this site
@@ -13,7 +14,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 import { prisma } from "@/lib/prisma";
 import { findLocation, type SiteMatch } from "@/lib/sites/lookup";
-import { siteCachePatch, type SiteFieldPatch } from "@/lib/sites/associate";
+import { locationCachePatch, type LocationFieldPatch } from "@/lib/sites/associate";
 
 export interface BackfillOptions {
   siteId?: string | null;
@@ -64,8 +65,9 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
   let updated = 0;
   for (const f of flights) {
     // SPRINT-005: findLocation resolves a zone-first match with a site
-    // fallback; this script writes the SITE portion only (zone-aware
-    // backfill is a later sprint's concern per docs/sprints/SPRINT-005.md).
+    // fallback; this offline maintenance script still writes the SITE
+    // portion only. Zone-aware backfill has no urgency (production has no
+    // Zone rows yet) and can follow whenever it's actually needed.
     const [takeoffMatch, landingMatch] = await Promise.all([
       f.takeoffSiteId === null && f.takeoffLat != null && f.takeoffLon != null
         ? findLocation(prisma, {
@@ -89,9 +91,9 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
     const landing = accepted(landingMatch?.site ?? null) ? landingMatch!.site : null;
     if (!takeoff && !landing) continue;
 
-    const patch: SiteFieldPatch = {
-      ...(takeoff ? siteCachePatch(takeoff, "takeoff") : {}),
-      ...(landing ? siteCachePatch(landing, "landing") : {}),
+    const patch: LocationFieldPatch = {
+      ...(takeoff ? locationCachePatch(takeoff, null, "takeoff") : {}),
+      ...(landing ? locationCachePatch(landing, null, "landing") : {}),
     };
     await prisma.flight.update({ where: { id: f.id }, data: patch });
     updated++;
