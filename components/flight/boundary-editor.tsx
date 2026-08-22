@@ -146,7 +146,11 @@ export function BoundaryEditor({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: styleFor("monochrome"), // keyless — the editor must work with no MapTiler key
+      // Satellite imagery — drawing a boundary needs to see the actual
+      // ridge/bowl/launch pad, not a plain map. styleFor() falls back to
+      // the keyless monochrome style when NEXT_PUBLIC_MAPTILER_KEY isn't
+      // set, so the editor still works with no key — just without imagery.
+      style: styleFor("satellite"),
       center: [anchor.lon, anchor.lat],
       zoom: 15,
       attributionControl: { compact: true },
