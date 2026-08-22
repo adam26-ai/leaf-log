@@ -19,18 +19,31 @@
  *
  *   pnpm exec tsx scripts/admin-sites.ts rename <siteId> "<new name>"
  *   pnpm exec tsx scripts/admin-sites.ts force-private <siteId>
- *   pnpm exec tsx scripts/admin-sites.ts merge <fromSiteId> <intoSiteId>
+ *   pnpm exec tsx scripts/admin-sites.ts merge <fromSiteId> <intoSiteId> [--force]
  *   pnpm exec tsx scripts/admin-sites.ts zone-rename <zoneId> "<new name>"
  *   pnpm exec tsx scripts/admin-sites.ts zone-force-private <zoneId>
- *   pnpm exec tsx scripts/admin-sites.ts zone-merge <fromZoneId> <intoZoneId>
+ *   pnpm exec tsx scripts/admin-sites.ts zone-merge <fromZoneId> <intoZoneId> [--force]
  *   pnpm exec tsx scripts/admin-sites.ts list <siteId>
+ *   pnpm exec tsx scripts/admin-sites.ts boundary-clear <siteId>
+ *   pnpm exec tsx scripts/admin-sites.ts zone-boundary-clear <zoneId>
+ *
+ * SPRINT-006: boundary-clear/zone-boundary-clear write the five boundary
+ * columns directly (mirroring this file's existing rename/force-private
+ * pattern) rather than calling lib/sites/associate.ts's owner-gated
+ * setSiteBoundary/clearSiteBoundary — an operator has no owner identity to
+ * authenticate as, and the point of this script is to act OUTSIDE that
+ * gate. Clearing writes no Flight column at all (a boundary carries no
+ * name), so this stays entirely outside the cache-writer discipline the
+ * rest of this file's Flight writes live under.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { validateSiteName } from "@/lib/sites/name";
 import { locationCachePatch, type SiteEndpoint } from "@/lib/sites/associate";
 import { normalizeSiteVisibility } from "@/lib/sites/visibility";
+import { ringAreaM2, isValidBoundaryShape } from "@/lib/sites/geo";
 
 export async function rename(siteId: string, rawName: string) {
   const validated = validateSiteName(rawName);
@@ -64,13 +77,37 @@ export async function forcePrivate(siteId: string) {
   console.log(`forced ${siteId} to private`);
 }
 
-/** Reassign every flight referencing fromSiteId onto intoSiteId, then delete fromSiteId. */
-export async function merge(fromSiteId: string, intoSiteId: string) {
+/** Reassign every flight referencing fromSiteId onto intoSiteId, then delete fromSiteId.
+ *  SPRINT-006: refuses when `from` carries a boundary and `into` doesn't —
+ *  a merge is "these are the same place," and a carefully traced boundary
+ *  disappearing silently is exactly the case that should give the operator
+ *  pause. `force: true` carries the boundary across instead of dropping it. */
+export async function merge(fromSiteId: string, intoSiteId: string, force = false) {
   if (fromSiteId === intoSiteId) throw new Error("Cannot merge a site into itself.");
 
   await prisma.$transaction(async (tx) => {
-    await tx.site.findUniqueOrThrow({ where: { id: fromSiteId } });
+    const from = await tx.site.findUniqueOrThrow({ where: { id: fromSiteId } });
     let into = await tx.site.findUniqueOrThrow({ where: { id: intoSiteId } });
+
+    if (from.boundary != null && into.boundary == null && !force) {
+      throw new Error(
+        `${fromSiteId} has a boundary and ${intoSiteId} does not — merging would silently drop it. Re-run with --force to carry it across instead.`,
+      );
+    }
+    if (from.boundary != null && into.boundary == null && force) {
+      into = await tx.site.update({
+        where: { id: intoSiteId },
+        data: {
+          boundary: from.boundary === null ? Prisma.DbNull : from.boundary,
+          boundaryMinLat: from.boundaryMinLat,
+          boundaryMaxLat: from.boundaryMaxLat,
+          boundaryMinLon: from.boundaryMinLon,
+          boundaryMaxLon: from.boundaryMaxLon,
+          boundaryUpdatedById: from.boundaryUpdatedById,
+        },
+      });
+      console.log(`carried boundary from ${fromSiteId} onto ${intoSiteId}`);
+    }
 
     // A merged site absorbing references from both endpoints should cover
     // both going forward — same "never narrow" rule as opposite-endpoint reuse.
@@ -138,13 +175,33 @@ export async function zoneForcePrivate(zoneId: string) {
  * two different sites is a legitimate use (fixing a zone that was created
  * under the wrong parent), not just a same-site dedup.
  */
-export async function zoneMerge(fromZoneId: string, intoZoneId: string) {
+export async function zoneMerge(fromZoneId: string, intoZoneId: string, force = false) {
   if (fromZoneId === intoZoneId) throw new Error("Cannot merge a zone into itself.");
 
   await prisma.$transaction(async (tx) => {
     const from = await tx.zone.findUniqueOrThrow({ where: { id: fromZoneId } });
     let into = await tx.zone.findUniqueOrThrow({ where: { id: intoZoneId } });
     const intoSite = await tx.site.findUniqueOrThrow({ where: { id: into.siteId } });
+
+    if (from.boundary != null && into.boundary == null && !force) {
+      throw new Error(
+        `${fromZoneId} has a boundary and ${intoZoneId} does not — merging would silently drop it. Re-run with --force to carry it across instead.`,
+      );
+    }
+    if (from.boundary != null && into.boundary == null && force) {
+      into = await tx.zone.update({
+        where: { id: intoZoneId },
+        data: {
+          boundary: from.boundary === null ? Prisma.DbNull : from.boundary,
+          boundaryMinLat: from.boundaryMinLat,
+          boundaryMaxLat: from.boundaryMaxLat,
+          boundaryMinLon: from.boundaryMinLon,
+          boundaryMaxLon: from.boundaryMaxLon,
+          boundaryUpdatedById: from.boundaryUpdatedById,
+        },
+      });
+      console.log(`carried boundary from ${fromZoneId} onto ${intoZoneId}`);
+    }
 
     // Never narrow the target's kind — same rule as site merge and
     // opposite-endpoint reuse.
@@ -166,23 +223,74 @@ export async function zoneMerge(fromZoneId: string, intoZoneId: string) {
   console.log(`merged zone ${fromZoneId} into ${intoZoneId}`);
 }
 
+/** Clear a site's boundary — back to circle matching. Always succeeds; a
+ *  site with no boundary is a no-op. Writes no Flight column. */
+export async function boundaryClear(siteId: string) {
+  await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
+  await prisma.site.update({
+    where: { id: siteId },
+    data: {
+      boundary: Prisma.DbNull,
+      boundaryMinLat: null,
+      boundaryMaxLat: null,
+      boundaryMinLon: null,
+      boundaryMaxLon: null,
+      boundaryUpdatedById: null,
+    },
+  });
+  console.log(`cleared boundary on site ${siteId}`);
+}
+
+export async function zoneBoundaryClear(zoneId: string) {
+  await prisma.zone.findUniqueOrThrow({ where: { id: zoneId } });
+  await prisma.zone.update({
+    where: { id: zoneId },
+    data: {
+      boundary: Prisma.DbNull,
+      boundaryMinLat: null,
+      boundaryMaxLat: null,
+      boundaryMinLon: null,
+      boundaryMaxLon: null,
+      boundaryUpdatedById: null,
+    },
+  });
+  console.log(`cleared boundary on zone ${zoneId}`);
+}
+
+/** A short human-readable boundary summary — vertex count and area, or
+ *  "circle matching" when absent, "malformed" when the stored JSON doesn't
+ *  parse (an operator-visible symptom of exactly the corruption
+ *  lib/sites/lookup.ts's findLocation fails closed against). */
+function boundaryFacts(boundary: unknown): string {
+  if (boundary == null) return "circle matching";
+  if (!isValidBoundaryShape(boundary)) return "boundary present but MALFORMED";
+  const ring = boundary.geometry.coordinates[0];
+  const areaM2 = ringAreaM2({ coordinates: ring });
+  const areaLabel = areaM2 >= 1_000_000 ? `${(areaM2 / 1_000_000).toFixed(2)} km²` : `${Math.round(areaM2)} m²`;
+  return `boundary: ${ring.length - 1} vertices, ~${areaLabel}`;
+}
+
 /** Print a site and its zones — a read-only operator convenience, no writes. */
 export async function list(siteId: string) {
   const site = await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
   const zones = await prisma.zone.findMany({ where: { siteId }, orderBy: { createdAt: "asc" } });
   console.log(
-    `Site ${site.id} "${site.name}" (${site.visibility}, kind=${site.kind}, owner=${site.ownerId ?? "none"})`,
+    `Site ${site.id} "${site.name}" (${site.visibility}, kind=${site.kind}, owner=${site.ownerId ?? "none"}, ${boundaryFacts(site.boundary)}, boundaryUpdatedBy=${site.boundaryUpdatedById ?? "none"})`,
   );
   if (zones.length === 0) {
     console.log("  (no zones — bare site)");
   }
   for (const z of zones) {
-    console.log(`  Zone ${z.id} "${z.name}" (${z.visibility}, kind=${z.kind}, owner=${z.ownerId ?? "none"})`);
+    console.log(
+      `  Zone ${z.id} "${z.name}" (${z.visibility}, kind=${z.kind}, owner=${z.ownerId ?? "none"}, ${boundaryFacts(z.boundary)}, boundaryUpdatedBy=${z.boundaryUpdatedById ?? "none"})`,
+    );
   }
 }
 
 async function main() {
-  const [cmd, ...args] = process.argv.slice(2);
+  const [cmd, ...rawArgs] = process.argv.slice(2);
+  const force = rawArgs.includes("--force");
+  const args = rawArgs.filter((a) => a !== "--force");
 
   if (cmd === "rename") {
     const [siteId, name] = args;
@@ -194,8 +302,8 @@ async function main() {
     await forcePrivate(siteId);
   } else if (cmd === "merge") {
     const [fromSiteId, intoSiteId] = args;
-    if (!fromSiteId || !intoSiteId) throw new Error("Usage: merge <fromSiteId> <intoSiteId>");
-    await merge(fromSiteId, intoSiteId);
+    if (!fromSiteId || !intoSiteId) throw new Error("Usage: merge <fromSiteId> <intoSiteId> [--force]");
+    await merge(fromSiteId, intoSiteId, force);
   } else if (cmd === "zone-rename") {
     const [zoneId, name] = args;
     if (!zoneId || !name) throw new Error("Usage: zone-rename <zoneId> <name>");
@@ -206,15 +314,23 @@ async function main() {
     await zoneForcePrivate(zoneId);
   } else if (cmd === "zone-merge") {
     const [fromZoneId, intoZoneId] = args;
-    if (!fromZoneId || !intoZoneId) throw new Error("Usage: zone-merge <fromZoneId> <intoZoneId>");
-    await zoneMerge(fromZoneId, intoZoneId);
+    if (!fromZoneId || !intoZoneId) throw new Error("Usage: zone-merge <fromZoneId> <intoZoneId> [--force]");
+    await zoneMerge(fromZoneId, intoZoneId, force);
   } else if (cmd === "list") {
     const [siteId] = args;
     if (!siteId) throw new Error("Usage: list <siteId>");
     await list(siteId);
+  } else if (cmd === "boundary-clear") {
+    const [siteId] = args;
+    if (!siteId) throw new Error("Usage: boundary-clear <siteId>");
+    await boundaryClear(siteId);
+  } else if (cmd === "zone-boundary-clear") {
+    const [zoneId] = args;
+    if (!zoneId) throw new Error("Usage: zone-boundary-clear <zoneId>");
+    await zoneBoundaryClear(zoneId);
   } else {
     throw new Error(
-      `Unknown command "${cmd ?? ""}". Use: rename | force-private | merge | zone-rename | zone-force-private | zone-merge | list`,
+      `Unknown command "${cmd ?? ""}". Use: rename | force-private | merge | zone-rename | zone-force-private | zone-merge | list | boundary-clear | zone-boundary-clear`,
     );
   }
 }

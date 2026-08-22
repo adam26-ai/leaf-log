@@ -12,12 +12,23 @@ import {
   type NameSiteResult,
   type BoundLocationInfo,
 } from "@/app/flights/[id]/site-action";
+import {
+  listMyBoundaryEditableRows,
+  saveBoundaryForOwnedRow,
+  clearBoundaryForOwnedRow,
+  getBoundaryForOwnedRow,
+  type BoundaryEditableRows,
+  type BoundaryEditorInitialState,
+} from "@/app/flights/[id]/boundary-action";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteChoice, ZoneChoice, SiteSuggestion, ZoneSuggestion } from "@/lib/sites/repo";
 import type { SiteVisibility } from "@/lib/sites/visibility";
+import type { BoundaryLevel } from "@/lib/sites/boundary";
+import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { formatLocationLabel } from "@/lib/sites/display";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
+import { BoundaryEditor } from "@/components/flight/boundary-editor";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,7 +111,20 @@ const ENDPOINT_LABEL: Record<SiteEndpoint, string> = {
   landing: "landing",
 };
 
-type Step = "site" | "zone";
+type Step = "site" | "zone" | "boundary-picker" | "boundary-editor";
+
+/** The row a boundary is currently being drawn/edited for — set either from
+ *  the picker (decision 5: reachable with no flight bound to the row) or as
+ *  a shortcut from the site/zone step when that row is already bound and
+ *  owned by the viewer. The anchor/current boundary are resolved by
+ *  BoundaryStep itself via getBoundaryForOwnedRow — this only carries what's
+ *  needed to ask for them and to show a reasonable reference circle. */
+interface BoundaryTarget {
+  level: BoundaryLevel;
+  id: string;
+  name: string;
+  referenceRadiusM: number;
+}
 
 function NameSiteDialog({
   flightId,
@@ -135,6 +159,10 @@ function NameSiteDialog({
 
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const [pickerRows, setPickerRows] = useState<BoundaryEditableRows | null>(null);
+  const [boundaryTarget, setBoundaryTarget] = useState<BoundaryTarget | null>(null);
+  const [returnStep, setReturnStep] = useState<Step>("site");
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +266,48 @@ function NameSiteDialog({
     });
   }
 
+  /**
+   * The owner-scoped picker (decision 5) — reachable regardless of whether
+   * this flight's endpoint is bound to anything, since it lists the
+   * caller's OWN sites/zones rather than deriving from this flight at all.
+   */
+  function openBoundaryPicker() {
+    setError(null);
+    setReturnStep(step);
+    setStep("boundary-picker");
+    if (!pickerRows) {
+      listMyBoundaryEditableRows().then(setPickerRows);
+    }
+  }
+
+  function openBoundaryEditorFor(target: BoundaryTarget) {
+    setError(null);
+    setBoundaryTarget(target);
+    setStep("boundary-editor");
+  }
+
+  function openBoundaryForCurrentSite() {
+    if (!boundInfo?.site) return;
+    setReturnStep(step);
+    openBoundaryEditorFor({
+      level: "site",
+      id: boundInfo.site.id,
+      name: siteChoiceLabel ?? currentSiteName ?? "this site",
+      referenceRadiusM: radiusForKind(endpoint),
+    });
+  }
+
+  function openBoundaryForCurrentZone() {
+    if (!boundInfo?.zone) return;
+    setReturnStep(step);
+    openBoundaryEditorFor({
+      level: "zone",
+      id: boundInfo.zone.id,
+      name: currentZoneName ?? "this spot",
+      referenceRadiusM: zoneRadiusForKind(endpoint),
+    });
+  }
+
   const zoneStepDisabled = siteChoiceVisibility !== "public";
 
   return (
@@ -249,7 +319,7 @@ function NameSiteDialog({
         className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        {step === "site" ? (
+        {step === "site" && (
           <SiteStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             currentSiteName={currentSiteName}
@@ -265,9 +335,12 @@ function NameSiteDialog({
             onCreate={chooseSiteCreate}
             onUnpublish={unpublishSite}
             onDelete={removeSite}
+            onEditBoundary={boundInfo?.site?.ownedByViewer ? openBoundaryForCurrentSite : undefined}
+            onOpenPicker={openBoundaryPicker}
             onClose={onClose}
           />
-        ) : (
+        )}
+        {step === "zone" && (
           <ZoneStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             siteLabel={siteChoiceLabel}
@@ -292,6 +365,27 @@ function NameSiteDialog({
             onSkip={skipZone}
             onUnpublish={unpublishZone}
             onDelete={removeZone}
+            onEditSiteBoundary={boundInfo?.site?.ownedByViewer ? openBoundaryForCurrentSite : undefined}
+            onEditZoneBoundary={boundInfo?.zone?.ownedByViewer ? openBoundaryForCurrentZone : undefined}
+            onOpenPicker={openBoundaryPicker}
+            onClose={onClose}
+          />
+        )}
+        {step === "boundary-picker" && (
+          <BoundaryPickerStep
+            rows={pickerRows}
+            onChoose={(target) => openBoundaryEditorFor(target)}
+            onBack={() => setStep(returnStep)}
+            onClose={onClose}
+          />
+        )}
+        {step === "boundary-editor" && boundaryTarget && (
+          <BoundaryStep
+            target={boundaryTarget}
+            onBack={() => {
+              setBoundaryTarget(null);
+              setStep(returnStep);
+            }}
             onClose={onClose}
           />
         )}
@@ -315,6 +409,8 @@ function SiteStep({
   onCreate,
   onUnpublish,
   onDelete,
+  onEditBoundary,
+  onOpenPicker,
   onClose,
 }: {
   endpointLabel: string;
@@ -331,6 +427,8 @@ function SiteStep({
   onCreate: () => void;
   onUnpublish: () => void;
   onDelete: () => void;
+  onEditBoundary?: () => void;
+  onOpenPicker: () => void;
   onClose: () => void;
 }) {
   return (
@@ -355,6 +453,11 @@ function SiteStep({
           <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onDelete}>
             Delete
           </Button>
+          {onEditBoundary && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditBoundary}>
+              Edit boundary
+            </Button>
+          )}
         </div>
       )}
 
@@ -440,13 +543,23 @@ function SiteStep({
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
-            {pending ? "Saving…" : "Next"}
-          </Button>
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onOpenPicker}
+            disabled={pending}
+            className="text-xs text-gray-500 underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-60"
+          >
+            Edit a boundary on one of my sites
+          </button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
+              {pending ? "Saving…" : "Next"}
+            </Button>
+          </div>
         </div>
       </div>
     </>
@@ -473,6 +586,9 @@ function ZoneStep({
   onSkip,
   onUnpublish,
   onDelete,
+  onEditSiteBoundary,
+  onEditZoneBoundary,
+  onOpenPicker,
   onClose,
 }: {
   endpointLabel: string;
@@ -494,6 +610,9 @@ function ZoneStep({
   onSkip: () => void;
   onUnpublish: () => void;
   onDelete: () => void;
+  onEditSiteBoundary?: () => void;
+  onEditZoneBoundary?: () => void;
+  onOpenPicker: () => void;
   onClose: () => void;
 }) {
   return (
@@ -512,17 +631,31 @@ function ZoneStep({
         </p>
       </div>
 
-      {boundInfo?.zone?.ownedByViewer && (
+      {(boundInfo?.zone?.ownedByViewer || boundInfo?.site?.ownedByViewer) && (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
-          <span className="text-xs text-gray-500">This is your spot.</span>
-          {boundInfo.zone.visibility === "public" && (
+          <span className="text-xs text-gray-500">
+            {boundInfo?.zone?.ownedByViewer ? "This is your spot." : "You own the parent site."}
+          </span>
+          {boundInfo?.zone?.ownedByViewer && boundInfo.zone.visibility === "public" && (
             <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onUnpublish}>
               Unpublish
             </Button>
           )}
-          <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onDelete}>
-            Delete
-          </Button>
+          {boundInfo?.zone?.ownedByViewer && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onDelete}>
+              Delete
+            </Button>
+          )}
+          {onEditZoneBoundary && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditZoneBoundary}>
+              Edit spot boundary
+            </Button>
+          )}
+          {onEditSiteBoundary && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditSiteBoundary}>
+              Edit site boundary
+            </Button>
+          )}
         </div>
       )}
 
@@ -602,23 +735,209 @@ function ZoneStep({
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <div className="flex flex-wrap justify-end gap-2 pt-1">
-          {showBackToSite && (
-            <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={pending}>
-              Back
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onOpenPicker}
+            disabled={pending}
+            className="text-xs text-gray-500 underline decoration-dotted underline-offset-2 hover:text-ink disabled:opacity-60"
+          >
+            Edit a boundary on one of my sites
+          </button>
+          <div className="flex flex-wrap justify-end gap-2">
+            {showBackToSite && (
+              <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={pending}>
+                Back
+              </Button>
+            )}
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
+              Cancel
             </Button>
-          )}
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={onSkip} disabled={pending}>
-            Skip — just the site
-          </Button>
-          <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
-            {pending ? "Saving…" : "Save"}
-          </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onSkip} disabled={pending}>
+              Skip — just the site
+            </Button>
+            <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * The owner-scoped picker (decision 5): lists every site/zone the caller
+ * owns or edit-controls, reachable with NO flight bound to the target row
+ * — the fix for the reachability gap both independent SPRINT-006 drafts
+ * left. Selecting a row opens BoundaryStep for it.
+ */
+function BoundaryPickerStep({
+  rows,
+  onChoose,
+  onBack,
+  onClose,
+}: {
+  rows: BoundaryEditableRows | null;
+  onChoose: (target: BoundaryTarget) => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Edit a boundary</h2>
+        <p className="text-sm text-gray-500">Pick one of your sites or spots to draw or change its boundary.</p>
+      </div>
+
+      {rows === null ? (
+        <p className="text-sm text-gray-500">Loading your sites…</p>
+      ) : rows.sites.length === 0 && rows.zones.length === 0 ? (
+        <p className="text-sm text-gray-500">You don&rsquo;t own any named sites or spots yet.</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {rows.sites.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">My sites</p>
+              <ul className="flex flex-col gap-2">
+                {rows.sites.map((s) => (
+                  <li key={s.id} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
+                    <div className="flex flex-col">
+                      <span className="font-condensed font-bold text-ink">{s.name}</span>
+                      <span className="text-xs text-gray-500">
+                        {s.visibility === "public" ? "public" : "private"} · {s.hasBoundary ? "has a boundary" : "circle matching"}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        onChoose({ level: "site", id: s.id, name: s.name, referenceRadiusM: radiusForKind("takeoff") })
+                      }
+                    >
+                      {s.hasBoundary ? "Edit" : "Draw"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {rows.zones.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">My spots</p>
+              <ul className="flex flex-col gap-2">
+                {rows.zones.map((z) => (
+                  <li key={z.id} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2">
+                    <div className="flex flex-col">
+                      <span className="font-condensed font-bold text-ink">
+                        {z.siteName} — {z.name}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {z.visibility === "public" ? "public" : "private"} · {z.hasBoundary ? "has a boundary" : "circle matching"}
+                        {z.editableAsSiteOwner ? " · via your site" : ""}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        onChoose({ level: "zone", id: z.id, name: z.name, referenceRadiusM: zoneRadiusForKind("takeoff") })
+                      }
+                    >
+                      {z.hasBoundary ? "Edit" : "Draw"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 border-t border-gray-200 pt-4">
+        <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+          Back
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Resolves the anchor + current boundary for `target` (owner-gated —
+ * returns nothing for a row the caller can't edit) and hosts the
+ * MapLibre editor. Save/clear go through the picker's own owned-row
+ * actions, which re-verify ownership regardless of how `target.id` arrived
+ * here (the picker, or a bound-flight shortcut).
+ */
+function BoundaryStep({
+  target,
+  onBack,
+  onClose,
+}: {
+  target: BoundaryTarget;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const [initial, setInitial] = useState<BoundaryEditorInitialState | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBoundaryForOwnedRow(target.level, target.id).then((result) => {
+      if (!cancelled) setInitial(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target.level, target.id]);
+
+  if (initial === undefined) {
+    return <p className="text-sm text-gray-500">Loading…</p>;
+  }
+  if (initial === null) {
+    return (
+      <>
+        <p className="text-sm text-red-600">You don&rsquo;t have permission to edit this boundary.</p>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+            Back
+          </Button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">
+            Boundary for &ldquo;{target.name}&rdquo;
+          </h2>
+          <p className="text-sm text-gray-500">
+            Draw the actual shape instead of the default circle. The dashed ring is what you&rsquo;re replacing.
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <BoundaryEditor
+        anchor={initial.anchor}
+        initialBoundary={initial.boundary}
+        level={target.level}
+        referenceRadiusM={target.referenceRadiusM}
+        nearby={initial.nearby}
+        onSave={(raw) => saveBoundaryForOwnedRow(target.level, target.id, raw)}
+        onClear={() => clearBoundaryForOwnedRow(target.level, target.id)}
+        onCancel={onBack}
+        onSaved={onBack}
+      />
     </>
   );
 }

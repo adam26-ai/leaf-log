@@ -203,7 +203,10 @@ export async function getBoundLocationInfo(
 
 export type SiteUndoResult = { ok: true } | { ok: false; error: string };
 
-async function siteIdForFlightEndpoint(
+/** Exported for app/flights/[id]/boundary-action.ts — the same
+ *  owner-scoped, flight-derived id resolution the boundary write path's
+ *  bound-flight case reuses rather than re-deriving. */
+export async function siteIdForFlightEndpoint(
   flightId: string,
   endpoint: SiteEndpoint,
   userId: string,
@@ -216,7 +219,7 @@ async function siteIdForFlightEndpoint(
   return endpoint === "takeoff" ? flight.takeoffSiteId : flight.landingSiteId;
 }
 
-async function zoneIdForFlightEndpoint(
+export async function zoneIdForFlightEndpoint(
   flightId: string,
   endpoint: SiteEndpoint,
   userId: string,
@@ -229,7 +232,9 @@ async function zoneIdForFlightEndpoint(
   return endpoint === "takeoff" ? flight.takeoffZoneId : flight.landingZoneId;
 }
 
-function revalidateSiteSurfaces(flightId: string) {
+// Async only because Next.js requires every export of a "use server" file
+// to be an async function — this one has nothing to await.
+export async function revalidateSiteSurfaces(flightId: string) {
   revalidatePath(`/flights/${flightId}`);
   revalidatePath("/logbook");
   revalidatePath("/feed");
@@ -252,7 +257,7 @@ export async function unpublishSiteForFlight(
 
   try {
     await unpublishOwnSite(siteId, userId);
-    revalidateSiteSurfaces(flightId);
+    await revalidateSiteSurfaces(flightId);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
@@ -275,7 +280,7 @@ export async function deleteSiteForFlight(
 
   try {
     await deleteSiteRow(siteId, userId);
-    revalidateSiteSurfaces(flightId);
+    await revalidateSiteSurfaces(flightId);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
@@ -295,7 +300,7 @@ export async function unpublishZoneForFlight(
 
   try {
     await unpublishOwnZone(zoneId, userId);
-    revalidateSiteSurfaces(flightId);
+    await revalidateSiteSurfaces(flightId);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
@@ -315,7 +320,7 @@ export async function deleteZoneForFlight(
 
   try {
     await deleteZoneRow(zoneId, userId);
-    revalidateSiteSurfaces(flightId);
+    await revalidateSiteSurfaces(flightId);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };

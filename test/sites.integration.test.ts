@@ -6,12 +6,35 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
+import { validateBoundary, boundaryColumns } from "@/lib/sites/boundary";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for site integration tests.");
 }
 
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
+
+/** SPRINT-006: a valid canonical square boundary (and its derived bbox
+ *  columns) around (lat, lon), for building boundary-bearing test fixtures. */
+function testBoundaryColumns(lat: number, lon: number, halfSizeM: number, updatedById: string) {
+  const dLat = halfSizeM / 111_320;
+  const dLon = halfSizeM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const coords: [number, number][] = [
+    [lon - dLon, lat - dLat],
+    [lon + dLon, lat - dLat],
+    [lon + dLon, lat + dLat],
+    [lon - dLon, lat + dLat],
+    [lon - dLon, lat - dLat],
+  ];
+  const result = validateBoundary({ type: "Polygon", coordinates: [coords] }, "site", { lat, lon });
+  if (!result.ok) throw new Error(`test fixture boundary invalid: ${result.error}`);
+  return boundaryColumns(result.boundary, updatedById);
+}
+
+function requireOwnerForBoundary(ownerId: string | null): string {
+  if (!ownerId) throw new Error("test fixture: a boundary-bearing row needs a real ownerId");
+  return ownerId;
+}
 
 describe("sites: read-path firewall", () => {
   let prisma: import("@prisma/client").PrismaClient;
@@ -43,9 +66,15 @@ describe("sites: read-path firewall", () => {
     visibility: "private" | "public";
     ownerId: string | null;
     name?: string;
+    /** SPRINT-006: a square boundary (metre half-size) around (lat, lon), for
+     *  the boundary-bearing-row privacy re-run. */
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = opts.name ?? `Matrix Site ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const site = await prisma.site.create({
       data: {
         name,
@@ -56,6 +85,7 @@ describe("sites: read-path firewall", () => {
         visibility: opts.visibility,
         ownerId: opts.ownerId,
         source: "user",
+        ...boundaryCols,
       },
     });
     siteIds.push(site.id);
@@ -137,9 +167,13 @@ describe("sites: read-path firewall", () => {
     visibility: "private" | "public";
     ownerId: string | null;
     name?: string;
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = opts.name ?? `Matrix Zone ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const zone = await prisma.zone.create({
       data: {
         siteId: opts.siteId,
@@ -150,6 +184,7 @@ describe("sites: read-path firewall", () => {
         kind: opts.kind ?? "takeoff",
         visibility: opts.visibility,
         ownerId: opts.ownerId,
+        ...boundaryCols,
       },
     });
     zoneIds.push(zone.id);
@@ -2218,6 +2253,441 @@ describe("sites: read-path firewall", () => {
 
       const stillOtherZone = await prisma.flight.findUniqueOrThrow({ where: { id: alreadyZoned.id } });
       expect(stillOtherZone.takeoffZoneId).toBe(otherZone.id); // untouched — already zoned, not null
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-006: the privacy matrix, re-run with boundary-bearing rows.
+  // Decision 1 ("a boundary is geometry, never identity") is a claim about
+  // lib/flights/repo.ts's read-path firewall — which this sprint does not
+  // touch at all. These are the same core cells the SPRINT-004/005 matrix
+  // above already proves for circle-only rows, re-run against otherwise
+  // IDENTICAL fixtures that additionally carry a boundary — if a boundary's
+  // mere presence changed any of these outcomes, decision 1 would be wrong.
+  // ---------------------------------------------------------------------
+  describe("SPRINT-006: privacy matrix re-run with boundary-bearing rows", () => {
+    it("a PRIVATE boundary-bearing site is invisible to a stranger through a PUBLIC flight (the core shadowing case)", async () => {
+      const owner = await createPilot("b6privsiteowner");
+      const stranger = await createPilot("b6privsitestranger");
+      const site = await createSite({ lat: 70, lon: 70, visibility: "private", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffSiteName ?? null).toBeNull();
+
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffSiteName).toBe(site.name);
+
+      const anonView = await repo.getFlightForViewer(flight.id, null);
+      expect(anonView?.takeoffSiteName ?? null).toBeNull();
+    });
+
+    it("a PUBLIC boundary-bearing site is visible to everyone", async () => {
+      const owner = await createPilot("b6pubsiteowner");
+      const stranger = await createPilot("b6pubsitestranger");
+      const site = await createSite({ lat: 71, lon: 71, visibility: "public", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      for (const viewerId of [owner, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen?.takeoffSiteName).toBe(site.name);
+      }
+    });
+
+    it("zone conjunction holds for a boundary-bearing PRIVATE zone under a PUBLIC site — hidden from a stranger, visible to the zone owner", async () => {
+      const siteOwner = await createPilot("b6zoneconjsiteowner");
+      const zoneOwner = await createPilot("b6zoneconjzoneowner");
+      const stranger = await createPilot("b6zoneconjstranger");
+      const site = await createSite({ lat: 72, lon: 72, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({
+        siteId: site.id,
+        lat: 72,
+        lon: 72,
+        visibility: "private",
+        ownerId: zoneOwner,
+        boundaryHalfSizeM: 50,
+      });
+      const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const zoneOwnerView = await repo.getFlightForViewer(flight.id, zoneOwner);
+      expect(zoneOwnerView?.takeoffZoneName).toBe(zone.name);
+      expect(zoneOwnerView?.takeoffSiteName).toBe(site.name); // the site itself is public — still shown
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffZoneName ?? null).toBeNull();
+      expect(strangerView?.takeoffSiteName).toBe(site.name); // conjunction: only the ZONE name is stripped
+    });
+
+    it("zone conjunction holds for a boundary-bearing zone under a PRIVATE site — the site gate strips the zone too, even though the zone itself is public", async () => {
+      const owner = await createPilot("b6zoneconjprivsiteowner");
+      const stranger = await createPilot("b6zoneconjprivsitestranger");
+      const site = await createSite({ lat: 73, lon: 73, visibility: "private", ownerId: owner });
+      const zone = await createZone({
+        siteId: site.id,
+        lat: 73,
+        lon: 73,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 50,
+      });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+
+      const strangerView = await repo.getFlightForViewer(flight.id, stranger);
+      expect(strangerView?.takeoffSiteName ?? null).toBeNull();
+      expect(strangerView?.takeoffZoneName ?? null).toBeNull(); // the parent gate strips the zone too
+
+      const ownerView = await repo.getFlightForViewer(flight.id, owner);
+      expect(ownerView?.takeoffSiteName).toBe(site.name);
+      expect(ownerView?.takeoffZoneName).toBe(zone.name);
+    });
+
+    it("a boundary-bearing site/zone pair behaves identically whether or not either row actually carries a boundary", async () => {
+      // Two byte-identical scenarios except one pair of rows has boundaries
+      // and the other doesn't — same visibility inputs must produce the
+      // same read-path outcome.
+      const owner = await createPilot("b6identowner");
+      const stranger = await createPilot("b6identstranger");
+
+      const circleSite = await createSite({ lat: 74, lon: 74, visibility: "private", ownerId: owner });
+      const circleZone = await createZone({ siteId: circleSite.id, lat: 74, lon: 74, visibility: "public", ownerId: owner });
+      const circleFlight = await createFlightWithZone({
+        ownerId: owner,
+        visibility: "public",
+        site: circleSite,
+        zone: circleZone,
+        endpoint: "takeoff",
+      });
+
+      const boundarySite = await createSite({
+        lat: 75,
+        lon: 75,
+        visibility: "private",
+        ownerId: owner,
+        boundaryHalfSizeM: 100,
+      });
+      const boundaryZone = await createZone({
+        siteId: boundarySite.id,
+        lat: 75,
+        lon: 75,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 50,
+      });
+      const boundaryFlight = await createFlightWithZone({
+        ownerId: owner,
+        visibility: "public",
+        site: boundarySite,
+        zone: boundaryZone,
+        endpoint: "takeoff",
+      });
+
+      const circleStrangerView = await repo.getFlightForViewer(circleFlight.id, stranger);
+      const boundaryStrangerView = await repo.getFlightForViewer(boundaryFlight.id, stranger);
+      expect(boundaryStrangerView?.takeoffSiteName ?? null).toEqual(circleStrangerView?.takeoffSiteName ?? null);
+      expect(boundaryStrangerView?.takeoffZoneName ?? null).toEqual(circleStrangerView?.takeoffZoneName ?? null);
+
+      // Names are unique per fixture by construction — compare VISIBILITY
+      // (present vs. null), not the literal string, which is what actually
+      // exercises decision 1 ("a boundary is geometry, never identity").
+      const circleOwnerView = await repo.getFlightForViewer(circleFlight.id, owner);
+      const boundaryOwnerView = await repo.getFlightForViewer(boundaryFlight.id, owner);
+      expect(boundaryOwnerView?.takeoffSiteName != null).toBe(circleOwnerView?.takeoffSiteName != null);
+      expect(boundaryOwnerView?.takeoffZoneName != null).toBe(circleOwnerView?.takeoffZoneName != null);
+      expect(boundaryOwnerView?.takeoffSiteName).toBe(boundarySite.name);
+      expect(boundaryOwnerView?.takeoffZoneName).toBe(boundaryZone.name);
+    });
+
+    it("boundary JSON is never selected into a viewer-facing flight read", async () => {
+      const owner = await createPilot("b6noleakowner");
+      const site = await createSite({ lat: 76, lon: 76, visibility: "public", ownerId: owner, boundaryHalfSizeM: 100 });
+      const flight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+
+      const seen = await repo.getFlightForViewer(flight.id, owner);
+      expect(seen).not.toHaveProperty("boundary");
+      expect(seen).not.toHaveProperty("takeoffSite");
+      expect(JSON.stringify(seen)).not.toContain("coordinates");
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-006 PR3: the boundary write path — setSiteBoundary/
+  // clearSiteBoundary/setZoneBoundary/clearZoneBoundary and the two
+  // owner-scoped picker listings. Coordinate band 77-79.9 is disjoint from
+  // every other range used in this file and lib/sites/lookup.test.ts.
+  // ---------------------------------------------------------------------
+  describe("SPRINT-006 PR3: boundary write path", () => {
+    function squarePolygon(lat: number, lon: number, halfSizeM: number) {
+      const dLat = halfSizeM / 111_320;
+      const dLon = halfSizeM / (111_320 * Math.cos((lat * Math.PI) / 180));
+      return {
+        type: "Polygon",
+        coordinates: [
+          [
+            [lon - dLon, lat - dLat],
+            [lon + dLon, lat - dLat],
+            [lon + dLon, lat + dLat],
+            [lon - dLon, lat + dLat],
+            [lon - dLon, lat - dLat],
+          ],
+        ],
+      };
+    }
+
+    it("setSiteBoundary: the owner can set a valid boundary; a non-owner is refused indistinguishably from not-found", async () => {
+      const owner = await createPilot("b6wpsiteowner");
+      const stranger = await createPilot("b6wpsitestranger");
+      const site = await createSite({ lat: 77, lon: 77, visibility: "public", ownerId: owner });
+
+      const updated = await associate.setSiteBoundary(site.id, owner, squarePolygon(77, 77, 200));
+      expect(updated.boundary).not.toBeNull();
+      expect(updated.boundaryMinLat).not.toBeNull();
+      expect(updated.boundaryUpdatedById).toBe(owner);
+
+      await expect(associate.setSiteBoundary(site.id, stranger, squarePolygon(77, 77, 200))).rejects.toThrow(
+        /not found or not owned/i,
+      );
+      await expect(associate.setSiteBoundary("nonexistent-site-id", owner, squarePolygon(77, 77, 200))).rejects.toThrow(
+        /not found or not owned/i,
+      );
+    });
+
+    it("setSiteBoundary rejects an invalid boundary with a named reason, and clearSiteBoundary always succeeds for the owner", async () => {
+      const owner = await createPilot("b6wpsiteinvalid");
+      const site = await createSite({ lat: 77.1, lon: 77.1, visibility: "public", ownerId: owner });
+
+      await expect(
+        associate.setSiteBoundary(site.id, owner, { type: "Polygon", coordinates: [[[0, 0], [1, 1]]] }),
+      ).rejects.toThrow(/invalid boundary/i);
+
+      const set = await associate.setSiteBoundary(site.id, owner, squarePolygon(77.1, 77.1, 200));
+      expect(set.boundary).not.toBeNull();
+
+      const cleared = await associate.clearSiteBoundary(site.id, owner);
+      expect(cleared.boundary).toBeNull();
+      expect(cleared.boundaryMinLat).toBeNull();
+      expect(cleared.boundaryUpdatedById).toBe(owner); // clearing still attributes who cleared it
+    });
+
+    it("setZoneBoundary/clearZoneBoundary: the zone's own owner, and separately the parent site's owner, may edit — an unrelated pilot may not", async () => {
+      const siteOwner = await createPilot("b6wpzonesiteowner");
+      const zoneOwner = await createPilot("b6wpzonezoneowner");
+      const stranger = await createPilot("b6wpzonestranger");
+      const site = await createSite({ lat: 77.2, lon: 77.2, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: 77.2, lon: 77.2, visibility: "public", ownerId: zoneOwner });
+
+      // The zone's own owner can set it.
+      const byZoneOwner = await associate.setZoneBoundary(zone.id, zoneOwner, squarePolygon(77.2, 77.2, 100));
+      expect(byZoneOwner.boundary).not.toBeNull();
+      expect(byZoneOwner.boundaryUpdatedById).toBe(zoneOwner);
+
+      // The PARENT SITE's owner may also edit it (decision 4) — critically,
+      // with NO flight of theirs ever bound to this zone. This is the exact
+      // reachability gap both independent SPRINT-006 drafts left (a
+      // bound-flight-only edit surface makes this power unreachable in
+      // practice) — proven fixed at the associate.ts layer here.
+      const bySiteOwner = await associate.setZoneBoundary(zone.id, siteOwner, squarePolygon(77.2, 77.2, 150));
+      expect(bySiteOwner.boundary).not.toBeNull();
+      expect(bySiteOwner.boundaryUpdatedById).toBe(siteOwner);
+
+      await expect(associate.setZoneBoundary(zone.id, stranger, squarePolygon(77.2, 77.2, 100))).rejects.toThrow(
+        /not found or not owned/i,
+      );
+
+      const cleared = await associate.clearZoneBoundary(zone.id, zoneOwner);
+      expect(cleared.boundary).toBeNull();
+    });
+
+    it("a boundary edit is never refused because another pilot's flight references the row", async () => {
+      const owner = await createPilot("b6wpstillref-owner");
+      const otherPilot = await createPilot("b6wpstillref-other");
+      const site = await createSite({ lat: 77.3, lon: 77.3, visibility: "public", ownerId: owner });
+      // Another pilot's flight depends on this site — rename/delete would
+      // refuse; a boundary edit must not.
+      await createFlightWithSite({ ownerId: otherPilot, visibility: "public", site, endpoint: "takeoff" });
+
+      const updated = await associate.setSiteBoundary(site.id, owner, squarePolygon(77.3, 77.3, 200));
+      expect(updated.boundary).not.toBeNull();
+    });
+
+    it("a TIGHTENED boundary never un-binds an already-bound flight — the drawer's or anyone else's", async () => {
+      const owner = await createPilot("b6wptighten-owner");
+      const otherPilot = await createPilot("b6wptighten-other");
+      const site = await createSite({ lat: 77.4, lon: 77.4, visibility: "public", ownerId: owner });
+      const ownFlight = await createFlightWithSite({ ownerId: owner, visibility: "public", site, endpoint: "takeoff" });
+      const otherFlight = await createFlightWithSite({ ownerId: otherPilot, visibility: "public", site, endpoint: "takeoff" });
+
+      // A boundary far tighter than the site's own anchor precision — must
+      // still contain the anchor itself, but nothing else, once validated.
+      await associate.setSiteBoundary(site.id, owner, squarePolygon(77.4, 77.4, 20));
+
+      const ownAfter = await prisma.flight.findUniqueOrThrow({ where: { id: ownFlight.id } });
+      const otherAfter = await prisma.flight.findUniqueOrThrow({ where: { id: otherFlight.id } });
+      expect(ownAfter.takeoffSiteId).toBe(site.id);
+      expect(otherAfter.takeoffSiteId).toBe(site.id);
+    });
+
+    it("widening a boundary re-associates the drawer's OWN previously-unmatched flights, but not other pilots'", async () => {
+      const owner = await createPilot("b6wpwiden-owner");
+      const otherPilot = await createPilot("b6wpwiden-other");
+      const site = await createSite({ lat: 77.5, lon: 77.5, visibility: "public", ownerId: owner, kind: "takeoff" });
+
+      const farLon = 77.5 + 1000 / (111_320 * Math.cos((77.5 * Math.PI) / 180)); // ~1000m east, past the 600m circle
+      const ownUnmatched = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 77.5, takeoffLon: farLon });
+      const otherUnmatched = await createFlight({ ownerId: otherPilot, visibility: "public", takeoffLat: 77.5, takeoffLon: farLon });
+
+      await associate.setSiteBoundary(site.id, owner, squarePolygon(77.5, 77.5, 1500));
+
+      const ownAfter = await prisma.flight.findUniqueOrThrow({ where: { id: ownUnmatched.id } });
+      const otherAfter = await prisma.flight.findUniqueOrThrow({ where: { id: otherUnmatched.id } });
+      expect(ownAfter.takeoffSiteId).toBe(site.id); // the drawer's own flight picked up
+      expect(otherAfter.takeoffSiteId).toBeNull(); // another pilot's flight is untouched
+    });
+
+    it("the num_nulls CHECK rejects a hand-written half-written boundary row", async () => {
+      const owner = await createPilot("b6wpcheck-owner");
+      const site = await createSite({ lat: 77.6, lon: 77.6, visibility: "public", ownerId: owner });
+
+      await expect(
+        prisma.site.update({ where: { id: site.id }, data: { boundaryMinLat: 1, boundaryMaxLat: 2 } }),
+      ).rejects.toThrow();
+    });
+
+    it("listOwnedSitesForBoundaryEditing returns exactly the caller's own sites, with hasBoundary reflecting state", async () => {
+      const owner = await createPilot("b6wplistsite-owner");
+      const stranger = await createPilot("b6wplistsite-stranger");
+      const ownedNoBoundary = await createSite({ lat: 77.7, lon: 77.7, visibility: "public", ownerId: owner });
+      const ownedWithBoundary = await createSite({
+        lat: 77.71,
+        lon: 77.71,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 100,
+      });
+      await createSite({ lat: 77.72, lon: 77.72, visibility: "public", ownerId: stranger });
+
+      const listing = await associate.listOwnedSitesForBoundaryEditing(owner);
+      const byId = new Map(listing.map((s) => [s.id, s]));
+      expect(byId.has(ownedNoBoundary.id)).toBe(true);
+      expect(byId.get(ownedNoBoundary.id)?.hasBoundary).toBe(false);
+      expect(byId.has(ownedWithBoundary.id)).toBe(true);
+      expect(byId.get(ownedWithBoundary.id)?.hasBoundary).toBe(true);
+      expect(listing.every((s) => s.id !== undefined)).toBe(true);
+      // No stranger-owned site leaks into this caller's listing.
+      const strangerListing = await associate.listOwnedSitesForBoundaryEditing(stranger);
+      expect(strangerListing.some((s) => s.id === ownedNoBoundary.id)).toBe(false);
+    });
+
+    it("listOwnedZonesForBoundaryEditing returns the caller's own zones AND zones under sites they own, correctly flagging editableAsSiteOwner", async () => {
+      const siteOwner = await createPilot("b6wplistzone-siteowner");
+      const zoneOwner = await createPilot("b6wplistzone-zoneowner");
+      const unrelated = await createPilot("b6wplistzone-unrelated");
+      const site = await createSite({ lat: 77.8, lon: 77.8, visibility: "public", ownerId: siteOwner });
+      const ownZone = await createZone({ siteId: site.id, lat: 77.8, lon: 77.8, visibility: "public", ownerId: zoneOwner });
+      const otherSite = await createSite({ lat: 77.81, lon: 77.81, visibility: "public", ownerId: unrelated });
+      await createZone({ siteId: otherSite.id, lat: 77.81, lon: 77.81, visibility: "public", ownerId: unrelated });
+
+      const siteOwnerListing = await associate.listOwnedZonesForBoundaryEditing(siteOwner);
+      const entry = siteOwnerListing.find((z) => z.id === ownZone.id);
+      expect(entry).toBeDefined();
+      expect(entry?.editableAsSiteOwner).toBe(true); // siteOwner doesn't own the zone directly
+
+      const zoneOwnerListing = await associate.listOwnedZonesForBoundaryEditing(zoneOwner);
+      const ownEntry = zoneOwnerListing.find((z) => z.id === ownZone.id);
+      expect(ownEntry).toBeDefined();
+      expect(ownEntry?.editableAsSiteOwner).toBe(false); // zoneOwner owns it directly
+
+      const unrelatedListing = await associate.listOwnedZonesForBoundaryEditing(unrelated);
+      expect(unrelatedListing.some((z) => z.id === ownZone.id)).toBe(false); // no leak
+    });
+
+    it("boundary writes are capped per caller per day", async () => {
+      const owner = await createPilot("b6wpcap-owner");
+      const sites = await Promise.all(
+        Array.from({ length: associate.DAILY_BOUNDARY_EDIT_CAP + 1 }, (_, i) =>
+          createSite({ lat: 77.9 + i * 0.001, lon: 77.9 + i * 0.001, visibility: "public", ownerId: owner }),
+        ),
+      );
+
+      for (const site of sites.slice(0, associate.DAILY_BOUNDARY_EDIT_CAP)) {
+        await associate.setSiteBoundary(site.id, owner, squarePolygon(site.lat, site.lon, 50));
+      }
+
+      const overCap = sites[associate.DAILY_BOUNDARY_EDIT_CAP];
+      await expect(
+        associate.setSiteBoundary(overCap.id, owner, squarePolygon(overCap.lat, overCap.lon, 50)),
+      ).rejects.toThrow(/daily boundary-edit limit/i);
+    });
+
+    it("suggestNearbyLocations offers a site whose boundary contains the point even when its anchor is outside the 2km suggest radius", async () => {
+      const owner = await createPilot("b6suggestowner");
+      const site = await createSite({
+        lat: 55,
+        lon: 55,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 3000, // reaches well past the 2km suggest radius
+      });
+
+      // A point 2.5km east of the anchor — outside SUGGEST_RADIUS_M (2km)
+      // from the anchor, but inside the 3km-half boundary.
+      const farLon = 55 + 2500 / (111_320 * Math.cos((55 * Math.PI) / 180));
+      const suggestions = await siteRepo.suggestNearbyLocations(55, farLon, owner);
+      expect(suggestions.some((s) => s.id === site.id)).toBe(true);
+    });
+
+    it("the in-transaction duplicate-name probe rejects a name conflict against a boundary-reaching site outside the suggest radius", async () => {
+      const owner = await createPilot("b6dedupowner");
+      const site = await createSite({
+        lat: 55.1,
+        lon: 55.1,
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 3000,
+        name: `B6 Dedup Ridge ${suffix}`,
+      });
+
+      const farLon = 55.1 + 2500 / (111_320 * Math.cos((55.1 * Math.PI) / 180));
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 55.1, takeoffLon: farLon });
+
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "create", name: site.name, visibility: "public" },
+        }),
+      ).rejects.toThrow(/already exists nearby/i);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-006: a kind:"both" row's boundary governs BOTH takeoff and
+  // landing matching (interview decision 3 — one shared boundary, not an
+  // endpoint-specific pair). Coordinate band 56.x.
+  // ---------------------------------------------------------------------
+  describe("SPRINT-006: kind:\"both\" boundary applies to both endpoints", () => {
+    it("a single boundary on a kind:both site matches both a takeoff and a landing endpoint", async () => {
+      const owner = await createPilot("b6bothkindowner");
+      const site = await createSite({
+        lat: 56,
+        lon: 56,
+        kind: "both",
+        visibility: "public",
+        ownerId: owner,
+        boundaryHalfSizeM: 1500, // past both the 600m takeoff AND 900m landing circle
+      });
+
+      const farLon = 56 + 1200 / (111_320 * Math.cos((56 * Math.PI) / 180));
+      // Uses the app's extended client (lib/prisma), not this file's raw
+      // PrismaClient — findLocation's Db type requires it structurally.
+      const { findLocation } = await import("@/lib/sites/lookup");
+      const { prisma: appPrisma } = await import("@/lib/prisma");
+
+      const takeoffMatch = await findLocation(appPrisma, { lat: 56, lon: farLon, kind: "takeoff", viewerId: null });
+      expect(takeoffMatch?.site.id).toBe(site.id);
+
+      const landingMatch = await findLocation(appPrisma, { lat: 56, lon: farLon, kind: "landing", viewerId: null });
+      expect(landingMatch?.site.id).toBe(site.id);
     });
   });
 });

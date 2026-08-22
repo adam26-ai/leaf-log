@@ -46,7 +46,7 @@ enforcement, and every flight read goes through it:
 Proven by `test/privacy.integration.test.ts` (anon / non-owner / owner) and the
 Playwright happy-path.
 
-## Site + zone privacy seam (SPRINT-004, extended two levels deep by SPRINT-005)
+## Site + zone privacy seam (SPRINT-004, extended two levels deep by SPRINT-005, boundaries added by SPRINT-006)
 
 Sites are the app's first shared, user-generated content: a public site is
 authored by one pilot and lands in **every** pilot's logbook. That mandates a
@@ -131,6 +131,73 @@ same row — empirically an FK violation rather than a resolved order.
 `deleteSite` works around it by explicitly nulling the zone id/name for
 affected flights *before* the site delete, so the native zone cascade has
 nothing left to touch.
+
+### Custom boundaries (SPRINT-006)
+
+`Site` and `Zone` each carry an optional `boundary` (`jsonb`, a versioned
+GeoJSON `Polygon` envelope) plus four derived bbox `Float` columns and a
+`boundaryUpdatedById` attribution column. **A boundary is geometry, never
+identity** — it changes which row a flight endpoint matches, and nothing
+else. No new `Flight` column, no new visibility dimension, no change to
+`canSeeSite`/`canSeeZone`/`resolveLocationFields`/`locationCachePatch`; the
+privacy seam described above is entirely unmodified, which SPRINT-006's test
+suite proves by re-running the SPRINT-004/005 matrix against
+boundary-bearing rows and asserting identical results.
+
+- A boundary **replaces** the circle for the row that has one (never a
+  union) — `lib/sites/geo.ts`'s `locationMatches` is the single composition
+  point for "boundary if present, else circle," used by `findLocation`,
+  `suggestNearbyLocations`, and `reassociateOwnFlights` alike, so the rule
+  can't drift between call sites. Every matched row — circle or boundary —
+  gets a real `distanceM` (haversine to its own anchor), so ranking never
+  needed a "boundary beats circle" tier; a 3 km ridge boundary intentionally
+  does not out-rank a genuinely nearer, unrelated site.
+- The DB prefilter is a union: the existing circle-bbox predicate `OR`ed
+  with a boundary-bbox predicate testing the row's own bbox columns against
+  the query point (`lib/sites/geo.ts`'s `boundaryPrefilterWhere`) — still
+  exactly two round trips per endpoint, unchanged from SPRINT-005. NULL bbox
+  columns never satisfy the boundary branch, so it only ever returns
+  boundary-bearing rows.
+- A malformed stored boundary (a future validator bug, a hand-edit) fails
+  **closed** at match time — the row is skipped and logged, never thrown
+  into ingest, never silently re-checked against the circle (which would
+  undo a pilot's deliberate tightening).
+- The write path (`lib/sites/associate.ts`'s `setSiteBoundary`/
+  `setZoneBoundary`/`clearSiteBoundary`/`clearZoneBoundary`) reuses the
+  existing ownership model exactly — a zone's own owner, or the parent
+  site's owner via the same `findZoneEditableBy` SPRINT-005 established —
+  and, unlike rename/delete, is **never** refused because another pilot's
+  flight references the row (a boundary edit destroys nothing; the worst
+  case is a future flight matching differently). A widened boundary
+  retroactively re-associates the drawer's **own** previously-unmatched
+  flights via the existing `reassociateOwnFlights`, capped and logged the
+  same way SPRINT-005's zone-naming flow already is.
+- **The owner-scoped picker** (`listOwnedSitesForBoundaryEditing`/
+  `listOwnedZonesForBoundaryEditing`) is the sprint's one deliberate
+  departure from "never accept an id from the client": it lets a pilot edit
+  a boundary on any site/zone they own or edit-control with **no flight
+  bound to the target row at all** — closing a reachability gap where the
+  editor could otherwise only be reached from an already-bound flight,
+  which made expanding an off-radius site unreachable in practice. Every
+  picker-sourced id is re-verified against ownership from scratch before
+  any read or write trusts it, the same posture `findZoneEditableBy`
+  already has for the bound-flight path.
+- A `SITE_BOUNDARY_MATCHING=off` environment flag (read fresh in
+  `lib/sites/lookup.ts`, not cached) reverts every row to circle-only
+  matching with no data change and no redeploy — a rollback lever for a
+  change that lands on the ingest hot path.
+- Zone boundary size is deliberately **not** capped near the old
+  300–400 m circle scale (a stakeholder decision, not an oversight): a
+  large public zone boundary can out-rank nearby sites via the zone-first
+  short-circuit, an accepted risk mitigated by the editor showing the
+  current circle and nearby visible geometry while drawing, a per-caller
+  daily edit cap, and the one-command `boundary-clear` remedy.
+- `scripts/admin-sites.ts` gains `boundary-clear`/`zone-boundary-clear`
+  (writing no `Flight` column, so — like `merge`/`rename` — they stay
+  entirely outside `write-audit.test.ts`'s cache-writer allowlist) and a
+  boundary-preservation guard on `merge`/`zone-merge`: a merge that would
+  silently drop a source boundary onto a boundary-less target is refused
+  unless run with `--force`, which carries the boundary across instead.
 
 ## Auth
 
