@@ -5,6 +5,7 @@ import {
   undoLastVertex,
   removeVertexAt,
   moveVertex,
+  insertVertexAt,
   clearEditor,
   loadEditor,
   liveValidate,
@@ -64,6 +65,37 @@ describe("moveVertex", () => {
   it("is a no-op for an out-of-range index", () => {
     const state = { vertices: squareVertices() };
     expect(moveVertex(state, 10, 0, 0)).toBe(state);
+  });
+});
+
+describe("insertVertexAt", () => {
+  it("inserts a new vertex between afterIndex and afterIndex + 1, preserving the rest in order", () => {
+    const state = { vertices: squareVertices() };
+    const result = insertVertexAt(state, 0, 999, 999);
+    expect(result.vertices).toEqual([
+      squareVertices()[0],
+      [999, 999],
+      squareVertices()[1],
+      squareVertices()[2],
+      squareVertices()[3],
+    ]);
+  });
+
+  it("inserting after the LAST vertex appends to the end — the closing edge back to vertex 0", () => {
+    const state = { vertices: squareVertices() };
+    const result = insertVertexAt(state, 3, 999, 999);
+    expect(result.vertices).toEqual([...squareVertices(), [999, 999]]);
+  });
+
+  it("is a no-op with fewer than 2 vertices (no edge exists yet)", () => {
+    const state = { vertices: [[1, 1]] as [number, number][] };
+    expect(insertVertexAt(state, 0, 5, 5)).toBe(state);
+  });
+
+  it("is a no-op for an out-of-range index", () => {
+    const state = { vertices: squareVertices() };
+    expect(insertVertexAt(state, -1, 5, 5)).toBe(state);
+    expect(insertVertexAt(state, 4, 5, 5)).toBe(state);
   });
 });
 

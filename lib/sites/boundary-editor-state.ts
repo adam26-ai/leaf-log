@@ -38,6 +38,22 @@ export function moveVertex(state: EditorState, index: number, lon: number, lat: 
   return { vertices };
 }
 
+/**
+ * Insert a new vertex on the edge immediately after `afterIndex` — i.e.
+ * between vertex `afterIndex` and vertex `afterIndex + 1` (wrapping: the
+ * edge after the LAST vertex is the closing edge back to vertex 0, and
+ * inserting there appends to the end, which is exactly correct for a
+ * closed ring). This is what backs "click or drag a point on an edge to
+ * add a new vertex there and reshape the polygon."
+ */
+export function insertVertexAt(state: EditorState, afterIndex: number, lon: number, lat: number): EditorState {
+  const n = state.vertices.length;
+  if (n < 2 || afterIndex < 0 || afterIndex >= n) return state;
+  const vertices = state.vertices.slice();
+  vertices.splice(afterIndex + 1, 0, [lon, lat]);
+  return { vertices };
+}
+
 export function clearEditor(): EditorState {
   return EMPTY_EDITOR_STATE;
 }

@@ -365,3 +365,124 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 5_000 });
   await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
 });
+
+test("dragging (or clicking) the midpoint of an edge inserts a new vertex and reshapes the polygon live", async ({
+  page,
+}) => {
+  const runOffset = Date.now();
+  const suffix = `${runOffset}b6mid`;
+  const email = `boundaries_e2e_midpoint_${suffix}@test.local`;
+  const handle = `b6mp${suffix}`.slice(0, 18);
+  rmSync(LINK_FILE, { force: true });
+  await stubBasemapTiles(page);
+
+  const anchorLat = 30.5 + (runOffset % 5000) * 0.001;
+  const anchorLon = -172.0;
+
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(email);
+  await page.getByRole("button", { name: /send magic link/i }).click();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
+  const link = await getMagicLink();
+  await page.goto(link);
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+  await page.locator('input[name="handle"]').fill(handle);
+  await page.locator('input[name="display_name"]').fill("Boundaries Midpoint E2E Pilot");
+  await page.getByRole("button", { name: /create my logbook/i }).click();
+  await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+
+  await page.goto("/upload");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "b6mid-1.igc",
+    mimeType: "text/plain",
+    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
+  });
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+
+  const siteName = `E2E Midpoint Ridge ${suffix}`;
+  await page.locator("h1 button").click();
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
+  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+
+  await page.locator("h1 button").click();
+  await page.getByRole("button", { name: "Edit site boundary" }).click();
+  const mapLocator = page.getByTestId("boundary-editor-map");
+  await mapLocator.waitFor({ timeout: 10_000 });
+  const box = await mapLocator.boundingBox();
+  if (!box) throw new Error("map container has no bounding box");
+  const container = { width: box.width, height: box.height };
+  const zoom = 15;
+  const center = { lng: anchorLon, lat: anchorLat };
+
+  // A square around the anchor — four corners, four edges. Bulging a single
+  // edge straight outward along its own normal (rather than at a diagonal)
+  // keeps this test's shape unambiguously non-self-intersecting regardless
+  // of the small latitude-dependent scaling jitter introduces.
+  const nw: [number, number] = [anchorLon - metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(120)];
+  const ne: [number, number] = [anchorLon + metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(120)];
+  const se: [number, number] = [anchorLon + metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(120)];
+  const sw: [number, number] = [anchorLon - metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(120)];
+  for (const [lon, lat] of [nw, ne, se, sw]) {
+    const px = pixelFor(lon, lat, center, zoom, container);
+    await page.mouse.click(box.x + px.x, box.y + px.y);
+  }
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+
+  // Click (no drag) the midpoint MARKER of the TOP edge (nw-ne, edge index
+  // 0 in the 4-vertex ring) — located by its own data-testid rather than
+  // computed pixel math, so this can't miss the (small) marker and fall
+  // through to the map's own click-to-append handler underneath it. Must
+  // insert a 5th vertex between nw and ne, not append one at the end.
+  const topMidpointMarker = page.locator('[data-testid="boundary-midpoint"][data-edge-index="0"]');
+  await topMidpointMarker.waitFor({ timeout: 5_000 });
+  await topMidpointMarker.click();
+  await expect(page.getByText("5 points")).toBeVisible({ timeout: 5_000 });
+
+  // After that insert the ring is [nw, newTop, ne, se, sw] — the BOTTOM
+  // edge (se-sw) is now edge index 3. Drag its midpoint marker straight
+  // south, away from the square entirely (a plain outward bulge, no
+  // diagonal) — must insert a 6th vertex and follow the drag to its
+  // released position.
+  const bottomMidpointMarker = page.locator('[data-testid="boundary-midpoint"][data-edge-index="3"]');
+  await bottomMidpointMarker.waitFor({ timeout: 5_000 });
+  const bottomMidBox = await bottomMidpointMarker.boundingBox();
+  if (!bottomMidBox) throw new Error("bottom midpoint marker has no bounding box");
+  const dragStartX = bottomMidBox.x + bottomMidBox.width / 2;
+  const dragStartY = bottomMidBox.y + bottomMidBox.height / 2;
+
+  const bottomMid: [number, number] = [(se[0] + sw[0]) / 2, (se[1] + sw[1]) / 2];
+  const dragTarget: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(80)];
+  const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
+
+  await page.mouse.move(dragStartX, dragStartY);
+  await page.mouse.down();
+  // Multiple intermediate steps — a single jump can register as a click
+  // rather than a drag in some pointer-event implementations.
+  await page.mouse.move(box.x + dragEndPx.x, box.y + dragEndPx.y, { steps: 10 });
+  await page.mouse.up();
+
+  await expect(page.getByText("6 points")).toBeVisible({ timeout: 5_000 });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Edit site boundary" })).toBeVisible({ timeout: 10_000 });
+
+  // A flight positioned comfortably INSIDE the new south bulge — south of
+  // the original square's bottom edge (-120m) entirely, but well short of
+  // the dragged-to tip (bottomMid - 80m) to avoid asserting exact-vertex
+  // precision the drag gesture doesn't guarantee pixel-for-pixel — should
+  // now match, proving the drag-inserted vertex actually reshaped what got
+  // saved, not just the on-screen point count.
+  const insideBulge: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(40)];
+  await page.goto("/upload");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "b6mid-2.igc",
+    mimeType: "text/plain",
+    buffer: remoteFlightIgc(runOffset, insideBulge[1], insideBulge[0], 2),
+  });
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+});
