@@ -147,3 +147,66 @@ Completed ideas (see git history / PRs for detail):
   Along the way, found and fixed a real Postgres limitation (two FK cascade paths converging on
   one `Flight` row during a site delete) and a latent regex bug in the SPRINT-004 write-audit that
   silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005)
+- Custom boundaries for sites and zones — a pilot can now draw a polygon that **replaces** the
+  fixed-radius circle for that one `Site` or `Zone` (a versioned `jsonb` envelope + derived bbox
+  columns, no PostGIS), so a 3 km ridge site can finally catch flights from both ends and two
+  close-together launches can stop grabbing each other's flights. `lib/sites/lookup.ts`'s
+  `findLocation` unions a boundary-bbox prefilter alongside the existing circle one (still exactly
+  two DB round trips per endpoint) and every matched row — circle or boundary — gets a real
+  `distanceM`, so ranking never needed a "boundary beats circle" tier. An owner-scoped picker
+  (`lib/sites/associate.ts`'s `listOwnedSitesForBoundaryEditing`/`listOwnedZonesForBoundaryEditing`)
+  lets a pilot edit a boundary on any site/zone they own or edit-control even with no flight bound
+  to it — closing a reachability gap the original planning drafts left (the editor could otherwise
+  only be reached from an already-bound flight, making "expand a ridge site" unreachable in
+  practice). No radius-configurability column shipped separately — the envelope's `kind`
+  discriminant is designed to absorb that as a future variant of the same column. Zone boundaries
+  were deliberately left uncapped near the old circle scale (a stakeholder call, not an oversight)
+  — the accepted tradeoff is documented alongside the mitigations (editor context, `boundary-clear`)
+  in `docs/sprints/SPRINT-006.md`'s Risks section. Ships with a `SITE_BOUNDARY_MATCHING=off` kill
+  switch, a `boundaryUpdatedById` attribution column, a per-caller daily edit cap, and
+  `scripts/admin-sites.ts`'s `boundary-clear` / `zone-boundary-clear` (plus a boundary-preservation
+  guard on `merge`/`zone-merge`). (SPRINT-006)
+
+## Manual Zone Correction on a Flight
+- **Area:** Flight page / sites & zones
+- **Description:** On a flight's takeoff or landing endpoint, let the pilot **remove** a
+  previously bound zone (whether it was auto-matched on ingest or manually selected before) and
+  **manually pick a different, nearby zone** even when it falls outside the auto-match radius.
+  Motivated by a real gap: if the Leaf device starts recording a few seconds after actual launch,
+  the recorded endpoint can sit meters to tens of meters past the true launch point — enough to
+  miss a zone's 300 m/400 m match radius even though the pilot knows exactly which zone it was.
+- **Priority:** Medium
+- **Notes:** "Remove a zone" is mostly already there in spirit (`unpublishZoneForFlight` /
+  `deleteZoneForFlight` in `app/flights/[id]/site-action.ts` cover unpublishing/deleting the zone
+  *itself*), but there's no existing action to simply *unbind* a flight from its matched zone
+  while leaving the zone and the parent site intact. "Manually pick a nearby zone" needs a new
+  picker UI — likely reusing `suggestNearbyLocations()` (`lib/sites/repo.ts`, currently a 2 km
+  `SUGGEST_RADIUS_M` sweep used for site/zone creation) to list candidate zones near the endpoint,
+  then a direct bind path that skips the 300 m/400 m match-radius gate entirely (an explicit pilot
+  choice, not an auto-match). Should reuse `locationCachePatch`/the existing single-writer pattern
+  in `lib/sites/associate.ts` rather than introduce a second write path for the same cache
+  columns. *Now that SPRINT-006 shipped custom boundaries, a pilot who draws the right shape may
+  need this less — but one who's drawn a boundary and still hits a mis-match will want the manual
+  override more, not less (see SPRINT-006.md's "genuinely still open" list).*
+
+## Community-Owned Public Sites & Zones
+- **Area:** Sites & zones / ownership model
+- **Description:** Sites and zones that are public should be "community property" rather than
+  owned by a single user. There should be a "contributors" roster of users who have contributed to
+  the site, and an audit history of who did what — to hold folks accountable for screwing things
+  up. Other users should also be able to "upvote" the current site to add "weight" to the
+  legitimacy of that site. Later on, additional metadata could be added to sites and zones.
+- **Priority:** Medium
+- **Notes:** A substantial departure from the current model, not just an add-on: every `Site`/
+  `Zone` row has a single `ownerId`, and SPRINT-005's decision 4 explicitly gives a site's owner
+  rename/unpublish/delete power over zones *other* pilots contributed under it — a "community
+  property" model would need to revisit that decision, not just layer on top of it. A
+  `boundaryUpdatedById` attribution column (SPRINT-006) is the closest existing precedent for
+  "who touched this last," but a real audit history is a different shape (an append-only log, not
+  a single last-writer column) and would need its own table. "Contributors roster" and "upvote"
+  both need new join tables (site/zone × user) with their own abuse/spam considerations (can
+  someone upvote their own site repeatedly? does a contributor need to have actually flown
+  there?) — probably only enforceable for `visibility: "public"` rows, since a private site is
+  still meaningfully one person's own record. Likely touches `lib/sites/associate.ts` (the
+  ownership/edit-control checks), `lib/sites/repo.ts`, and `scripts/admin-sites.ts` (which today
+  assumes a single owner for its force-merge/boundary-preservation guards).

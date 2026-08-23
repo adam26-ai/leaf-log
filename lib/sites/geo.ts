@@ -121,6 +121,275 @@ export function withinRadius<T extends GeoPoint>(
   return out;
 }
 
+// ---------------------------------------------------------------------
+// SPRINT-006: custom polygon boundaries. A boundary REPLACES the radius
+// circle for the row that has one — see lib/sites/boundary.ts for
+// validation/normalization and docs/sprints/SPRINT-006.md for the full
+// design. Everything below is pure — no DB, no Next — mirroring
+// boundingBox/withinRadius above.
+// ---------------------------------------------------------------------
+
+export interface Ring {
+  /** [lon, lat] pairs, GeoJSON order, closed (first === last). */
+  coordinates: [number, number][];
+}
+
+export interface BoundaryGeometry {
+  type: "Polygon";
+  /** Exactly one ring — v1 has no holes, no MultiPolygon. */
+  coordinates: [number, number][][];
+}
+
+export interface Boundary {
+  v: 1;
+  kind: "polygon";
+  geometry: BoundaryGeometry;
+}
+
+/** A vertex or the point on the segment nearest it is within this many
+ *  metres counts as "on the edge" — an order of magnitude below GPS fix
+ *  noise, so it's invisible in practice but deterministic and testable,
+ *  unlike leaving the ray-cast to decide (which is undefined exactly on
+ *  a boundary and flips on floating-point luck). */
+export const EDGE_TOLERANCE_M = 0.5;
+
+function ringOf(boundary: Boundary): Ring {
+  return { coordinates: boundary.geometry.coordinates[0] };
+}
+
+/** Perpendicular distance (metres) from (lat, lon) to the segment [a, b],
+ *  both given as [lon, lat]. Small-extent equirectangular projection about
+ *  the point itself — centimetre-accurate at launch scale, matching the
+ *  approximation boundingBox()/area already make. */
+function distanceToSegmentM(
+  lat: number,
+  lon: number,
+  a: [number, number],
+  b: [number, number],
+): number {
+  const cosLat = Math.max(0.01, Math.cos((lat * Math.PI) / 180));
+  const toXY = ([lo, la]: [number, number]): [number, number] => [
+    (lo - lon) * 111_320 * cosLat,
+    (la - lat) * 111_320,
+  ];
+  const [px, py] = [0, 0]; // the query point, at the projection's own origin
+  const [ax, ay] = toXY(a);
+  const [bx, by] = toXY(b);
+
+  const abx = bx - ax;
+  const aby = by - ay;
+  const lenSq = abx * abx + aby * aby;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lenSq));
+  const cx = ax + t * abx;
+  const cy = ay + t * aby;
+  return Math.hypot(px - cx, py - cy);
+}
+
+/** True when (lat, lon) is within EDGE_TOLERANCE_M of any edge of the ring
+ *  (including the vertices themselves, which are edge endpoints). */
+export function pointOnRingEdge(ring: Ring, lat: number, lon: number): boolean {
+  const pts = ring.coordinates;
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (distanceToSegmentM(lat, lon, pts[i], pts[i + 1]) <= EDGE_TOLERANCE_M) return true;
+  }
+  return false;
+}
+
+/** Ray-casting, strict interior test — undefined ON the boundary by
+ *  construction, which is why callers always run pointOnRingEdge FIRST and
+ *  short-circuit to "inside" there. Half-open edge rule (`(yi > y) !== (yj > y)`)
+ *  so a ray passing exactly through a vertex is counted once, not twice. */
+function pointStrictlyInRing(ring: Ring, lat: number, lon: number): boolean {
+  const pts = ring.coordinates;
+  let inside = false;
+  for (let i = 0, j = pts.length - 2; i < pts.length - 1; j = i++) {
+    const [xi, yi] = pts[i];
+    const [xj, yj] = pts[j];
+    const intersects =
+      yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+/** The inclusive membership test — on a vertex or edge counts as inside,
+ *  matching withinRadius's existing inclusive `<=`. */
+export function boundaryContains(boundary: Boundary, lat: number, lon: number): boolean {
+  const ring = ringOf(boundary);
+  if (pointOnRingEdge(ring, lat, lon)) return true;
+  return pointStrictlyInRing(ring, lat, lon);
+}
+
+export interface BoundaryBoundingBox {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+}
+
+/** The ring's own bounding box — the DB prefilter's boundary branch is
+ *  seeded from these four numbers, not from the anchor + a radius. */
+export function boundaryBoundingBox(boundary: Boundary): BoundaryBoundingBox {
+  const pts = ringOf(boundary).coordinates;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  for (const [lon, lat] of pts) {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+  }
+  return { minLat, maxLat, minLon, maxLon };
+}
+
+/** Shoelace area on an equirectangular projection about the ring's own
+ *  centroid — accurate to well under 0.1% at launch scale, computed in
+ *  METRES (not raw degrees, which would be wrong by cos(lat) at real
+ *  latitudes). Always non-negative regardless of winding. */
+export function ringAreaM2(ring: Ring): number {
+  const pts = ring.coordinates;
+  if (pts.length < 4) return 0; // fewer than 3 distinct vertices + closing repeat
+
+  let sumLat = 0;
+  let sumLon = 0;
+  for (const [lon, lat] of pts) {
+    sumLat += lat;
+    sumLon += lon;
+  }
+  const centroidLat = sumLat / pts.length;
+  const cosLat = Math.max(0.01, Math.cos((centroidLat * Math.PI) / 180));
+
+  const xy = pts.map(([lon, lat]): [number, number] => [
+    (lon - sumLon / pts.length) * 111_320 * cosLat,
+    (lat - centroidLat) * 111_320,
+  ]);
+
+  let twiceArea = 0;
+  for (let i = 0; i < xy.length - 1; i++) {
+    const [x1, y1] = xy[i];
+    const [x2, y2] = xy[i + 1];
+    twiceArea += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(twiceArea) / 2;
+}
+
+function segmentsIntersect(
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number],
+  p4: [number, number],
+): boolean {
+  const d = (a: [number, number], b: [number, number], c: [number, number]) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const d1 = d(p3, p4, p1);
+  const d2 = d(p3, p4, p2);
+  const d3 = d(p1, p2, p3);
+  const d4 = d(p1, p2, p4);
+  return (d1 > 0 !== d2 > 0) && (d3 > 0 !== d4 > 0);
+}
+
+/** True if any two NON-ADJACENT edges of the ring cross OR touch (a bow-tie,
+ *  or a figure-eight sharing one non-adjacent vertex). Only INDEX-adjacent
+ *  segments (and the wrap-around pair) are excluded, not every pair that
+ *  happens to share coordinates — so a ring that revisits an earlier vertex
+ *  is conservatively rejected too: it has no well-defined single interior at
+ *  that point, and refusing it at write time is the only way the
+ *  match-time answer stays meaningful. O(n²); bounded by the vertex cap. */
+export function ringSelfIntersects(ring: Ring): boolean {
+  const pts = ring.coordinates;
+  const segCount = pts.length - 1; // closed ring: last point repeats the first
+  for (let i = 0; i < segCount; i++) {
+    for (let j = i + 1; j < segCount; j++) {
+      const adjacent = j === i + 1 || (i === 0 && j === segCount - 1);
+      if (adjacent) continue;
+      if (segmentsIntersect(pts[i], pts[i + 1], pts[j], pts[j + 1])) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * SPRINT-006: the boundary branch of a DB prefilter — a plain object, no DB
+ * import, consumed identically by lib/sites/lookup.ts (matching) and
+ * lib/sites/repo.ts (suggestions, dedup, re-association) so the rule can't
+ * drift between call sites. A boundary can reach far past its own anchor,
+ * so "point within R of anchor" no longer implies "row's box contains
+ * point" the way it does for a circle — this tests the row's OWN bbox
+ * columns against the query point directly. NULL bbox columns (circle-only
+ * rows) never satisfy this — lte/gte against NULL is never true — so this
+ * branch can only ever return boundary-bearing rows.
+ */
+export function boundaryPrefilterWhere(lat: number, lon: number) {
+  return {
+    AND: [
+      { boundaryMinLat: { lte: lat } },
+      { boundaryMaxLat: { gte: lat } },
+      { boundaryMinLon: { lte: lon } },
+      { boundaryMaxLon: { gte: lon } },
+    ],
+  };
+}
+
+export interface LocationMatchResult {
+  matched: boolean;
+  distanceM: number;
+}
+
+/**
+ * THE composition point: "boundary if present, else circle" is decided
+ * here, and only here — findLocation, reassociateOwnFlights, and
+ * suggestNearbyLocations all call this and nothing else, so the rule can
+ * never drift between call sites. `distanceM` is ALWAYS haversine-to-anchor,
+ * computed unconditionally regardless of which shape decided `matched` —
+ * this is what gives a polygon-matched row a real, comparable distance to
+ * rank by, so compareSiteCandidates needs no separate membership-tier logic
+ * (see docs/sprints/SPRINT-006.md's Open Questions Q2 for why no tier was
+ * added despite one being proposed during planning).
+ *
+ * A boundary that fails to parse/validate is treated as `matched: false` —
+ * fail closed, never thrown, never silently re-checked against the circle
+ * (which would undo a pilot's deliberate tightening). Callers that detect
+ * this should log it; this function itself has no logging side effect
+ * since it's called from hot, pure-context code paths.
+ */
+/** Structural shape check only — does NOT re-run validateBoundary's caps or
+ *  self-intersection checks (a stored row already passed those at write
+ *  time). Exported so call sites can distinguish "no boundary" from "a
+ *  boundary that doesn't even parse" for logging, without duplicating this
+ *  check. */
+export function isValidBoundaryShape(value: unknown): value is Boundary {
+  if (typeof value !== "object" || value === null) return false;
+  const b = value as Boundary;
+  return (
+    b.v === 1 &&
+    b.kind === "polygon" &&
+    b.geometry?.type === "Polygon" &&
+    Array.isArray(b.geometry.coordinates) &&
+    b.geometry.coordinates.length === 1
+  );
+}
+
+export function locationMatches(
+  row: { lat: number; lon: number; boundary: unknown },
+  lat: number,
+  lon: number,
+  radiusM: number,
+): LocationMatchResult {
+  const distanceM = haversineM(lat, lon, row.lat, row.lon);
+
+  if (row.boundary == null) {
+    return { matched: distanceM <= radiusM, distanceM };
+  }
+
+  if (!isValidBoundaryShape(row.boundary)) {
+    return { matched: false, distanceM }; // fail closed on malformed stored geometry
+  }
+
+  return { matched: boundaryContains(row.boundary, lat, lon), distanceM };
+}
+
 export interface RankableSite {
   id: string;
   distanceM: number;

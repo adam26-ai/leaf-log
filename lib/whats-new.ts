@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-21",
+    title: "Draw the actual shape",
+    body: "A circle around one point can't capture a 3km ridge, or tell apart two launches tucked close together. Now you can trace the real outline of a site or spot instead — open its naming dialog, tap \"Edit boundary,\" and draw it right on the map. Flights land inside the shape you drew, not just a fixed radius, so a ridge-long site finally catches flights from both ends, and a tight launch stops grabbing its neighbor's. No boundary drawn yet? Everything keeps working exactly as it does today — this is entirely optional, and you can reach it for any of your own sites or spots even before a flight is named at all, from \"Edit a boundary on one of my sites\" in the naming dialog.",
+  },
+  {
     date: "2026-08-20",
     title: "Launches and LZs, by name",
     body: "Real sites usually have more than one spot — a north launch, a south bowl, a lower LZ. You can now name those too. Open a flight bound to a site you've already named, and you'll see an optional \"Which spot?\" step where you can add the exact launch or landing, public or private, same as naming the site itself. Skip it any time — a site with no named spots keeps working exactly as it always has. Once you've named a spot, your next flight from there (and your older flights nearby) pick it up automatically, showing \"Site — Spot\" instead of just the site name.",

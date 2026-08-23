@@ -161,3 +161,60 @@ test("two-level path: naming a zone renders 'Site — Zone' and a nearby distinc
     timeout: 10_000,
   });
 });
+
+test("re-opening an already-zoned flight shows the bound zone as 'Current' and Save confirms it with no name typed", async ({
+  page,
+}) => {
+  const runOffset = Date.now();
+  const suffix = `${runOffset}cur`;
+  const email = `zones_e2e_current_${suffix}@test.local`;
+  const handle = `zec${suffix}`.slice(0, 18);
+  rmSync(LINK_FILE, { force: true });
+
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(email);
+  await page.getByRole("button", { name: /send magic link/i }).click();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
+  const link = await getMagicLink();
+  await page.goto(link);
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+  await page.locator('input[name="handle"]').fill(handle);
+  await page.locator('input[name="display_name"]').fill("Zones E2E Current Pilot");
+  await page.getByRole("button", { name: /create my logbook/i }).click();
+  await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+
+  await page.goto("/upload");
+  await page
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "cur1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 10, 1) });
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+
+  const siteName = `E2E Current Ridge ${suffix}`;
+  const zoneName = `E2E Current Launch ${suffix}`;
+  await page.locator("h1 button").click();
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
+  await page.locator('input[placeholder="e.g. North Launch"]').fill(zoneName);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`${siteName} — ${zoneName}`, {
+    timeout: 10_000,
+  });
+
+  // Re-open on the already-zoned flight — the bound zone shows as "Current"
+  // (no "Use this spot" button needed for it), and the "Or add a new spot"
+  // name field is left blank. Save must NOT demand a name for a spot that
+  // already has one — it should just confirm the current zone and close.
+  await page.locator("h1 button").click();
+  const currentZoneRow = page.locator("li", { hasText: zoneName });
+  await currentZoneRow.waitFor({ timeout: 5_000 });
+  await expect(currentZoneRow.getByText("Current", { exact: true })).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('input[placeholder="e.g. North Launch"]')).toHaveValue("");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Enter a name for this spot/i)).not.toBeVisible({ timeout: 2_000 });
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(`${siteName} — ${zoneName}`, {
+    timeout: 10_000,
+  });
+});

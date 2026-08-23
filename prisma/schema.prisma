@@ -75,6 +75,11 @@ model Profile {
   homeSite           Site?         @relation("HomeSite", fields: [homeSiteId], references: [id], onDelete: SetNull)
   ownedSites         Site[]        @relation("OwnedSites")
   ownedZones         Zone[]        @relation("OwnedZones")
+  // SPRINT-006: attribution for the last pilot to set/clear a boundary —
+  // may differ from the row's own owner (a site owner may edit a zone's
+  // boundary under lib/sites/associate.ts's findZoneEditableBy rule).
+  boundaryUpdatedSites Site[]      @relation("BoundaryUpdatedSites")
+  boundaryUpdatedZones Zone[]      @relation("BoundaryUpdatedZones")
   flights            Flight[]
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
@@ -300,6 +305,18 @@ model Site {
   homeProfiles   Profile[] @relation("HomeSite")
   zones          Zone[]    @relation("SiteZones")
 
+  // SPRINT-006: an optional custom boundary, replacing the radius circle for
+  // this row when present. Null = match by radius exactly as SPRINT-004/005.
+  // See lib/sites/boundary.ts for the envelope shape; boundaryColumns() in
+  // lib/sites/associate.ts is the sole writer of all five columns together.
+  boundary            Json?
+  boundaryMinLat      Float?
+  boundaryMaxLat      Float?
+  boundaryMinLon      Float?
+  boundaryMaxLon      Float?
+  boundaryUpdatedById String?
+  boundaryUpdatedBy   Profile? @relation("BoundaryUpdatedSites", fields: [boundaryUpdatedById], references: [id], onDelete: SetNull)
+
   @@index([lat, lon])
   @@index([ownerId])
   @@index([ownerId, normalizedName])
@@ -331,6 +348,15 @@ model Zone {
   updatedAt      DateTime @updatedAt
   takeoffFlights Flight[] @relation("TakeoffZone")
   landingFlights Flight[] @relation("LandingZone")
+
+  // SPRINT-006: identical boundary shape to Site — see the comment there.
+  boundary            Json?
+  boundaryMinLat      Float?
+  boundaryMaxLat      Float?
+  boundaryMinLon      Float?
+  boundaryMaxLon      Float?
+  boundaryUpdatedById String?
+  boundaryUpdatedBy   Profile? @relation("BoundaryUpdatedZones", fields: [boundaryUpdatedById], references: [id], onDelete: SetNull)
 
   @@index([lat, lon])
   @@index([siteId])

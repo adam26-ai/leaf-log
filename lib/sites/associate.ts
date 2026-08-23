@@ -1,6 +1,7 @@
-import type { Prisma, Site, Zone } from "@prisma/client";
+import { Prisma, type Site, type Zone } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
+import { validateBoundary, boundaryColumns, type BoundaryColumns } from "./boundary";
 
 export type SiteEndpoint = "takeoff" | "landing";
 
@@ -556,4 +557,278 @@ export async function unpublishOwnZone(zoneId: string, ownerId: string): Promise
     await tx.flight.updateMany({ where: { landingZoneId: zoneId }, data: { landingZoneName: null } });
     return updated;
   });
+}
+
+// ---------------------------------------------------------------------
+// SPRINT-006: boundary write path. A boundary is geometry, never identity —
+// these functions touch ONLY Site/Zone's own boundary columns, never a
+// Flight cache column (write-audit.test.ts's allowlist is unmodified by
+// this sprint; the only Flight writes anywhere in this file remain the
+// pre-existing *Name-column ones above). See docs/sprints/SPRINT-006.md.
+// ---------------------------------------------------------------------
+
+function boundaryInvalid(error: string) {
+  return new Error(`Invalid boundary (${error}).`);
+}
+
+/**
+ * Adapts boundaryColumns()'s plain `Boundary | null` (deliberately DB-free,
+ * living in lib/sites/boundary.ts) into what Prisma's generated `update`
+ * input actually needs for a nullable Json column: Prisma disambiguates a
+ * SQL NULL from a stored JSON `null` via Prisma.DbNull/Prisma.JsonNull, so a
+ * plain JS `null` does not type-check (and would be the wrong sentinel even
+ * if it did). This is the one place that distinction is bridged.
+ */
+function boundaryUpdateData(cols: BoundaryColumns) {
+  return { ...cols, boundary: cols.boundary ?? Prisma.DbNull };
+}
+
+/**
+ * A generous, per-caller-per-day backstop on boundary WRITES specifically —
+ * distinct from DAILY_CREATE_CAP (row creation; the abuse vector there is
+ * namespace pollution). A boundary edit creates no row, so this bounds a
+ * different vector: how many distinct rows one caller can reshape in a day.
+ * Counted as DISTINCT rows currently attributed to this caller
+ * (boundaryUpdatedById) and touched today — a deliberate proxy, not a true
+ * edit-event log (which would need a new table): it undercounts repeated
+ * edits to the SAME row in one day, but correctly bounds a spree across
+ * many different rows, which is the more meaningful abuse shape here.
+ */
+export const DAILY_BOUNDARY_EDIT_CAP = 20;
+
+interface BoundaryEditCountDb {
+  site: { count(args: { where: Prisma.SiteWhereInput }): Promise<number> };
+  zone: { count(args: { where: Prisma.ZoneWhereInput }): Promise<number> };
+}
+
+async function boundaryEditsToday(
+  tx: BoundaryEditCountDb,
+  ownerId: string,
+  startOfDayUtc: Date,
+): Promise<number> {
+  const [sites, zones] = await Promise.all([
+    tx.site.count({ where: { boundaryUpdatedById: ownerId, updatedAt: { gte: startOfDayUtc } } }),
+    tx.zone.count({ where: { boundaryUpdatedById: ownerId, updatedAt: { gte: startOfDayUtc } } }),
+  ]);
+  return sites + zones;
+}
+
+function dailyBoundaryCapExceeded() {
+  return new Error("Daily boundary-edit limit reached. Try again tomorrow.");
+}
+
+async function enforceDailyBoundaryEditCap(tx: BoundaryEditCountDb, ownerId: string): Promise<void> {
+  const startOfDayUtc = new Date();
+  startOfDayUtc.setUTCHours(0, 0, 0, 0);
+  const editedToday = await boundaryEditsToday(tx, ownerId, startOfDayUtc);
+  if (editedToday >= DAILY_BOUNDARY_EDIT_CAP) throw dailyBoundaryCapExceeded();
+}
+
+/**
+ * Which endpoint(s) a widened boundary should retroactively re-associate
+ * the drawer's own unmatched flights against — mirrors kindMatches's
+ * existing "both" wildcard; a kind-less/legacy row re-associates both
+ * directions rather than none, which is conservative (it only ever fills
+ * in a null on the OWNER's own flights).
+ */
+function endpointsForKind(kind: string): SiteEndpoint[] {
+  if (kind === "takeoff") return ["takeoff"];
+  if (kind === "landing") return ["landing"];
+  return ["takeoff", "landing"];
+}
+
+/**
+ * Widening a boundary can reach flights the old radius couldn't — fire the
+ * same retroactive, owner-scoped, capped re-association
+ * createOrAttachSiteFromFlight already uses (lib/sites/repo.ts's
+ * reassociateOwnFlights), additively: locationCachePatch remains the only
+ * Flight-cache writer, this only decides WHICH of the caller's own flights
+ * get offered to it. A dynamic import breaks the otherwise-circular
+ * associate.ts <-> repo.ts dependency (repo.ts already imports
+ * locationCachePatch from this file) without restructuring either module —
+ * safe because it's resolved lazily, well after both modules are loaded,
+ * never at import time.
+ */
+async function reassociateAfterBoundarySet(
+  ownerId: string,
+  level: "site" | "zone",
+  updatedRow: Site | Zone,
+): Promise<void> {
+  const { reassociateOwnFlights } = await import("./repo");
+  if (level === "site") {
+    const site = updatedRow as Site;
+    for (const endpoint of endpointsForKind(site.kind)) {
+      await reassociateOwnFlights(ownerId, site, endpoint, null);
+    }
+    return;
+  }
+
+  const zone = updatedRow as Zone;
+  const site = await prisma.site.findUnique({ where: { id: zone.siteId } });
+  if (!site) return; // deleted concurrently — nothing to re-associate against
+  for (const endpoint of endpointsForKind(zone.kind)) {
+    await reassociateOwnFlights(ownerId, site, endpoint, zone);
+  }
+}
+
+/**
+ * Set (or replace) a site's boundary. Owner-only — no "referenced by
+ * another pilot's flight" guard, unlike rename/delete: a boundary edit
+ * destroys nothing (existing bindings survive by construction; the worst
+ * case is a future flight matching differently, which is what a gazetteer
+ * edit IS), so guarding it the same way as rename would make the feature
+ * unusable at exactly the sites that need it most.
+ */
+export async function setSiteBoundary(siteId: string, ownerId: string, raw: unknown): Promise<Site> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
+    if (!existing) throw notFoundOrNotOwned();
+
+    const validated = validateBoundary(raw, "site", { lat: existing.lat, lon: existing.lon });
+    if (!validated.ok) throw boundaryInvalid(validated.error);
+
+    await enforceDailyBoundaryEditCap(tx, ownerId);
+
+    const row = await tx.site.update({
+      where: { id: siteId },
+      data: boundaryUpdateData(boundaryColumns(validated.boundary, ownerId)),
+    });
+    console.log(
+      `[sites] boundary set site=${siteId} owner=${ownerId} vertices=${validated.boundary.geometry.coordinates[0].length - 1}`,
+    );
+    return row;
+  });
+  await reassociateAfterBoundarySet(ownerId, "site", updated);
+  return updated;
+}
+
+/** Clear a site's boundary — back to circle matching. Always succeeds for
+ *  the owner; never leaves the row unmatched. */
+export async function clearSiteBoundary(siteId: string, ownerId: string): Promise<Site> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
+    if (!existing) throw notFoundOrNotOwned();
+
+    const updated = await tx.site.update({ where: { id: siteId }, data: boundaryUpdateData(boundaryColumns(null, ownerId)) });
+    console.log(`[sites] boundary cleared site=${siteId} owner=${ownerId}`);
+    return updated;
+  });
+}
+
+/** Set (or replace) a zone's boundary — the zone's own owner, OR the
+ *  parent site's owner (decision 4, the same scoped power SPRINT-005 gave
+ *  over rename/delete). */
+export async function setZoneBoundary(zoneId: string, callerId: string, raw: unknown): Promise<Zone> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const existing = await findZoneEditableBy(tx, zoneId, callerId);
+    if (!existing) throw zoneNotFoundOrNotOwned();
+
+    const validated = validateBoundary(raw, "zone", { lat: existing.lat, lon: existing.lon });
+    if (!validated.ok) throw boundaryInvalid(validated.error);
+
+    await enforceDailyBoundaryEditCap(tx, callerId);
+
+    const row = await tx.zone.update({
+      where: { id: zoneId },
+      data: boundaryUpdateData(boundaryColumns(validated.boundary, callerId)),
+    });
+    console.log(
+      `[sites] boundary set zone=${zoneId} caller=${callerId} vertices=${validated.boundary.geometry.coordinates[0].length - 1}`,
+    );
+    return row;
+  });
+  await reassociateAfterBoundarySet(callerId, "zone", updated);
+  return updated;
+}
+
+/** Clear a zone's boundary — the zone's own owner, OR the parent site's owner. */
+export async function clearZoneBoundary(zoneId: string, callerId: string): Promise<Zone> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await findZoneEditableBy(tx, zoneId, callerId);
+    if (!existing) throw zoneNotFoundOrNotOwned();
+
+    const updated = await tx.zone.update({ where: { id: zoneId }, data: boundaryUpdateData(boundaryColumns(null, callerId)) });
+    console.log(`[sites] boundary cleared zone=${zoneId} caller=${callerId}`);
+    return updated;
+  });
+}
+
+export interface OwnedSiteForBoundaryEditing {
+  id: string;
+  name: string;
+  visibility: string;
+  lat: number;
+  lon: number;
+  hasBoundary: boolean;
+}
+
+export interface OwnedZoneForBoundaryEditing {
+  id: string;
+  siteId: string;
+  siteName: string;
+  name: string;
+  visibility: string;
+  lat: number;
+  lon: number;
+  hasBoundary: boolean;
+  /** Editable via zone ownership, or via the parent site's ownership. */
+  editableAsSiteOwner: boolean;
+}
+
+/**
+ * Every site `callerId` owns — the picker's site list (decision 5). An
+ * owner-scoped read: returns exactly the rows the caller may already
+ * rename/delete/edit, nothing more. `hasBoundary` is derived from the
+ * (unselected) boundary column via its bbox sibling, so the boundary JSON
+ * itself never leaves the DB layer for this listing.
+ */
+export async function listOwnedSitesForBoundaryEditing(callerId: string): Promise<OwnedSiteForBoundaryEditing[]> {
+  const rows = await prisma.site.findMany({
+    where: { ownerId: callerId },
+    select: { id: true, name: true, visibility: true, lat: true, lon: true, boundaryMinLat: true },
+    orderBy: { name: "asc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    visibility: r.visibility,
+    lat: r.lat,
+    lon: r.lon,
+    hasBoundary: r.boundaryMinLat != null,
+  }));
+}
+
+/**
+ * Every zone `callerId` may edit — their own zones, OR zones under a site
+ * they own (decision 4's scoped power, listed instead of looked up one at a
+ * time). This is the SAME set `findZoneEditableBy` recognizes; nothing here
+ * widens it.
+ */
+export async function listOwnedZonesForBoundaryEditing(callerId: string): Promise<OwnedZoneForBoundaryEditing[]> {
+  const rows = await prisma.zone.findMany({
+    where: { OR: [{ ownerId: callerId }, { site: { ownerId: callerId } }] },
+    select: {
+      id: true,
+      siteId: true,
+      name: true,
+      visibility: true,
+      lat: true,
+      lon: true,
+      ownerId: true,
+      boundaryMinLat: true,
+      site: { select: { name: true, ownerId: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    siteId: r.siteId,
+    siteName: r.site.name,
+    name: r.name,
+    visibility: r.visibility,
+    lat: r.lat,
+    lon: r.lon,
+    hasBoundary: r.boundaryMinLat != null,
+    editableAsSiteOwner: r.ownerId !== callerId && r.site.ownerId === callerId,
+  }));
 }

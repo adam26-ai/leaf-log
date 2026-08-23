@@ -8,12 +8,35 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { findLocation } from "./lookup";
+import { validateBoundary, boundaryColumns } from "./boundary";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for site lookup integration tests.");
 }
 
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e5)}`;
+
+/** SPRINT-006: a valid canonical square boundary (and its derived bbox
+ *  columns) around (lat, lon), for building boundary-bearing test fixtures. */
+function testBoundaryColumns(lat: number, lon: number, halfSizeM: number, updatedById: string) {
+  const dLat = halfSizeM / 111_320;
+  const dLon = halfSizeM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  const coords: [number, number][] = [
+    [lon - dLon, lat - dLat],
+    [lon + dLon, lat - dLat],
+    [lon + dLon, lat + dLat],
+    [lon - dLon, lat + dLat],
+    [lon - dLon, lat - dLat],
+  ];
+  const result = validateBoundary({ type: "Polygon", coordinates: [coords] }, "site", { lat, lon });
+  if (!result.ok) throw new Error(`test fixture boundary invalid: ${result.error}`);
+  return boundaryColumns(result.boundary, updatedById);
+}
+
+function requireOwnerForBoundary(ownerId: string | null): string {
+  if (!ownerId) throw new Error("test fixture: a boundary-bearing row needs a real ownerId");
+  return ownerId;
+}
 
 describe("findLocation (viewer-scoped haversine, zone-first with site fallback)", () => {
   let prisma: import("@/lib/prisma").Db;
@@ -40,13 +63,18 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     kind: "takeoff" | "landing" | "both";
     visibility: "private" | "public";
     ownerId: string | null;
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = `Test Site ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const site = await prisma.site.create({
       data: {
         name,
         normalizedName: name.toLowerCase(),
+        ...boundaryCols,
         lat: opts.lat,
         lon: opts.lon,
         kind: opts.kind,
@@ -66,14 +94,19 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     kind: "takeoff" | "landing" | "both";
     visibility: "private" | "public";
     ownerId: string | null;
+    boundaryHalfSizeM?: number;
   }) {
     seq += 1;
     const name = `Test Zone ${seq}${suffix}`;
+    const boundaryCols = opts.boundaryHalfSizeM
+      ? testBoundaryColumns(opts.lat, opts.lon, opts.boundaryHalfSizeM, requireOwnerForBoundary(opts.ownerId))
+      : {};
     const zone = await prisma.zone.create({
       data: {
         siteId: opts.siteId,
         name,
         normalizedName: name.toLowerCase(),
+        ...boundaryCols,
         lat: opts.lat,
         lon: opts.lon,
         kind: opts.kind,
@@ -515,5 +548,253 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match?.zone?.id).toBe(farZone.id);
     expect(match?.site.id).toBe(farSite.id);
     expect(match?.site.id).not.toBe(nearSite.id);
+  });
+
+  // -------------------------------------------------------------------
+  // SPRINT-006: boundary-aware matching. Coordinate band 80-89 is disjoint
+  // from every other lat/lon range used across this file and the other
+  // integration test files sharing the live Postgres test DB (see the
+  // SPRINT-005 lesson about cross-file coordinate collisions under
+  // Vitest's default file-level concurrency).
+  // -------------------------------------------------------------------
+
+  it("a point OUTSIDE the site's circle but INSIDE its drawn boundary matches", async () => {
+    const owner = await createPilot("b6-outside-circle");
+    // 600m takeoff circle; a 1500m-half-size boundary reaches well past it.
+    const site = await createSite({
+      lat: 80,
+      lon: 80,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 1500,
+    });
+
+    const match = await findLocation(prisma, {
+      lat: 80,
+      lon: 80 + 1000 / (111_320 * Math.cos((80 * Math.PI) / 180)),
+      kind: "takeoff",
+      viewerId: null,
+    });
+    expect(match?.site.id).toBe(site.id);
+    expect(match?.zone).toBeNull();
+  });
+
+  it("a point INSIDE the site's circle but OUTSIDE a TIGHTER drawn boundary does NOT match", async () => {
+    const owner = await createPilot("b6-tighter-boundary");
+    await createSite({
+      lat: 81,
+      lon: 81,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 50, // far tighter than the 600m circle
+    });
+
+    // 300m away — inside the 600m circle, outside the 50m-half boundary.
+    const match = await findLocation(prisma, {
+      lat: 81,
+      lon: 81 + 300 / (111_320 * Math.cos((81 * Math.PI) / 180)),
+      kind: "takeoff",
+      viewerId: null,
+    });
+    expect(match).toBeNull();
+  });
+
+  it("a zone boundary reaching past its parent site's circle still yields the zone with its parent", async () => {
+    const owner = await createPilot("b6-zone-past-parent");
+    const site = await createSite({ lat: 82, lon: 82, kind: "landing", visibility: "public", ownerId: owner });
+    const zone = await createZone({
+      siteId: site.id,
+      lat: 82,
+      lon: 82,
+      kind: "landing",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 1200, // past the 900m landing circle
+    });
+
+    const match = await findLocation(prisma, {
+      lat: 82,
+      lon: 82 + 1000 / (111_320 * Math.cos((82 * Math.PI) / 180)),
+      kind: "landing",
+      viewerId: null,
+    });
+    expect(match?.zone?.id).toBe(zone.id);
+    expect(match?.site.id).toBe(site.id);
+  });
+
+  it("ranks a boundary-bearing site and a circle-only site by anchor distance alone — no membership tier", async () => {
+    const owner = await createPilot("b6-ranking");
+    // A big boundary-bearing site, further away by anchor...
+    const farBoundarySite = await createSite({
+      lat: 83,
+      lon: 83,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 2000,
+    });
+    // ...and a plain circle site, closer to the query point by anchor.
+    const nearCircleSite = await createSite({
+      lat: 83,
+      lon: 83 + 100 / (111_320 * Math.cos((83 * Math.PI) / 180)),
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+    });
+
+    // Query point is inside BOTH the boundary (2000m half-size) and the
+    // circle site's own 600m radius — the nearer ANCHOR must win regardless
+    // of which row matched by boundary vs. circle.
+    const match = await findLocation(prisma, {
+      lat: 83,
+      lon: 83 + 150 / (111_320 * Math.cos((83 * Math.PI) / 180)),
+      kind: "takeoff",
+      viewerId: null,
+    });
+    expect(match?.site.id).toBe(nearCircleSite.id);
+    expect(match?.site.id).not.toBe(farBoundarySite.id);
+  });
+
+  it("a PRIVATE boundary-bearing site never matches a stranger's ingest", async () => {
+    const owner = await createPilot("b6-private-owner");
+    const stranger = await createPilot("b6-private-stranger");
+    await createSite({
+      lat: 84,
+      lon: 84,
+      kind: "takeoff",
+      visibility: "private",
+      ownerId: owner,
+      boundaryHalfSizeM: 500,
+    });
+
+    const strangerMatch = await findLocation(prisma, { lat: 84, lon: 84, kind: "takeoff", viewerId: stranger });
+    expect(strangerMatch).toBeNull();
+
+    const ownerMatch = await findLocation(prisma, { lat: 84, lon: 84, kind: "takeoff", viewerId: owner });
+    expect(ownerMatch).not.toBeNull();
+  });
+
+  it("a malformed stored boundary is skipped at match time, never thrown, and the flight falls back to Unknown site", async () => {
+    const owner = await createPilot("b6-malformed");
+    const site = await createSite({ lat: 85, lon: 85, kind: "takeoff", visibility: "public", ownerId: owner });
+    // Simulate corruption (a future validator bug, a hand-edit, a bad
+    // restore) — write a boundary the validator would never produce,
+    // bypassing validateBoundary entirely.
+    await prisma.site.update({
+      where: { id: site.id },
+      data: {
+        boundary: { garbage: true },
+        boundaryMinLat: 84.999,
+        boundaryMaxLat: 85.001,
+        boundaryMinLon: 84.999,
+        boundaryMaxLon: 85.001,
+      },
+    });
+
+    // If this throws, the test itself fails — that IS the "never thrown
+    // into ingest" assertion.
+    const match = await findLocation(prisma, { lat: 85, lon: 85, kind: "takeoff", viewerId: null });
+    expect(match).toBeNull(); // fails closed — never silently falls back to the (also-present) circle
+  });
+
+  it("SITE_BOUNDARY_MATCHING=off reproduces pre-sprint circle-only matching on boundary-bearing rows", async () => {
+    const owner = await createPilot("b6-kill-switch");
+    await createSite({
+      lat: 86,
+      lon: 86,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 1500, // reaches well past the 600m circle
+    });
+
+    const farLon = 86 + 1000 / (111_320 * Math.cos((86 * Math.PI) / 180));
+
+    const withBoundaryOn = await findLocation(prisma, { lat: 86, lon: farLon, kind: "takeoff", viewerId: null });
+    expect(withBoundaryOn).not.toBeNull(); // boundary reaches this point
+
+    process.env.SITE_BOUNDARY_MATCHING = "off";
+    try {
+      const withBoundaryOff = await findLocation(prisma, { lat: 86, lon: farLon, kind: "takeoff", viewerId: null });
+      expect(withBoundaryOff).toBeNull(); // circle-only: this point is outside the 600m radius
+    } finally {
+      delete process.env.SITE_BOUNDARY_MATCHING;
+    }
+  });
+
+  it("the boundary prefilter is an OR branch inside the existing site/zone WHERE clauses, not a separate query", async () => {
+    const owner = await createPilot("b6-query-count");
+    const site = await createSite({
+      lat: 87,
+      lon: 87,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 200,
+    });
+    await createZone({
+      siteId: site.id,
+      lat: 87,
+      lon: 87,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+      boundaryHalfSizeM: 100,
+    });
+
+    // A throwaway, independently-instantiated client (not the shared
+    // lib/prisma.ts export) purely to attach a query-event listener for
+    // this one assertion — self-contained, touches no production code.
+    const { PrismaClient } = await import("@prisma/client");
+    const countingClient = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
+    // Count queries whose WHERE clause carries the boundary-prefilter OR
+    // branch (identifiable by the boundaryMinLat predicate) per base table
+    // — proving that branch lives INSIDE the same query as the existing
+    // circle-bbox predicate, not a separate query. (Prisma's query engine
+    // may still issue its own additional, unrelated round trip to load a
+    // matched zone's joined site fields — a pre-existing relation-loading
+    // detail this sprint's boundary work neither introduced nor changed;
+    // asserting a literal total SQL statement count would conflate the
+    // two.)
+    let siteBoundaryQueries = 0;
+    let zoneBoundaryQueries = 0;
+    let siteBoundaryQueryAlsoHasCircleClause = false;
+    let zoneBoundaryQueryAlsoHasCircleClause = false;
+    countingClient.$on("query", (e: { query: string }) => {
+      const hasBoundaryClause = /"boundaryMinLat"/.test(e.query);
+      if (!hasBoundaryClause) return;
+      const hasCircleClause = /"lat"\s*>=/.test(e.query);
+      if (/FROM\s+"public"\."Site"\s+WHERE/.test(e.query)) {
+        siteBoundaryQueries++;
+        siteBoundaryQueryAlsoHasCircleClause = hasCircleClause;
+      }
+      if (/FROM\s+"public"\."Zone"/.test(e.query)) {
+        zoneBoundaryQueries++;
+        zoneBoundaryQueryAlsoHasCircleClause = hasCircleClause;
+      }
+    });
+
+    // Structurally identical .site/.zone delegates to the app's extended
+    // client at runtime — the generic type-argument mismatch between a raw
+    // PrismaClient and lib/prisma.ts's extended Db type is a type-level
+    // artifact only, the same recurring "extended client" gap this sprint
+    // hit elsewhere (lib/sites/associate.ts's LocationCacheDb).
+    try {
+      await findLocation(countingClient as unknown as Pick<import("@/lib/prisma").Db, "site" | "zone">, {
+        lat: 87,
+        lon: 87,
+        kind: "takeoff",
+        viewerId: null,
+      });
+    } finally {
+      await countingClient.$disconnect();
+    }
+
+    expect(siteBoundaryQueries).toBe(1);
+    expect(siteBoundaryQueryAlsoHasCircleClause).toBe(true);
+    expect(zoneBoundaryQueries).toBe(1);
+    expect(zoneBoundaryQueryAlsoHasCircleClause).toBe(true);
   });
 });
