@@ -188,3 +188,25 @@ Completed ideas (see git history / PRs for detail):
   columns. *Now that SPRINT-006 shipped custom boundaries, a pilot who draws the right shape may
   need this less — but one who's drawn a boundary and still hits a mis-match will want the manual
   override more, not less (see SPRINT-006.md's "genuinely still open" list).*
+
+## Community-Owned Public Sites & Zones
+- **Area:** Sites & zones / ownership model
+- **Description:** Sites and zones that are public should be "community property" rather than
+  owned by a single user. There should be a "contributors" roster of users who have contributed to
+  the site, and an audit history of who did what — to hold folks accountable for screwing things
+  up. Other users should also be able to "upvote" the current site to add "weight" to the
+  legitimacy of that site. Later on, additional metadata could be added to sites and zones.
+- **Priority:** Medium
+- **Notes:** A substantial departure from the current model, not just an add-on: every `Site`/
+  `Zone` row has a single `ownerId`, and SPRINT-005's decision 4 explicitly gives a site's owner
+  rename/unpublish/delete power over zones *other* pilots contributed under it — a "community
+  property" model would need to revisit that decision, not just layer on top of it. A
+  `boundaryUpdatedById` attribution column (SPRINT-006) is the closest existing precedent for
+  "who touched this last," but a real audit history is a different shape (an append-only log, not
+  a single last-writer column) and would need its own table. "Contributors roster" and "upvote"
+  both need new join tables (site/zone × user) with their own abuse/spam considerations (can
+  someone upvote their own site repeatedly? does a contributor need to have actually flown
+  there?) — probably only enforceable for `visibility: "public"` rows, since a private site is
+  still meaningfully one person's own record. Likely touches `lib/sites/associate.ts` (the
+  ownership/edit-control checks), `lib/sites/repo.ts`, and `scripts/admin-sites.ts` (which today
+  assumes a single owner for its force-merge/boundary-preservation guards).

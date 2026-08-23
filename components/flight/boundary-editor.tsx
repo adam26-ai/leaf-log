@@ -41,25 +41,39 @@ function ringGeoJson(coords: LngLat[]) {
   };
 }
 
-/** One midpoint handle per edge of the ring — the edge from vertex `i` to
- *  vertex `(i + 1) % n`, matching insertVertexAt's `afterIndex` contract
+/** Every edge of the ring as `{edgeIndex, a, b}` — the edge from vertex `i`
+ *  to vertex `(i + 1) % n`, matching insertVertexAt's `afterIndex` contract
  *  exactly. With exactly 2 vertices there's only one physical segment
  *  (traversed once each direction in the closed-ring rendering), so the
- *  second "edge" is skipped to avoid two overlapping handles. */
-function computeMidpoints(
-  vertices: readonly [number, number][],
-): Array<{ edgeIndex: number; lon: number; lat: number }> {
+ *  second "edge" is skipped to avoid detecting it twice. */
+function edgesOf(vertices: readonly LngLat[]): Array<{ edgeIndex: number; a: LngLat; b: LngLat }> {
   const n = vertices.length;
   if (n < 2) return [];
-  const midpoints: Array<{ edgeIndex: number; lon: number; lat: number }> = [];
+  const edges: Array<{ edgeIndex: number; a: LngLat; b: LngLat }> = [];
   for (let i = 0; i < n; i++) {
     if (n === 2 && i === 1) continue;
-    const [aLon, aLat] = vertices[i];
-    const [bLon, bLat] = vertices[(i + 1) % n];
-    midpoints.push({ edgeIndex: i, lon: (aLon + bLon) / 2, lat: (aLat + bLat) / 2 });
+    edges.push({ edgeIndex: i, a: vertices[i], b: vertices[(i + 1) % n] });
   }
-  return midpoints;
+  return edges;
 }
+
+/** Perpendicular distance in screen pixels from point `p` to the segment
+ *  `a`-`b`, clamped to the segment (not the infinite line) — used to decide
+ *  which edge, if any, a click/drag landed close enough to. */
+function distanceToSegmentPx(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
+const EDGE_INSERT_THRESHOLD_PX = 14;
 
 function circleRing(lat: number, lon: number, radiusM: number, steps = 48): LngLat[] {
   const cosLat = Math.max(0.01, Math.cos((lat * Math.PI) / 180));
@@ -71,6 +85,29 @@ function circleRing(lat: number, lon: number, radiusM: number, steps = 48): LngL
     pts.push([lon + Math.sin(angle) * dLon, lat + Math.cos(angle) * dLat]);
   }
   return pts;
+}
+
+/** The smallest [lon, lat] box containing every given point — used to frame
+ *  the initial view on whatever geometry the editor already has (the
+ *  existing boundary if there is one, else the reference circle), rather
+ *  than always opening at a fixed zoom regardless of the row's actual
+ *  size. Returns null for an empty input. */
+function boundsOfPoints(points: LngLat[]): [LngLat, LngLat] | null {
+  if (points.length === 0) return null;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  for (const [lon, lat] of points) {
+    if (lon < minLon) minLon = lon;
+    if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [
+    [minLon, minLat],
+    [maxLon, maxLat],
+  ];
 }
 
 export interface BoundaryEditorContext {
@@ -121,7 +158,6 @@ export function BoundaryEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const vertexMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const midpointMarkersRef = useRef<maplibregl.Marker[]>([]);
   const initialRing: Ring | null = initialBoundary ? { coordinates: initialBoundary.geometry.coordinates[0] } : null;
   const stateRef = useRef<EditorState>(loadEditor(initialRing));
   const [, forceRender] = useState(0);
@@ -136,22 +172,33 @@ export function BoundaryEditor({
     syncDrawing();
   }
 
+  /** Push a ring straight to the draft-boundary source with no React
+   *  state update and no marker recreation — used to keep the polygon
+   *  outline tracking the cursor in real time DURING a drag (native vertex
+   *  drag, or the custom edge-insert drag below), where recreating markers
+   *  mid-gesture would tear down the very marker being dragged. */
+  function updateDraftLine(vertices: readonly LngLat[]) {
+    const map = mapRef.current;
+    if (!map) return;
+    const closed = vertices.length >= 2 ? [...vertices, vertices[0]] : vertices;
+    const src = map.getSource("draft-boundary") as maplibregl.GeoJSONSource | undefined;
+    if (src) src.setData(ringGeoJson(closed as LngLat[]));
+  }
+
   function syncDrawing() {
     const map = mapRef.current;
     if (!map) return;
     const vertices = stateRef.current.vertices;
-    const closed = vertices.length >= 2 ? [...vertices, vertices[0]] : vertices;
 
     // Markers are plain DOM overlays, independent of the map's style/source
     // state — they must sync regardless of isStyleLoaded(), which can be
     // transiently false (a real style load can take a moment, and this
-    // silently skipping the WHOLE function — vertex/midpoint markers
-    // included, not just the GeoJSON source below — left clicks appearing
-    // to do nothing while state had, in fact, updated). The draft-boundary
-    // SOURCE is the only part that's actually style-dependent, and it
+    // silently skipping the WHOLE function — vertex markers included, not
+    // just the GeoJSON source below — left clicks appearing to do nothing
+    // while state had, in fact, updated). The draft-boundary SOURCE is the
+    // only part that's actually style-dependent, and updateDraftLine
     // already guards itself via `if (src)`.
-    const src = map.getSource("draft-boundary") as maplibregl.GeoJSONSource | undefined;
-    if (src) src.setData(ringGeoJson(closed as LngLat[]));
+    updateDraftLine(vertices);
 
     for (const m of vertexMarkersRef.current) m.remove();
     vertexMarkersRef.current = vertices.map(([lon, lat], index) => {
@@ -170,6 +217,13 @@ export function BoundaryEditor({
       });
       marker.on("drag", () => {
         dragged = true;
+        // Keep the outline tracking the cursor live, not just on release —
+        // read straight off the marker (not React state) since the drag
+        // hasn't committed yet.
+        const { lng, lat: liveLat } = marker.getLngLat();
+        const live = stateRef.current.vertices.slice();
+        live[index] = [lng, liveLat];
+        updateDraftLine(live);
       });
       marker.on("dragend", () => {
         if (!dragged) return; // a click-without-movement fires dragend too in some browsers
@@ -183,47 +237,6 @@ export function BoundaryEditor({
           return; // already handled by dragend — tapping a point removes it, dragging moves it
         }
         setState(removeVertexAt(stateRef.current, index));
-      });
-      return marker;
-    });
-
-    for (const m of midpointMarkersRef.current) m.remove();
-    midpointMarkersRef.current = computeMidpoints(vertices).map(({ edgeIndex, lon, lat }) => {
-      const el = document.createElement("div");
-      el.dataset.testid = "boundary-midpoint";
-      el.dataset.edgeIndex = String(edgeIndex);
-      el.style.cssText =
-        "width:16px;height:16px;border-radius:50%;background:#ffe0ba;border:2px solid #ffb459;cursor:copy;box-sizing:border-box;opacity:0.85;";
-      // A native 'click' fires after mouseup on the same element regardless
-      // of movement, and MapLibre's draggable Marker fires dragstart/dragend
-      // even for a zero-movement press in some browsers — `dragged` is what
-      // keeps a plain click from ALSO triggering dragend's insert (a double
-      // insert at (almost) the same spot for one tap).
-      let dragged = false;
-      const marker = new maplibregl.Marker({ element: el, draggable: true }).setLngLat([lon, lat]).addTo(map);
-      // Dragging a midpoint inserts a new vertex there and lets it follow
-      // the cursor for the rest of the gesture (MapLibre's draggable
-      // Marker already tracks the pointer on its own) — the insert only
-      // commits to state on release, so the marker being dragged is never
-      // destroyed mid-gesture by a re-render.
-      marker.on("dragstart", () => {
-        dragged = false;
-      });
-      marker.on("drag", () => {
-        dragged = true;
-      });
-      marker.on("dragend", () => {
-        if (!dragged) return; // a click-without-movement fires dragend too in some browsers
-        const { lng, lat: newLat } = marker.getLngLat();
-        setState(insertVertexAt(stateRef.current, edgeIndex, lng, newLat));
-      });
-      el.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        if (dragged) {
-          dragged = false;
-          return; // already handled by dragend
-        }
-        setState(insertVertexAt(stateRef.current, edgeIndex, lon, lat));
       });
       return marker;
     });
@@ -245,6 +258,20 @@ export function BoundaryEditor({
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+
+    // The real, current zoom/center — exposed as data-* attributes so tests
+    // can compute click pixels off the ACTUAL view instead of assuming the
+    // fixed construction-time zoom/center, which fitBounds below may move.
+    function publishViewState() {
+      const el = containerRef.current;
+      if (!el) return;
+      const c = map.getCenter();
+      el.dataset.zoom = String(map.getZoom());
+      el.dataset.centerLng = String(c.lng);
+      el.dataset.centerLat = String(c.lat);
+    }
+    publishViewState();
+    map.on("moveend", publishViewState);
 
     map.on("load", () => {
       new maplibregl.Marker({ color: "#272727" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
@@ -326,17 +353,90 @@ export function BoundaryEditor({
       });
 
       syncDrawing();
+
+      // Frame the view on whatever geometry already exists — the saved
+      // boundary if there is one, else the reference circle — with padding
+      // for context, rather than always opening at a fixed zoom regardless
+      // of the row's actual size (a boundary drawn much larger than the
+      // old circle would otherwise open mostly off-screen).
+      const framingRing = initialBoundary
+        ? (initialBoundary.geometry.coordinates[0] as LngLat[])
+        : referenceRadiusM
+          ? circleRing(anchor.lat, anchor.lon, referenceRadiusM)
+          : null;
+      // No shape yet and no circle to reference (a picker-opened row with
+      // neither) — nothing to frame beyond the initial center/zoom already
+      // set at map construction.
+      if (framingRing) {
+        const bounds = boundsOfPoints([...framingRing, [anchor.lon, anchor.lat]]);
+        if (bounds) map.fitBounds(bounds, { padding: 56, duration: 0, maxZoom: 17 });
+      }
+    });
+
+    // A click/drag landing near an existing edge inserts a new vertex right
+    // there instead of appending to the end of the list — the vertex only
+    // exists once the user actually presses, so nothing is drawn on the
+    // edges until then. Handled on plain map mousedown (not a marker) so
+    // there's no permanent handle sitting on every edge.
+    let edgeInsertHandled = false;
+    map.on("mousedown", (ev) => {
+      // Pressing an EXISTING vertex must always move that vertex, never
+      // insert a new one next to it — a vertex sits exactly on its own two
+      // adjacent edges (distance 0), so without this check the proximity
+      // test below would treat grabbing a vertex as an edge press too.
+      // Checked explicitly by DOM target rather than assumed marker
+      // event-propagation behavior, so this holds regardless of it.
+      const target = ev.originalEvent.target as HTMLElement | null;
+      if (target?.closest('[data-testid="boundary-vertex"]')) return;
+
+      const edges = edgesOf(stateRef.current.vertices);
+      if (edges.length === 0) return; // fewer than 2 vertices — nothing to insert on yet
+
+      let bestDist = Infinity;
+      let bestEdgeIndex = -1;
+      for (const { edgeIndex, a, b } of edges) {
+        const d = distanceToSegmentPx(ev.point, map.project(a), map.project(b));
+        if (d < bestDist) {
+          bestDist = d;
+          bestEdgeIndex = edgeIndex;
+        }
+      }
+      if (bestEdgeIndex === -1 || bestDist > EDGE_INSERT_THRESHOLD_PX) return;
+
+      edgeInsertHandled = true;
+      ev.preventDefault();
+      map.dragPan.disable();
+      const newIndex = bestEdgeIndex + 1;
+      setState(insertVertexAt(stateRef.current, bestEdgeIndex, ev.lngLat.lng, ev.lngLat.lat));
+
+      const onMove = (moveEv: maplibregl.MapMouseEvent) => {
+        const marker = vertexMarkersRef.current[newIndex];
+        if (marker) marker.setLngLat(moveEv.lngLat);
+        const live = stateRef.current.vertices.slice();
+        live[newIndex] = [moveEv.lngLat.lng, moveEv.lngLat.lat];
+        updateDraftLine(live);
+      };
+      const onUp = (upEv: maplibregl.MapMouseEvent) => {
+        map.off("mousemove", onMove);
+        map.off("mouseup", onUp);
+        map.dragPan.enable();
+        setState(moveVertex(stateRef.current, newIndex, upEv.lngLat.lng, upEv.lngLat.lat));
+      };
+      map.on("mousemove", onMove);
+      map.on("mouseup", onUp);
     });
 
     map.on("click", (ev) => {
+      if (edgeInsertHandled) {
+        edgeInsertHandled = false;
+        return; // already handled by the mousedown-driven edge insert above
+      }
       setState(addVertex(stateRef.current, ev.lngLat.lng, ev.lngLat.lat));
     });
 
     return () => {
       for (const m of vertexMarkersRef.current) m.remove();
       vertexMarkersRef.current = [];
-      for (const m of midpointMarkersRef.current) m.remove();
-      midpointMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
     };

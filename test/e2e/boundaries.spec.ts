@@ -79,6 +79,29 @@ function metersToDegLon(m: number, atLat: number) {
   return m / (111_320 * Math.cos((atLat * Math.PI) / 180));
 }
 
+/** The editor frames its initial view on whatever geometry it already has
+ *  (fitBounds around the saved boundary or the reference circle) rather
+ *  than always opening at a fixed zoom/center — so tests must read the
+ *  REAL post-fitBounds view off the map's own data-* attributes (published
+ *  by boundary-editor.tsx on 'moveend') instead of assuming the
+ *  construction-time zoom=15/center=anchor. */
+async function readMapView(page: Page) {
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="boundary-editor-map"]') as HTMLElement | null;
+    return !!el?.dataset.zoom;
+  });
+  // fitBounds is called with duration: 0 (synchronous jump) but give layout
+  // a beat to settle before trusting the published values.
+  await page.waitForTimeout(200);
+  return page.evaluate(() => {
+    const el = document.querySelector('[data-testid="boundary-editor-map"]') as HTMLElement;
+    return {
+      zoom: Number(el.dataset.zoom),
+      center: { lng: Number(el.dataset.centerLng), lat: Number(el.dataset.centerLat) },
+    };
+  });
+}
+
 test("draw a boundary via the owner-scoped picker (no bound flight), then a flight past the old circle but inside the boundary auto-names itself", async ({
   page,
 }) => {
@@ -156,7 +179,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   const box = await mapLocator.boundingBox();
   if (!box) throw new Error("map container has no bounding box");
   const container = { width: box.width, height: box.height };
-  const zoom = 15;
+  const { zoom, center } = await readMapView(page);
 
   // A rectangle around the anchor, reaching ~400m EAST — past the zone's
   // 300m takeoff circle, and comfortably within the editor's fixed
@@ -175,7 +198,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   ];
 
   for (const [lon, lat] of corners) {
-    const px = pixelFor(lon, lat, { lng: anchorLon, lat: anchorLat }, zoom, container);
+    const px = pixelFor(lon, lat, center, zoom, container);
     await page.mouse.click(box.x + px.x, box.y + px.y);
   }
 
@@ -250,7 +273,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   const box = await mapLocator.boundingBox();
   if (!box) throw new Error("map container has no bounding box");
   const container = { width: box.width, height: box.height };
-  const zoom = 15;
+  const { zoom, center } = await readMapView(page);
 
   // A small triangle entirely EAST of the anchor — never contains (0, 0).
   const triangle: [number, number][] = [
@@ -259,7 +282,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
     [anchorLon + metersToDegLon(250, anchorLat), anchorLat + metersToDegLat(150)],
   ];
   for (const [lon, lat] of triangle) {
-    const px = pixelFor(lon, lat, { lng: anchorLon, lat: anchorLat }, zoom, container);
+    const px = pixelFor(lon, lat, center, zoom, container);
     await page.mouse.click(box.x + px.x, box.y + px.y);
   }
 
@@ -322,7 +345,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   const box = await mapLocator.boundingBox();
   if (!box) throw new Error("map container has no bounding box");
   const container = { width: box.width, height: box.height };
-  const zoom = 15;
+  const { zoom, center } = await readMapView(page);
   const square: [number, number][] = [
     [anchorLon - metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(150)],
     [anchorLon + metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(150)],
@@ -330,7 +353,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
     [anchorLon - metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(150)],
   ];
   for (const [lon, lat] of square) {
-    const px = pixelFor(lon, lat, { lng: anchorLon, lat: anchorLat }, zoom, container);
+    const px = pixelFor(lon, lat, center, zoom, container);
     await page.mouse.click(box.x + px.x, box.y + px.y);
   }
   await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
@@ -366,7 +389,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
 });
 
-test("dragging (or clicking) the midpoint of an edge inserts a new vertex and reshapes the polygon live", async ({
+test("clicking or dragging near an edge inserts a new vertex there and reshapes the polygon live", async ({
   page,
 }) => {
   const runOffset = Date.now();
@@ -416,50 +439,51 @@ test("dragging (or clicking) the midpoint of an edge inserts a new vertex and re
   const box = await mapLocator.boundingBox();
   if (!box) throw new Error("map container has no bounding box");
   const container = { width: box.width, height: box.height };
-  const zoom = 15;
-  const center = { lng: anchorLon, lat: anchorLat };
+  const { zoom, center } = await readMapView(page);
+  // The site's REAL anchor (center, since fitBounds frames a circle that's
+  // symmetric around it) can differ from the raw (anchorLat, anchorLon) fed
+  // into the synthetic IGC above by tens of metres — remoteFlightIgc's
+  // climb-out drifts longitude fix-by-fix, and takeoff detection doesn't
+  // necessarily land on the very first fix. Anchoring this test's geometry
+  // to the REAL center (not the raw constant) keeps it correct regardless
+  // of exactly which fix gets picked as "takeoff".
+  const driftLat = center.lat - anchorLat;
+  const driftLon = center.lng - anchorLon;
 
-  // A square around the anchor — four corners, four edges. Bulging a single
-  // edge straight outward along its own normal (rather than at a diagonal)
-  // keeps this test's shape unambiguously non-self-intersecting regardless
-  // of the small latitude-dependent scaling jitter introduces.
-  const nw: [number, number] = [anchorLon - metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(120)];
-  const ne: [number, number] = [anchorLon + metersToDegLon(150, anchorLat), anchorLat + metersToDegLat(120)];
-  const se: [number, number] = [anchorLon + metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(120)];
-  const sw: [number, number] = [anchorLon - metersToDegLon(150, anchorLat), anchorLat - metersToDegLat(120)];
+  // A square around the REAL anchor — four corners, four edges. Bulging a
+  // single edge straight outward along its own normal (rather than at a
+  // diagonal) keeps this test's shape unambiguously non-self-intersecting
+  // regardless of the small latitude-dependent scaling jitter introduces.
+  const nw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat + metersToDegLat(120)];
+  const ne: [number, number] = [center.lng + metersToDegLon(150, center.lat), center.lat + metersToDegLat(120)];
+  const se: [number, number] = [center.lng + metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
+  const sw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
   for (const [lon, lat] of [nw, ne, se, sw]) {
     const px = pixelFor(lon, lat, center, zoom, container);
     await page.mouse.click(box.x + px.x, box.y + px.y);
   }
   await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
 
-  // Click (no drag) the midpoint MARKER of the TOP edge (nw-ne, edge index
-  // 0 in the 4-vertex ring) — located by its own data-testid rather than
-  // computed pixel math, so this can't miss the (small) marker and fall
-  // through to the map's own click-to-append handler underneath it. Must
-  // insert a 5th vertex between nw and ne, not append one at the end.
-  const topMidpointMarker = page.locator('[data-testid="boundary-midpoint"][data-edge-index="0"]');
-  await topMidpointMarker.waitFor({ timeout: 5_000 });
-  await topMidpointMarker.click();
+  // Click (no drag, no marker to grab — nothing is drawn on an edge until
+  // this press) right on the TOP edge (nw-ne, edge index 0 in the 4-vertex
+  // ring), at its midpoint. Must insert a 5th vertex between nw and ne, not
+  // append one at the end.
+  const topMid: [number, number] = [(nw[0] + ne[0]) / 2, (nw[1] + ne[1]) / 2];
+  const topMidPx = pixelFor(topMid[0], topMid[1], center, zoom, container);
+  await page.mouse.click(box.x + topMidPx.x, box.y + topMidPx.y);
   await expect(page.getByText("5 points")).toBeVisible({ timeout: 5_000 });
 
   // After that insert the ring is [nw, newTop, ne, se, sw] — the BOTTOM
-  // edge (se-sw) is now edge index 3. Drag its midpoint marker straight
-  // south, away from the square entirely (a plain outward bulge, no
-  // diagonal) — must insert a 6th vertex and follow the drag to its
+  // edge (se-sw) is now edge index 3. Press down on its midpoint and drag
+  // straight south, away from the square entirely (a plain outward bulge,
+  // no diagonal) — must insert a 6th vertex and follow the drag to its
   // released position.
-  const bottomMidpointMarker = page.locator('[data-testid="boundary-midpoint"][data-edge-index="3"]');
-  await bottomMidpointMarker.waitFor({ timeout: 5_000 });
-  const bottomMidBox = await bottomMidpointMarker.boundingBox();
-  if (!bottomMidBox) throw new Error("bottom midpoint marker has no bounding box");
-  const dragStartX = bottomMidBox.x + bottomMidBox.width / 2;
-  const dragStartY = bottomMidBox.y + bottomMidBox.height / 2;
-
   const bottomMid: [number, number] = [(se[0] + sw[0]) / 2, (se[1] + sw[1]) / 2];
+  const bottomMidPx = pixelFor(bottomMid[0], bottomMid[1], center, zoom, container);
   const dragTarget: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(80)];
   const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
 
-  await page.mouse.move(dragStartX, dragStartY);
+  await page.mouse.move(box.x + bottomMidPx.x, box.y + bottomMidPx.y);
   await page.mouse.down();
   // Multiple intermediate steps — a single jump can register as a click
   // rather than a drag in some pointer-event implementations.
@@ -475,14 +499,111 @@ test("dragging (or clicking) the midpoint of an edge inserts a new vertex and re
   // the dragged-to tip (bottomMid - 80m) to avoid asserting exact-vertex
   // precision the drag gesture doesn't guarantee pixel-for-pixel — should
   // now match, proving the drag-inserted vertex actually reshaped what got
-  // saved, not just the on-screen point count.
+  // saved, not just the on-screen point count. Pre-compensated by the SAME
+  // drift subtracted out above, since this second synthetic flight's own
+  // detected takeoff will drift away from its raw fed-in coordinates by
+  // the same amount the first one did.
   const insideBulge: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(40)];
   await page.goto("/upload");
   await page.locator('input[type="file"]').setInputFiles({
     name: "b6mid-2.igc",
     mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, insideBulge[1], insideBulge[0], 2),
+    buffer: remoteFlightIgc(runOffset, insideBulge[1] - driftLat, insideBulge[0] - driftLon, 2),
   });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+});
+
+test("dragging an EXISTING vertex moves it — it never inserts a new one, even though a vertex sits exactly on two edges", async ({
+  page,
+}) => {
+  const runOffset = Date.now();
+  const suffix = `${runOffset}b6vtx`;
+  const email = `boundaries_e2e_vertex_${suffix}@test.local`;
+  const handle = `b6vx${suffix}`.slice(0, 18);
+  rmSync(LINK_FILE, { force: true });
+  await stubBasemapTiles(page);
+
+  const anchorLat = 25.5 + (runOffset % 5000) * 0.001;
+  const anchorLon = -173.0;
+
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(email);
+  await page.getByRole("button", { name: /send magic link/i }).click();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
+  const link = await getMagicLink();
+  await page.goto(link);
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+  await page.locator('input[name="handle"]').fill(handle);
+  await page.locator('input[name="display_name"]').fill("Boundaries Vertex E2E Pilot");
+  await page.getByRole("button", { name: /create my logbook/i }).click();
+  await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+
+  await page.goto("/upload");
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "b6vtx-1.igc",
+    mimeType: "text/plain",
+    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
+  });
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+
+  const siteName = `E2E Vertex Ridge ${suffix}`;
+  await page.locator("h1 button").click();
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
+  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+
+  await page.locator("h1 button").click();
+  await page.getByRole("button", { name: "Edit site boundary" }).click();
+  const mapLocator = page.getByTestId("boundary-editor-map");
+  await mapLocator.waitFor({ timeout: 10_000 });
+  const box = await mapLocator.boundingBox();
+  if (!box) throw new Error("map container has no bounding box");
+  const container = { width: box.width, height: box.height };
+  const { zoom, center } = await readMapView(page);
+
+  const nw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat + metersToDegLat(120)];
+  const ne: [number, number] = [center.lng + metersToDegLon(150, center.lat), center.lat + metersToDegLat(120)];
+  const se: [number, number] = [center.lng + metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
+  const sw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
+  for (const [lon, lat] of [nw, ne, se, sw]) {
+    const px = pixelFor(lon, lat, center, zoom, container);
+    await page.mouse.click(box.x + px.x, box.y + px.y);
+  }
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+
+  // Grab the NW vertex MARKER itself (not a nearby edge point) and drag it
+  // further out — the marker sits exactly at the meeting point of its two
+  // adjacent edges, which is exactly the case the mousedown-based edge
+  // detector could misfire on if it weren't excluded by DOM target.
+  const nwMarker = page.locator('[data-testid="boundary-vertex"][data-vertex-index="0"]');
+  await nwMarker.waitFor({ timeout: 5_000 });
+  const nwBox = await nwMarker.boundingBox();
+  if (!nwBox) throw new Error("nw vertex marker has no bounding box");
+  const startX = nwBox.x + nwBox.width / 2;
+  const startY = nwBox.y + nwBox.height / 2;
+
+  const dragTarget: [number, number] = [nw[0] - metersToDegLon(60, center.lat), nw[1] + metersToDegLat(60)];
+  const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 2_000 }); // still 4 mid-press, no insert yet
+  await page.mouse.move(box.x + dragEndPx.x, box.y + dragEndPx.y, { steps: 10 });
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 2_000 }); // still 4 mid-drag
+  await page.mouse.up();
+
+  // Must STILL be 4 points — the press-and-drag moved the existing vertex,
+  // it did not insert a 5th one next to it.
+  await expect(page.getByText("4 points")).toBeVisible({ timeout: 5_000 });
+
+  // And the marker must have actually followed the drag to its new spot,
+  // not stayed put — confirms this was a real move, not a silent no-op.
+  const movedBox = await nwMarker.boundingBox();
+  if (!movedBox) throw new Error("nw vertex marker lost its bounding box after drag");
+  expect(Math.hypot(movedBox.x - nwBox.x, movedBox.y - nwBox.y)).toBeGreaterThan(10);
 });

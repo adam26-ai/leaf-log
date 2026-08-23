@@ -25,7 +25,6 @@ import type { SiteChoice, ZoneChoice, SiteSuggestion, ZoneSuggestion } from "@/l
 import type { SiteVisibility } from "@/lib/sites/visibility";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
-import { formatLocationLabel } from "@/lib/sites/display";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
@@ -58,10 +57,23 @@ export function SiteNameControl({
   const [siteName, setSiteName] = useState(initialSiteName);
   const [zoneName, setZoneName] = useState(initialZoneName);
   const [open, setOpen] = useState(false);
-  const label = formatLocationLabel(siteName, zoneName) ?? "Unknown site";
+  // The zone is a detail of the site, not a co-equal heading — rendered at a
+  // fraction of the site's own font size (em-based, so it scales whether
+  // this is the big flight-header h1 or the small landing-line span) and
+  // de-emphasized in weight/color rather than matching the site's.
+  const content = siteName ? (
+    <>
+      {siteName}
+      {zoneName && (
+        <span className="text-[0.55em] font-normal text-gray-500">{` — ${zoneName}`}</span>
+      )}
+    </>
+  ) : (
+    "Unknown site"
+  );
 
   if (!isOwner) {
-    return <As className={className}>{label}</As>;
+    return <As className={className}>{content}</As>;
   }
 
   return (
@@ -76,7 +88,7 @@ export function SiteNameControl({
           )}
           title={siteName ? "Edit this site" : "Name this site"}
         >
-          {label}
+          {content}
         </button>
       </As>
       {open && (
@@ -220,6 +232,15 @@ function NameSiteDialog({
 
   function createZone() {
     if (zoneNameInput.trim().length === 0) {
+      // Nothing typed. If this flight's endpoint is already bound to a zone
+      // under the exact site being saved, "Save" with a blank name just
+      // confirms that existing spot (shown as "Current" above, needing no
+      // click of its own) rather than demanding a name for a spot that
+      // already has one.
+      if (boundInfo?.zone && siteChoice?.mode === "reuse" && siteChoice.id === boundInfo.site?.id) {
+        reuseZone(boundInfo.zone.id);
+        return;
+      }
       setError("Enter a name for this spot.");
       return;
     }
@@ -663,29 +684,43 @@ function ZoneStep({
         <div className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Nearby spots</p>
           <ul className="flex flex-col gap-2">
-            {zoneSuggestions.map((z) => (
-              <li
-                key={z.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2"
-              >
-                <div className="flex flex-col">
-                  <span className="font-condensed font-bold text-ink">{z.name}</span>
-                  <span className="text-xs text-gray-500">
-                    {formatDistance(z.distanceM)} {formatBearing(z.bearingDeg)} · {z.kind} ·{" "}
-                    {z.visibility === "public" ? "public" : "private"}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => onReuse(z.id)}
+            {zoneSuggestions.map((z) => {
+              // Already bound to this flight — it's the current choice, not
+              // just a nearby candidate, so show it as selected instead of
+              // making the user re-click "Use this spot" on the very spot
+              // that's already in effect.
+              const isCurrent = boundInfo?.zone?.id === z.id;
+              return (
+                <li
+                  key={z.id}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-md border px-3 py-2",
+                    isCurrent ? "border-amber bg-amber/10" : "border-gray-200",
+                  )}
                 >
-                  Use this spot
-                </Button>
-              </li>
-            ))}
+                  <div className="flex flex-col">
+                    <span className="font-condensed font-bold text-ink">{z.name}</span>
+                    <span className="text-xs text-gray-500">
+                      {formatDistance(z.distanceM)} {formatBearing(z.bearingDeg)} · {z.kind} ·{" "}
+                      {z.visibility === "public" ? "public" : "private"}
+                    </span>
+                  </div>
+                  {isCurrent ? (
+                    <span className="font-condensed text-sm font-bold tracking-wide text-amber">Current</span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => onReuse(z.id)}
+                    >
+                      Use this spot
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
