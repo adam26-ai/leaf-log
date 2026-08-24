@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-23",
+    title: "Sites you make public are community property now",
+    body: "A public site or spot isn't just yours anymore — it belongs to everyone who flies there. Any signed-in pilot can now fix a typo in a public name or redraw a boundary that's a little off, not just whoever created it. Every public site and spot shows who's contributed to it and a short history of what's changed, right in its info — tap its name from any flight to see it, even one that isn't yours. You can also endorse a site you trust with a one-tap upvote. Deleting or making a site private again still only works for the original creator, and locks once another pilot has pitched in — nobody can pull a place out from under the community that's built it up.",
+  },
+  {
     date: "2026-08-21",
     title: "Draw the actual shape",
     body: "A circle around one point can't capture a 3km ridge, or tell apart two launches tucked close together. Now you can trace the real outline of a site or spot instead — open its naming dialog, tap \"Edit boundary,\" and draw it right on the map. Flights land inside the shape you drew, not just a fixed radius, so a ridge-long site finally catches flights from both ends, and a tight launch stops grabbing its neighbor's. No boundary drawn yet? Everything keeps working exactly as it does today — this is entirely optional, and you can reach it for any of your own sites or spots even before a flight is named at all, from \"Edit a boundary on one of my sites\" in the naming dialog.",

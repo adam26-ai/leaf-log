@@ -2,6 +2,7 @@ import { Prisma, type Site, type Zone } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
 import { validateBoundary, boundaryColumns, type BoundaryColumns } from "./boundary";
+import { writeAuditEntry, type AuditAction } from "./audit";
 
 export type SiteEndpoint = "takeoff" | "landing";
 
@@ -214,6 +215,128 @@ async function recomputeSiteAndZoneCaches(
      WHERE f."landingZoneId" = z."id" AND s."id" = ${site.id}`;
 }
 
+// ---------------------------------------------------------------------
+// SPRINT-007: community edit-control. Rename and boundary set/clear on a
+// PUBLIC site/zone are now open to any signed-in, ONBOARDED pilot (decision
+// 1 in docs/sprints/SPRINT-007.md) — not just the owner. Publish/unpublish
+// and delete stay owner-only; delete additionally gains a
+// hasCommunityFootprint guard below. Private-row behavior is completely
+// unchanged: only the owner may touch it, exactly as SPRINT-004/005/006.
+// ---------------------------------------------------------------------
+
+interface CommunityEditDb {
+  profile: { findUnique(args: { where: { id: string }; select: { id: true } }): Promise<{ id: string } | null> };
+}
+
+/** "Onboarded" == has a Profile row (created during onboarding, distinct
+ *  from merely being an authenticated User — see lib/profile.ts's
+ *  requireProfile). Checked explicitly here rather than assumed, since the
+ *  community-edit path (unlike every existing owner-gated path) can be
+ *  reached by a caller whose id has never otherwise touched Site/Zone. */
+async function isOnboardedCaller(tx: CommunityEditDb, callerId: string): Promise<boolean> {
+  const profile = await tx.profile.findUnique({ where: { id: callerId }, select: { id: true } });
+  return profile !== null;
+}
+
+/** True once `callerId` may rename or boundary-edit this SITE: its owner
+ *  (any visibility), or — for a PUBLIC site only — any onboarded pilot. */
+async function canCommunityEditSite(
+  tx: CommunityEditDb,
+  site: { visibility: string; ownerId: string | null },
+  callerId: string,
+): Promise<boolean> {
+  if (site.ownerId === callerId) return true;
+  if (normalizeSiteVisibility(site.visibility) !== "public") return false;
+  return isOnboardedCaller(tx, callerId);
+}
+
+/** Same shape for a ZONE: its own owner, the parent site's owner
+ *  (SPRINT-005 decision 4, unchanged), or — for an EFFECTIVELY public zone
+ *  (zone AND parent site both public — the exact conjunction canSeeZone
+ *  uses) — any onboarded pilot. */
+async function canCommunityEditZone(
+  tx: CommunityEditDb,
+  zone: { visibility: string; ownerId: string | null },
+  site: { visibility: string; ownerId: string | null },
+  callerId: string,
+): Promise<boolean> {
+  if (zone.ownerId === callerId || site.ownerId === callerId) return true;
+  const zonePublic = normalizeSiteVisibility(zone.visibility) === "public";
+  const sitePublic = normalizeSiteVisibility(site.visibility) === "public";
+  if (!zonePublic || !sitePublic) return false;
+  return isOnboardedCaller(tx, callerId);
+}
+
+/**
+ * A generous, per-caller-per-day backstop on community WRITES — rename and
+ * boundary set/clear together, so a vandal alternating action types to
+ * dodge a per-type cap doesn't get double the budget. Sourced from the
+ * audit log (today's entries for this actor across those three actions),
+ * which — per decision 7 — only ever records PUBLIC-row mutations. This
+ * deliberately does NOT cap a pilot editing their own PRIVATE rows: that's
+ * not a community-abuse vector, it's the pilot's own resource, and nothing
+ * else in the app rate-limits a pilot editing their own data either.
+ */
+export const DAILY_COMMUNITY_EDIT_CAP = 20;
+
+const COMMUNITY_EDIT_CAP_ACTIONS: AuditAction[] = ["renamed", "boundary_set", "boundary_cleared"];
+
+interface CommunityEditCountDb {
+  locationAuditEntry: { count(args: { where: Prisma.LocationAuditEntryWhereInput }): Promise<number> };
+}
+
+async function communityEditsToday(
+  tx: CommunityEditCountDb,
+  callerId: string,
+  startOfDayUtc: Date,
+): Promise<number> {
+  return tx.locationAuditEntry.count({
+    where: { actorId: callerId, action: { in: COMMUNITY_EDIT_CAP_ACTIONS }, createdAt: { gte: startOfDayUtc } },
+  });
+}
+
+function dailyCommunityEditCapExceeded() {
+  return new Error("Daily community-edit limit reached. Try again tomorrow.");
+}
+
+async function enforceDailyCommunityEditCap(tx: CommunityEditCountDb, callerId: string): Promise<void> {
+  const startOfDayUtc = new Date();
+  startOfDayUtc.setUTCHours(0, 0, 0, 0);
+  const editedToday = await communityEditsToday(tx, callerId, startOfDayUtc);
+  if (editedToday >= DAILY_COMMUNITY_EDIT_CAP) throw dailyCommunityEditCapExceeded();
+}
+
+interface CommunityFootprintDb {
+  locationAuditEntry: { count(args: { where: Prisma.LocationAuditEntryWhereInput }): Promise<number> };
+}
+
+/**
+ * True once ordinary creator delete/demote must be refused because another
+ * pilot has made a REAL community edit — a LocationAuditEntry for this row
+ * with an actor other than the owner. Endorsements do NOT count (decision
+ * 3) — only actual contributions do, alongside the pre-existing
+ * referencedByOthers/siteHasOtherOwnedZone guards this is layered on top
+ * of, not a replacement for.
+ */
+async function hasCommunityFootprint(
+  tx: CommunityFootprintDb,
+  level: "site" | "zone",
+  id: string,
+  ownerId: string,
+): Promise<boolean> {
+  const count = await tx.locationAuditEntry.count({
+    where: {
+      ...(level === "site" ? { siteId: id } : { zoneId: id }),
+      actorId: { not: ownerId },
+    },
+  });
+  return count > 0;
+}
+
+function communityFootprintExists() {
+  return new Error("Other pilots have contributed to this — it can no longer be changed this way.");
+}
+
 /**
  * Promote/demote a site the caller owns. The cached name on every flight
  * referencing it (either endpoint) follows the new visibility in the same
@@ -224,6 +347,14 @@ async function recomputeSiteAndZoneCaches(
  */
 function notFoundOrNotOwned() {
   return new Error("Site not found or not owned by caller.");
+}
+
+function notFoundOrNotEditable() {
+  return new Error("Site not found, or you don't have permission to edit it.");
+}
+
+function zoneNotFoundOrNotEditable() {
+  return new Error("Zone not found, or you don't have permission to edit it.");
 }
 
 export async function setSiteVisibility(
@@ -237,25 +368,31 @@ export async function setSiteVisibility(
 
     const updated = await tx.site.update({ where: { id: siteId }, data: { visibility } });
     await recomputeSiteAndZoneCaches(tx, updated);
+    if (existing.visibility !== "public" && visibility === "public") {
+      await writeAuditEntry(tx, { siteId }, ownerId, "published", "public", {});
+    }
     return updated;
   });
 }
 
 /**
- * Rename a site the caller owns. The cache follows for every referencing
- * flight when the site is public; a private site's cache stays NULL either
- * way (it was never populated). Zone caches are UNTOUCHED — a site rename
- * changes the parent's name, not any zone's own name.
+ * Rename a site the caller may edit — its owner, or (SPRINT-007) any
+ * onboarded pilot when the site is public. The cache follows for every
+ * referencing flight when the site is public; a private site's cache stays
+ * NULL either way (it was never populated). Zone caches are UNTOUCHED — a
+ * site rename changes the parent's name, not any zone's own name.
  */
 export async function renameSite(
   siteId: string,
-  ownerId: string,
+  callerId: string,
   name: string,
   normalizedName: string,
 ): Promise<Site> {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
-    if (!existing) throw notFoundOrNotOwned();
+    const existing = await tx.site.findUnique({ where: { id: siteId } });
+    if (!existing) throw notFoundOrNotEditable();
+    if (!(await canCommunityEditSite(tx, existing, callerId))) throw notFoundOrNotEditable();
+    await enforceDailyCommunityEditCap(tx, callerId);
 
     const updated = await tx.site.update({
       where: { id: siteId },
@@ -269,6 +406,10 @@ export async function renameSite(
     await tx.flight.updateMany({
       where: { landingSiteId: siteId },
       data: { landingSiteName: cachedName },
+    });
+    await writeAuditEntry(tx, { siteId }, callerId, "renamed", normalizeSiteVisibility(updated.visibility), {
+      from: existing.name,
+      to: updated.name,
     });
     return updated;
   });
@@ -336,10 +477,12 @@ async function siteHasOtherOwnedZone(
  * the one sanctioned path.
  *
  * Always guarded: once another pilot's flight depends on this site, OR
- * another pilot owns a zone under it (referenced by a flight or not), it's
- * community property and can no longer be deleted this way. The operator
- * remedy (scripts/admin-sites.ts merge) reassigns those references first —
- * once the site is naturally unreferenced and zone-free-of-others, this
+ * another pilot owns a zone under it (referenced by a flight or not), OR
+ * (SPRINT-007) another pilot has made a real community edit to it, it's
+ * community property and can no longer be deleted this way. Endorsements
+ * alone do NOT block this (decision 3) — only actual contributions do. The
+ * operator remedy (scripts/admin-sites.ts merge) reassigns those references
+ * first — once the site is naturally unreferenced and footprint-free, this
  * same guard passes.
  */
 export async function deleteSite(siteId: string, ownerId: string): Promise<void> {
@@ -348,6 +491,7 @@ export async function deleteSite(siteId: string, ownerId: string): Promise<void>
     if (!existing) throw notFoundOrNotOwned();
     if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
     if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
+    if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
 
     await tx.$executeRaw`
       UPDATE "Flight" f SET "takeoffZoneId" = NULL, "takeoffZoneName" = NULL
@@ -374,6 +518,7 @@ export async function unpublishOwnSite(siteId: string, ownerId: string): Promise
     if (!existing) throw notFoundOrNotOwned();
     if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
     if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
+    if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
 
     const updated = await tx.site.update({ where: { id: siteId }, data: { visibility: "private" } });
     await recomputeSiteAndZoneCaches(tx, updated);
@@ -457,7 +602,8 @@ export async function setZoneVisibility(
       select: { visibility: true },
     });
     const siteIsPublic = site ? normalizeSiteVisibility(site.visibility) === "public" : false;
-    const cachedName = siteIsPublic && visibility === "public" ? updated.name : null;
+    const effectivelyPublic = siteIsPublic && visibility === "public";
+    const cachedName = effectivelyPublic ? updated.name : null;
     await tx.flight.updateMany({
       where: { takeoffZoneId: zoneId },
       data: { takeoffZoneName: cachedName },
@@ -466,36 +612,39 @@ export async function setZoneVisibility(
       where: { landingZoneId: zoneId },
       data: { landingZoneName: cachedName },
     });
+    if (normalizeSiteVisibility(existing.visibility) !== "public" && effectivelyPublic) {
+      await writeAuditEntry(tx, { zoneId }, ownerId, "published", "public", {});
+    }
     return updated;
   });
 }
 
 /**
- * Rename a zone the caller may edit — its own creator, OR the parent site's
- * owner (decision 4). The cache follows for every referencing flight only
- * when the zone is EFFECTIVELY public (itself public AND its parent site
- * currently public) — a private-either-way zone's cache stays NULL,
- * mirroring SPRINT-004's site-level rule.
+ * Rename a zone the caller may edit — its own creator, the parent site's
+ * owner (decision 4), or (SPRINT-007) any onboarded pilot when the zone is
+ * EFFECTIVELY public. The cache follows for every referencing flight only
+ * when the zone is effectively public — a private-either-way zone's cache
+ * stays NULL, mirroring SPRINT-004's site-level rule.
  */
 export async function renameZone(
   zoneId: string,
-  ownerId: string,
+  callerId: string,
   name: string,
   normalizedName: string,
 ): Promise<Zone> {
   return prisma.$transaction(async (tx) => {
-    const existing = await findZoneEditableBy(tx, zoneId, ownerId);
-    if (!existing) throw zoneNotFoundOrNotOwned();
+    const existing = await tx.zone.findUnique({ where: { id: zoneId } });
+    if (!existing) throw zoneNotFoundOrNotEditable();
+    const parentSite = await tx.site.findUnique({ where: { id: existing.siteId } });
+    if (!parentSite) throw zoneNotFoundOrNotEditable();
+    if (!(await canCommunityEditZone(tx, existing, parentSite, callerId))) throw zoneNotFoundOrNotEditable();
+    await enforceDailyCommunityEditCap(tx, callerId);
 
     const updated = await tx.zone.update({
       where: { id: zoneId },
       data: { name, normalizedName },
     });
-    const site = await tx.site.findUnique({
-      where: { id: updated.siteId },
-      select: { visibility: true },
-    });
-    const siteIsPublic = site ? normalizeSiteVisibility(site.visibility) === "public" : false;
+    const siteIsPublic = normalizeSiteVisibility(parentSite.visibility) === "public";
     const cachedName =
       siteIsPublic && normalizeSiteVisibility(updated.visibility) === "public" ? updated.name : null;
     await tx.flight.updateMany({
@@ -506,6 +655,14 @@ export async function renameZone(
       where: { landingZoneId: zoneId },
       data: { landingZoneName: cachedName },
     });
+    await writeAuditEntry(
+      tx,
+      { zoneId },
+      callerId,
+      "renamed",
+      siteIsPublic ? normalizeSiteVisibility(updated.visibility) : "private",
+      { from: existing.name, to: updated.name },
+    );
     return updated;
   });
 }
@@ -532,6 +689,7 @@ export async function deleteZone(zoneId: string, ownerId: string): Promise<void>
     const existing = await findZoneEditableBy(tx, zoneId, ownerId);
     if (!existing) throw zoneNotFoundOrNotOwned();
     if (await zoneReferencedByOthers(tx, zoneId, ownerId)) throw zoneStillReferenced();
+    if (await hasCommunityFootprint(tx, "zone", zoneId, ownerId)) throw communityFootprintExists();
 
     await tx.flight.updateMany({ where: { takeoffZoneId: zoneId }, data: { takeoffZoneName: null } });
     await tx.flight.updateMany({ where: { landingZoneId: zoneId }, data: { landingZoneName: null } });
@@ -551,6 +709,7 @@ export async function unpublishOwnZone(zoneId: string, ownerId: string): Promise
     const existing = await findZoneEditableBy(tx, zoneId, ownerId);
     if (!existing) throw zoneNotFoundOrNotOwned();
     if (await zoneReferencedByOthers(tx, zoneId, ownerId)) throw zoneStillReferenced();
+    if (await hasCommunityFootprint(tx, "zone", zoneId, ownerId)) throw communityFootprintExists();
 
     const updated = await tx.zone.update({ where: { id: zoneId }, data: { visibility: "private" } });
     await tx.flight.updateMany({ where: { takeoffZoneId: zoneId }, data: { takeoffZoneName: null } });
@@ -581,47 +740,6 @@ function boundaryInvalid(error: string) {
  */
 function boundaryUpdateData(cols: BoundaryColumns) {
   return { ...cols, boundary: cols.boundary ?? Prisma.DbNull };
-}
-
-/**
- * A generous, per-caller-per-day backstop on boundary WRITES specifically —
- * distinct from DAILY_CREATE_CAP (row creation; the abuse vector there is
- * namespace pollution). A boundary edit creates no row, so this bounds a
- * different vector: how many distinct rows one caller can reshape in a day.
- * Counted as DISTINCT rows currently attributed to this caller
- * (boundaryUpdatedById) and touched today — a deliberate proxy, not a true
- * edit-event log (which would need a new table): it undercounts repeated
- * edits to the SAME row in one day, but correctly bounds a spree across
- * many different rows, which is the more meaningful abuse shape here.
- */
-export const DAILY_BOUNDARY_EDIT_CAP = 20;
-
-interface BoundaryEditCountDb {
-  site: { count(args: { where: Prisma.SiteWhereInput }): Promise<number> };
-  zone: { count(args: { where: Prisma.ZoneWhereInput }): Promise<number> };
-}
-
-async function boundaryEditsToday(
-  tx: BoundaryEditCountDb,
-  ownerId: string,
-  startOfDayUtc: Date,
-): Promise<number> {
-  const [sites, zones] = await Promise.all([
-    tx.site.count({ where: { boundaryUpdatedById: ownerId, updatedAt: { gte: startOfDayUtc } } }),
-    tx.zone.count({ where: { boundaryUpdatedById: ownerId, updatedAt: { gte: startOfDayUtc } } }),
-  ]);
-  return sites + zones;
-}
-
-function dailyBoundaryCapExceeded() {
-  return new Error("Daily boundary-edit limit reached. Try again tomorrow.");
-}
-
-async function enforceDailyBoundaryEditCap(tx: BoundaryEditCountDb, ownerId: string): Promise<void> {
-  const startOfDayUtc = new Date();
-  startOfDayUtc.setUTCHours(0, 0, 0, 0);
-  const editedToday = await boundaryEditsToday(tx, ownerId, startOfDayUtc);
-  if (editedToday >= DAILY_BOUNDARY_EDIT_CAP) throw dailyBoundaryCapExceeded();
 }
 
 /**
@@ -672,65 +790,85 @@ async function reassociateAfterBoundarySet(
 }
 
 /**
- * Set (or replace) a site's boundary. Owner-only — no "referenced by
- * another pilot's flight" guard, unlike rename/delete: a boundary edit
- * destroys nothing (existing bindings survive by construction; the worst
- * case is a future flight matching differently, which is what a gazetteer
- * edit IS), so guarding it the same way as rename would make the feature
- * unusable at exactly the sites that need it most.
+ * Set (or replace) a site's boundary — its owner, or (SPRINT-007) any
+ * onboarded pilot when the site is public. No "referenced by another
+ * pilot's flight" guard, unlike rename/delete: a boundary edit destroys
+ * nothing (existing bindings survive by construction; the worst case is a
+ * future flight matching differently, which is what a gazetteer edit IS),
+ * so guarding it the same way as rename would make the feature unusable at
+ * exactly the sites that need it most.
  */
-export async function setSiteBoundary(siteId: string, ownerId: string, raw: unknown): Promise<Site> {
+export async function setSiteBoundary(siteId: string, callerId: string, raw: unknown): Promise<Site> {
   const updated = await prisma.$transaction(async (tx) => {
-    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
-    if (!existing) throw notFoundOrNotOwned();
+    const existing = await tx.site.findUnique({ where: { id: siteId } });
+    if (!existing) throw notFoundOrNotEditable();
+    if (!(await canCommunityEditSite(tx, existing, callerId))) throw notFoundOrNotEditable();
 
     const validated = validateBoundary(raw, "site", { lat: existing.lat, lon: existing.lon });
     if (!validated.ok) throw boundaryInvalid(validated.error);
 
-    await enforceDailyBoundaryEditCap(tx, ownerId);
+    await enforceDailyCommunityEditCap(tx, callerId);
 
     const row = await tx.site.update({
       where: { id: siteId },
-      data: boundaryUpdateData(boundaryColumns(validated.boundary, ownerId)),
+      data: boundaryUpdateData(boundaryColumns(validated.boundary, callerId)),
+    });
+    await writeAuditEntry(tx, { siteId }, callerId, "boundary_set", normalizeSiteVisibility(row.visibility), {
+      vertexCount: validated.boundary.geometry.coordinates[0].length - 1,
     });
     console.log(
-      `[sites] boundary set site=${siteId} owner=${ownerId} vertices=${validated.boundary.geometry.coordinates[0].length - 1}`,
+      `[sites] boundary set site=${siteId} caller=${callerId} vertices=${validated.boundary.geometry.coordinates[0].length - 1}`,
     );
     return row;
   });
-  await reassociateAfterBoundarySet(ownerId, "site", updated);
+  await reassociateAfterBoundarySet(callerId, "site", updated);
   return updated;
 }
 
-/** Clear a site's boundary — back to circle matching. Always succeeds for
- *  the owner; never leaves the row unmatched. */
-export async function clearSiteBoundary(siteId: string, ownerId: string): Promise<Site> {
+/** Clear a site's boundary — its owner, or (SPRINT-007) any onboarded pilot
+ *  when the site is public. Back to circle matching; always succeeds for an
+ *  editable caller, never leaves the row unmatched. */
+export async function clearSiteBoundary(siteId: string, callerId: string): Promise<Site> {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
-    if (!existing) throw notFoundOrNotOwned();
+    const existing = await tx.site.findUnique({ where: { id: siteId } });
+    if (!existing) throw notFoundOrNotEditable();
+    if (!(await canCommunityEditSite(tx, existing, callerId))) throw notFoundOrNotEditable();
+    await enforceDailyCommunityEditCap(tx, callerId);
 
-    const updated = await tx.site.update({ where: { id: siteId }, data: boundaryUpdateData(boundaryColumns(null, ownerId)) });
-    console.log(`[sites] boundary cleared site=${siteId} owner=${ownerId}`);
+    const updated = await tx.site.update({
+      where: { id: siteId },
+      data: boundaryUpdateData(boundaryColumns(null, callerId)),
+    });
+    await writeAuditEntry(tx, { siteId }, callerId, "boundary_cleared", normalizeSiteVisibility(updated.visibility), {});
+    console.log(`[sites] boundary cleared site=${siteId} caller=${callerId}`);
     return updated;
   });
 }
 
-/** Set (or replace) a zone's boundary — the zone's own owner, OR the
- *  parent site's owner (decision 4, the same scoped power SPRINT-005 gave
- *  over rename/delete). */
+/** Set (or replace) a zone's boundary — the zone's own owner, the parent
+ *  site's owner (decision 4), or (SPRINT-007) any onboarded pilot when the
+ *  zone is EFFECTIVELY public. */
 export async function setZoneBoundary(zoneId: string, callerId: string, raw: unknown): Promise<Zone> {
   const updated = await prisma.$transaction(async (tx) => {
-    const existing = await findZoneEditableBy(tx, zoneId, callerId);
-    if (!existing) throw zoneNotFoundOrNotOwned();
+    const existing = await tx.zone.findUnique({ where: { id: zoneId } });
+    if (!existing) throw zoneNotFoundOrNotEditable();
+    const parentSite = await tx.site.findUnique({ where: { id: existing.siteId } });
+    if (!parentSite) throw zoneNotFoundOrNotEditable();
+    if (!(await canCommunityEditZone(tx, existing, parentSite, callerId))) throw zoneNotFoundOrNotEditable();
 
     const validated = validateBoundary(raw, "zone", { lat: existing.lat, lon: existing.lon });
     if (!validated.ok) throw boundaryInvalid(validated.error);
 
-    await enforceDailyBoundaryEditCap(tx, callerId);
+    await enforceDailyCommunityEditCap(tx, callerId);
 
     const row = await tx.zone.update({
       where: { id: zoneId },
       data: boundaryUpdateData(boundaryColumns(validated.boundary, callerId)),
+    });
+    const effectivelyPublic =
+      normalizeSiteVisibility(parentSite.visibility) === "public" && normalizeSiteVisibility(row.visibility) === "public";
+    await writeAuditEntry(tx, { zoneId }, callerId, "boundary_set", effectivelyPublic ? "public" : "private", {
+      vertexCount: validated.boundary.geometry.coordinates[0].length - 1,
     });
     console.log(
       `[sites] boundary set zone=${zoneId} caller=${callerId} vertices=${validated.boundary.geometry.coordinates[0].length - 1}`,
@@ -741,13 +879,24 @@ export async function setZoneBoundary(zoneId: string, callerId: string, raw: unk
   return updated;
 }
 
-/** Clear a zone's boundary — the zone's own owner, OR the parent site's owner. */
+/** Clear a zone's boundary — the zone's own owner, the parent site's owner,
+ *  or (SPRINT-007) any onboarded pilot when the zone is effectively public. */
 export async function clearZoneBoundary(zoneId: string, callerId: string): Promise<Zone> {
   return prisma.$transaction(async (tx) => {
-    const existing = await findZoneEditableBy(tx, zoneId, callerId);
-    if (!existing) throw zoneNotFoundOrNotOwned();
+    const existing = await tx.zone.findUnique({ where: { id: zoneId } });
+    if (!existing) throw zoneNotFoundOrNotEditable();
+    const parentSite = await tx.site.findUnique({ where: { id: existing.siteId } });
+    if (!parentSite) throw zoneNotFoundOrNotEditable();
+    if (!(await canCommunityEditZone(tx, existing, parentSite, callerId))) throw zoneNotFoundOrNotEditable();
+    await enforceDailyCommunityEditCap(tx, callerId);
 
-    const updated = await tx.zone.update({ where: { id: zoneId }, data: boundaryUpdateData(boundaryColumns(null, callerId)) });
+    const updated = await tx.zone.update({
+      where: { id: zoneId },
+      data: boundaryUpdateData(boundaryColumns(null, callerId)),
+    });
+    const effectivelyPublic =
+      normalizeSiteVisibility(parentSite.visibility) === "public" && normalizeSiteVisibility(updated.visibility) === "public";
+    await writeAuditEntry(tx, { zoneId }, callerId, "boundary_cleared", effectivelyPublic ? "public" : "private", {});
     console.log(`[sites] boundary cleared zone=${zoneId} caller=${callerId}`);
     return updated;
   });

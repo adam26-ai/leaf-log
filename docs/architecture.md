@@ -199,6 +199,71 @@ boundary-bearing rows and asserting identical results.
   silently drop a source boundary onto a boundary-less target is refused
   unless run with `--force`, which carries the boundary across instead.
 
+### Community ownership for public sites & zones (SPRINT-007)
+
+A public `Site`/`Zone` stops being editable by only its `ownerId` — any
+signed-in, **onboarded** pilot (has a `Profile` row, not merely an
+authenticated `User`) may rename it or redraw its boundary. Private rows are
+completely unaffected: still owner-only, exactly as SPRINT-004/005/006.
+`ownerId` itself doesn't change shape or meaning — it stays as creator/
+provenance, keeps driving publish/unpublish authority, and keeps anchoring
+the delete guard.
+
+- **The append-only log, not a last-writer column.** `LocationAuditEntry`
+  (nullable `siteId?`/`zoneId?` + a raw-SQL `num_nonnulls = 1` CHECK — same
+  Prisma-v6-can't-express-this precedent as the boundary bbox CHECK) records
+  every consequential mutation: `create`, `published`, `renamed`,
+  `boundary_set`, `boundary_cleared`, `merge`. **Written only while the row
+  is public at the time of the mutation** (`lib/sites/audit.ts`'s
+  `writeAuditEntry` is a no-op for a private target) — the one rule that
+  fully closes the private→public disclosure gap: a private row's edit
+  history is never recorded, so there's nothing to leak when it's later
+  published. `boundaryUpdatedById` (SPRINT-006) is unchanged and stays
+  alongside the log as the fast last-writer lookup.
+- **The contributor roster is derived, not materialized** — a `GROUP BY
+  actorId` over the audit log (`lib/sites/contributors.ts`), always
+  consistent with the log by construction, no second write to drift out of
+  sync. A pilot whose flight was merely auto-matched to a site never
+  appears; only a deliberate edit counts.
+- **Endorsements** (`SiteEndorsement`/`ZoneEndorsement`) mirror `Kudo`'s
+  shape and toggle mechanic exactly, with two deliberate differences: no
+  self-endorsement restriction (the composite PK is what actually prevents
+  double-voting), and zone gating checks **effective** visibility (zone AND
+  parent site both public — the same conjunction `canSeeZone` uses
+  elsewhere), not the zone's own `visibility` column in isolation. Pure
+  display signal — no effect on `findLocation` ranking or matching.
+- **Edit-control** (`lib/sites/associate.ts`'s `canCommunityEditSite`/
+  `canCommunityEditZone`) gates `renameSite`/`renameZone`/
+  `setSiteBoundary`/`setZoneBoundary`/`clearSiteBoundary`/
+  `clearZoneBoundary`: the row's owner (any visibility), or — for a
+  PUBLIC/effectively-public row only — any onboarded pilot.
+  `setSiteVisibility`/`setZoneVisibility`/`deleteSite`/`deleteZone`/
+  `unpublishOwnSite`/`unpublishOwnZone` stay owner-only, unchanged.
+  `DAILY_COMMUNITY_EDIT_CAP` (20/caller/day) generalizes SPRINT-006's
+  boundary-only cap to also cover renames, now sourced directly from the
+  audit log rather than a separate counting query.
+- **`hasCommunityFootprint`** extends the existing delete/unpublish guards:
+  once another pilot has made a *real* edit (an audit entry with a
+  different actor), ordinary creator delete/demote is refused — routed to
+  operator remedy instead. A bare endorsement, with no edit behind it, does
+  **not** count — only actual contributions do.
+- **UI reachability was the sprint's own biggest gap**, caught only in
+  cross-critique during planning: `SiteNameControl` was owner-only before
+  this sprint (plain text for anyone but the flight's own owner), which
+  would have made community editing unreachable — a stranger has no flight
+  of their own bound to a site they didn't create. The label is now
+  clickable for **any** viewer (including anonymous, read-only) whenever
+  the underlying site/zone is public, opening a new
+  `LocationCommunityDialog` — separate from the existing `NameSiteDialog`,
+  which stays flight-owner-only for "which site does *my* flight point to."
+  Editing a public row's own name/boundary and binding a site to one's own
+  flight are two different actions now, not one.
+- `scripts/admin-sites.ts merge`/`zone-merge` re-point the losing row's
+  audit entries and endorsements onto the survivor (an `UPDATE`, not a
+  cascade-and-lose) before the delete, deduping any endorsement that would
+  collide with an existing composite-PK row on the target. New `audit`/
+  `zone-audit` commands print a row's full history, most recent first.
+
 ## Auth
 
 NextAuth v5 with the Prisma adapter and a custom email magic-link provider. JWT

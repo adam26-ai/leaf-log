@@ -28,20 +28,29 @@ import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
+import { LocationCommunityDialog } from "@/components/flight/location-community-dialog";
 import { cn } from "@/lib/utils";
 
 /**
  * Click-to-edit control for a flight's takeoff/landing site+zone label.
- * Owner-only interactivity; other viewers just see the resolved label (or
- * "Unknown site") as plain text — the read-path firewall
- * (lib/flights/repo.ts) is what actually decides those names, this
- * component just displays them.
+ * The flight's OWNER can bind a different site/zone to their own flight
+ * (opens NameSiteDialog, unchanged). SPRINT-007: ANY viewer — including a
+ * stranger looking at someone else's flight, including anonymous — can
+ * open a lighter, PUBLIC community dialog (contributors, history,
+ * endorsement, and — for a signed-in pilot — rename/redraw actions) for a
+ * PUBLIC site/zone, since community-edit v1 means editing a public row is
+ * no longer tied to flight ownership at all. `siteId`/`zoneId` come from
+ * the viewer-scoped flight read (lib/flights/repo.ts's resolveLocationFields
+ * already nulls them out exactly when the name is hidden), so a non-null
+ * id here is always safe to hand to the client — it's never a private row.
  */
 export function SiteNameControl({
   flightId,
   endpoint,
   initialSiteName,
   initialZoneName,
+  siteId,
+  zoneId,
   isOwner,
   className,
   as: As = "span",
@@ -50,6 +59,8 @@ export function SiteNameControl({
   endpoint: SiteEndpoint;
   initialSiteName: string | null;
   initialZoneName: string | null;
+  siteId: string | null;
+  zoneId: string | null;
   isOwner: boolean;
   className?: string;
   as?: "h1" | "span";
@@ -57,6 +68,7 @@ export function SiteNameControl({
   const [siteName, setSiteName] = useState(initialSiteName);
   const [zoneName, setZoneName] = useState(initialZoneName);
   const [open, setOpen] = useState(false);
+  const [communityOpen, setCommunityOpen] = useState(false);
   // The zone is a detail of the site, not a co-equal heading — rendered at a
   // fraction of the site's own font size (em-based, so it scales whether
   // this is the big flight-header h1 or the small landing-line span) and
@@ -73,7 +85,34 @@ export function SiteNameControl({
   );
 
   if (!isOwner) {
-    return <As className={className}>{content}</As>;
+    if (!siteId) return <As className={className}>{content}</As>;
+    return (
+      <>
+        <As>
+          <button
+            type="button"
+            onClick={() => setCommunityOpen(true)}
+            className={cn(
+              className,
+              "cursor-pointer rounded-sm text-left underline decoration-dotted decoration-2 underline-offset-4 hover:decoration-solid",
+            )}
+            title="View this public location"
+          >
+            {content}
+          </button>
+        </As>
+        {communityOpen && (
+          <LocationCommunityDialog
+            level={zoneId ? "zone" : "site"}
+            id={zoneId ?? siteId}
+            name={zoneId ? (zoneName ?? "this spot") : (siteName ?? "this site")}
+            endpoint={endpoint}
+            onClose={() => setCommunityOpen(false)}
+            onRenamed={(newName) => (zoneId ? setZoneName(newName) : setSiteName(newName))}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -103,6 +142,7 @@ export function SiteNameControl({
             setZoneName(result.zoneName);
             setOpen(false);
           }}
+          onCommunityRenamed={(newName, level) => (level === "site" ? setSiteName(newName) : setZoneName(newName))}
           onSiteUndone={() => {
             setSiteName(null);
             setZoneName(null); // a zone can't outlive its site binding
@@ -123,7 +163,19 @@ const ENDPOINT_LABEL: Record<SiteEndpoint, string> = {
   landing: "landing",
 };
 
-type Step = "site" | "zone" | "boundary-picker" | "boundary-editor";
+type Step = "site" | "zone" | "boundary-picker" | "boundary-editor" | "community";
+
+/** The row the new community dialog (contributors/history/endorse — plus
+ *  rename/redraw for a signed-in pilot) is currently open for, reached as a
+ *  step within the OWNER's own flow — mirroring BoundaryTarget's shape.
+ *  Non-owners reach LocationCommunityDialog directly from SiteNameControl
+ *  instead; an owner reaches it from here so it's available even though
+ *  clicking the label itself opens this bind-a-site flow for them. */
+interface CommunityTarget {
+  level: BoundaryLevel;
+  id: string;
+  name: string;
+}
 
 /** The row a boundary is currently being drawn/edited for — set either from
  *  the picker (decision 5: reachable with no flight bound to the row) or as
@@ -147,6 +199,7 @@ function NameSiteDialog({
   onNamed,
   onSiteUndone,
   onZoneUndone,
+  onCommunityRenamed,
 }: {
   flightId: string;
   endpoint: SiteEndpoint;
@@ -156,6 +209,10 @@ function NameSiteDialog({
   onNamed: (result: Extract<NameSiteResult, { ok: true }>) => void;
   onSiteUndone: () => void;
   onZoneUndone: () => void;
+  /** A rename made from the community dialog reached via this flow (see
+   *  CommunityTarget) — lets SiteNameControl's own h1 follow it live, the
+   *  same live-update path the non-owner LocationCommunityDialog usage has. */
+  onCommunityRenamed: (newName: string, level: BoundaryLevel) => void;
 }) {
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
   const [boundInfo, setBoundInfo] = useState<BoundLocationInfo | null>(null);
@@ -174,6 +231,7 @@ function NameSiteDialog({
 
   const [pickerRows, setPickerRows] = useState<BoundaryEditableRows | null>(null);
   const [boundaryTarget, setBoundaryTarget] = useState<BoundaryTarget | null>(null);
+  const [communityTarget, setCommunityTarget] = useState<CommunityTarget | null>(null);
   const [returnStep, setReturnStep] = useState<Step>("site");
 
   useEffect(() => {
@@ -329,7 +387,45 @@ function NameSiteDialog({
     });
   }
 
+  /** SPRINT-007: the owner's own path to the community dialog (contributors/
+   *  history/endorse) for their PUBLIC site — clicking the h1 itself always
+   *  opens this bind-a-site flow for the owner, so without this the owner
+   *  would have no way to reach the same dialog a stranger can. */
+  function openCommunityForCurrentSite() {
+    if (!boundInfo?.site) return;
+    setReturnStep(step);
+    setCommunityTarget({ level: "site", id: boundInfo.site.id, name: siteChoiceLabel ?? currentSiteName ?? "this site" });
+    setStep("community");
+  }
+
+  function openCommunityForCurrentZone() {
+    if (!boundInfo?.zone) return;
+    setReturnStep(step);
+    setCommunityTarget({ level: "zone", id: boundInfo.zone.id, name: currentZoneName ?? "this spot" });
+    setStep("community");
+  }
+
   const zoneStepDisabled = siteChoiceVisibility !== "public";
+
+  // LocationCommunityDialog supplies its OWN full overlay/box (it's also
+  // used standalone, from SiteNameControl's non-owner path) — rendering it
+  // inside this component's own overlay/box below would nest one modal
+  // inside another. Swap it in as a full replacement instead.
+  if (step === "community" && communityTarget) {
+    return (
+      <LocationCommunityDialog
+        level={communityTarget.level}
+        id={communityTarget.id}
+        name={communityTarget.name}
+        endpoint={endpoint}
+        onClose={onClose}
+        onRenamed={(newName) => {
+          setCommunityTarget((t) => (t ? { ...t, name: newName } : t));
+          onCommunityRenamed(newName, communityTarget.level);
+        }}
+      />
+    );
+  }
 
   return (
     <div
@@ -357,6 +453,7 @@ function NameSiteDialog({
             onUnpublish={unpublishSite}
             onDelete={removeSite}
             onEditBoundary={boundInfo?.site?.ownedByViewer ? openBoundaryForCurrentSite : undefined}
+            onViewCommunity={boundInfo?.site?.visibility === "public" ? openCommunityForCurrentSite : undefined}
             onOpenPicker={openBoundaryPicker}
             onClose={onClose}
           />
@@ -388,6 +485,8 @@ function NameSiteDialog({
             onDelete={removeZone}
             onEditSiteBoundary={boundInfo?.site?.ownedByViewer ? openBoundaryForCurrentSite : undefined}
             onEditZoneBoundary={boundInfo?.zone?.ownedByViewer ? openBoundaryForCurrentZone : undefined}
+            onViewSiteCommunity={boundInfo?.site?.visibility === "public" ? openCommunityForCurrentSite : undefined}
+            onViewZoneCommunity={boundInfo?.zone?.visibility === "public" ? openCommunityForCurrentZone : undefined}
             onOpenPicker={openBoundaryPicker}
             onClose={onClose}
           />
@@ -431,6 +530,7 @@ function SiteStep({
   onUnpublish,
   onDelete,
   onEditBoundary,
+  onViewCommunity,
   onOpenPicker,
   onClose,
 }: {
@@ -449,6 +549,10 @@ function SiteStep({
   onUnpublish: () => void;
   onDelete: () => void;
   onEditBoundary?: () => void;
+  /** SPRINT-007: contributors/history/endorse for this PUBLIC site — set
+   *  only when the bound site is public, since a private one has no
+   *  community info to show. */
+  onViewCommunity?: () => void;
   onOpenPicker: () => void;
   onClose: () => void;
 }) {
@@ -477,6 +581,11 @@ function SiteStep({
           {onEditBoundary && (
             <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditBoundary}>
               Edit boundary
+            </Button>
+          )}
+          {onViewCommunity && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onViewCommunity}>
+              Contributors &amp; endorsements
             </Button>
           )}
         </div>
@@ -609,6 +718,8 @@ function ZoneStep({
   onDelete,
   onEditSiteBoundary,
   onEditZoneBoundary,
+  onViewSiteCommunity,
+  onViewZoneCommunity,
   onOpenPicker,
   onClose,
 }: {
@@ -633,6 +744,11 @@ function ZoneStep({
   onDelete: () => void;
   onEditSiteBoundary?: () => void;
   onEditZoneBoundary?: () => void;
+  /** SPRINT-007: shown whenever the site/zone is PUBLIC — independent of
+   *  onedByViewer, since the flight owner may well not own the underlying
+   *  public site/zone their flight happens to be bound to. */
+  onViewSiteCommunity?: () => void;
+  onViewZoneCommunity?: () => void;
   onOpenPicker: () => void;
   onClose: () => void;
 }) {
@@ -675,6 +791,21 @@ function ZoneStep({
           {onEditSiteBoundary && (
             <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditSiteBoundary}>
               Edit site boundary
+            </Button>
+          )}
+        </div>
+      )}
+
+      {(onViewZoneCommunity || onViewSiteCommunity) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {onViewZoneCommunity && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onViewZoneCommunity}>
+              Spot contributors &amp; endorsements
+            </Button>
+          )}
+          {onViewSiteCommunity && (
+            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onViewSiteCommunity}>
+              Site contributors &amp; endorsements
             </Button>
           )}
         </div>

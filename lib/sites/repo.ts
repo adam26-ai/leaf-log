@@ -17,6 +17,7 @@ import {
 import { locationCachePatch, type SiteEndpoint, type LocationFieldPatch } from "./associate";
 import { normalizeSiteVisibility, canSeeSite, canSeeZone, type SiteVisibility } from "./visibility";
 import { validateSiteName } from "./name";
+import { writeAuditEntry } from "./audit";
 
 /**
  * App-layer privacy enforcement for sites AND zones, mirroring
@@ -472,6 +473,7 @@ export async function createOrAttachSiteFromFlight(
         },
       });
       createdSite = true;
+      await writeAuditEntry(tx, { siteId: site.id }, ownerId, "create", visibility, { name: site.name });
     }
 
     let zone: Zone | null = null;
@@ -547,6 +549,7 @@ export async function createOrAttachSiteFromFlight(
             },
           });
           createdZone = true;
+          await writeAuditEntry(tx, { zoneId: zone.id }, ownerId, "create", zoneVisibility, { name: zone.name });
         } catch (e) {
           if (!isUniqueConstraintViolation(e)) throw e;
           // The public-only partial index conflict: two pilots (or two
