@@ -108,6 +108,7 @@ export function SiteNameControl({
             name={zoneId ? (zoneName ?? "this spot") : (siteName ?? "this site")}
             endpoint={endpoint}
             onClose={() => setCommunityOpen(false)}
+            onRenamed={(newName) => (zoneId ? setZoneName(newName) : setSiteName(newName))}
           />
         )}
       </>

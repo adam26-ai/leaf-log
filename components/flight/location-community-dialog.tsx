@@ -68,13 +68,20 @@ export function LocationCommunityDialog({
   name,
   endpoint,
   onClose,
+  onRenamed,
 }: {
   level: BoundaryLevel;
   id: string;
   name: string;
   endpoint: SiteEndpoint;
   onClose: () => void;
+  /** Called with the new name right after a successful rename — lets the
+   *  PARENT (SiteNameControl's own h1/label) update live, without which a
+   *  successful rename would only show up after a full page reload even
+   *  though the roster/history already reflect it immediately. */
+  onRenamed?: (newName: string) => void;
 }) {
+  const [displayName, setDisplayName] = useState(name);
   const [info, setInfo] = useState<LocationCommunityInfo | null | undefined>(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -108,7 +115,11 @@ export function LocationCommunityDialog({
     const result = await renamePublicRow(level, id, nameInput);
     setPending(false);
     reportResult(result);
-    if (result.ok) setEditingName(false);
+    if (result.ok) {
+      setEditingName(false);
+      setDisplayName(nameInput);
+      onRenamed?.(nameInput);
+    }
   }
 
   async function handleEndorse() {
@@ -136,7 +147,7 @@ export function LocationCommunityDialog({
           className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
           onClick={(e) => e.stopPropagation()}
         >
-          <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Boundary for &ldquo;{name}&rdquo;</h2>
+          <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Boundary for &ldquo;{displayName}&rdquo;</h2>
           <BoundaryEditor
             anchor={boundaryState.anchor}
             initialBoundary={boundaryState.boundary}
@@ -164,7 +175,7 @@ export function LocationCommunityDialog({
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">{name}</h2>
+            <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">{displayName}</h2>
             <p className="text-xs text-gray-500">Public {level} — community owned</p>
           </div>
           <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:text-ink">

@@ -96,11 +96,16 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   const nameInput = bPage.locator("input[maxlength='60']");
   await nameInput.fill(newName);
   await bPage.getByRole("button", { name: "Save name" }).click();
-  await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
-  await bPage.locator("text=Close").click();
+  // The rename must be visible LIVE, with no reload — both the dialog's own
+  // header and the underlying flight's h1 (via SiteNameControl's onRenamed
+  // callback). A prior version of this dialog updated neither until reload.
+  await expect(bPage.getByRole("button", { name: "Save name" })).not.toBeVisible({ timeout: 5_000 });
+  await expect(bPage.locator("h2").getByText(newName, { exact: true })).toBeVisible({ timeout: 5_000 });
+  await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 5_000 });
+  await bPage.getByRole("button", { name: "Close", exact: true }).click();
 
-  // The rename is visible on reload — for pilot B AND for pilot A, whose
-  // own cached flight-header name follows the same live site row.
+  // Still true after a reload, and for pilot A too — whose own cached
+  // flight-header name follows the same live site row.
   await bPage.reload();
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
   await page.reload();
