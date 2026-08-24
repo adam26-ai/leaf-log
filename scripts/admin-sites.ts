@@ -26,6 +26,8 @@
  *   pnpm exec tsx scripts/admin-sites.ts list <siteId>
  *   pnpm exec tsx scripts/admin-sites.ts boundary-clear <siteId>
  *   pnpm exec tsx scripts/admin-sites.ts zone-boundary-clear <zoneId>
+ *   pnpm exec tsx scripts/admin-sites.ts audit <siteId>
+ *   pnpm exec tsx scripts/admin-sites.ts zone-audit <zoneId>
  *
  * SPRINT-006: boundary-clear/zone-boundary-clear write the five boundary
  * columns directly (mirroring this file's existing rename/force-private
@@ -35,6 +37,18 @@
  * gate. Clearing writes no Flight column at all (a boundary carries no
  * name), so this stays entirely outside the cache-writer discipline the
  * rest of this file's Flight writes live under.
+ *
+ * SPRINT-007: merge/zone-merge now carry the losing row's audit history and
+ * endorsements onto the survivor (re-pointed, not dropped) before the
+ * delete — without this, community accountability for a merged row would
+ * silently vanish, which is exactly backwards for a script whose whole
+ * purpose is repairing shared public data. boundary-clear/zone-boundary-
+ * clear write a `boundary_cleared` audit entry with a null actor (an
+ * operator has no Profile to attribute to) — distinguishable in `audit`'s
+ * output from a pilot's own clear. Written directly via `locationAuditEntry
+ * .create`, not lib/sites/audit.ts's `writeAuditEntry`, which deliberately
+ * only ever fires for a PUBLIC row's mutation — an operator remedy is worth
+ * recording regardless of the row's visibility.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -44,6 +58,56 @@ import { validateSiteName } from "@/lib/sites/name";
 import { locationCachePatch, type SiteEndpoint } from "@/lib/sites/associate";
 import { normalizeSiteVisibility } from "@/lib/sites/visibility";
 import { ringAreaM2, isValidBoundaryShape } from "@/lib/sites/geo";
+
+type CommunityTxDb = {
+  locationAuditEntry: {
+    updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown>;
+    create(args: { data: Record<string, unknown> }): Promise<unknown>;
+  };
+  siteEndorsement: {
+    findMany(args: { where: { siteId: string }; select: { profileId: true } }): Promise<Array<{ profileId: string }>>;
+    deleteMany(args: { where: Record<string, unknown> }): Promise<unknown>;
+    updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown>;
+  };
+  zoneEndorsement: {
+    findMany(args: { where: { zoneId: string }; select: { profileId: true } }): Promise<Array<{ profileId: string }>>;
+    deleteMany(args: { where: Record<string, unknown> }): Promise<unknown>;
+    updateMany(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<unknown>;
+  };
+};
+
+/** Re-points the losing site's audit entries and endorsements onto the
+ *  merge survivor. Endorsements have a composite PK (siteId, profileId), so
+ *  a pilot who endorsed BOTH sides would collide on a plain re-point — drop
+ *  the loser's duplicate first, then move the rest. Audit entries have no
+ *  such collision risk (each has its own id). */
+async function carrySiteCommunityData(tx: CommunityTxDb, fromSiteId: string, intoSiteId: string): Promise<void> {
+  await tx.locationAuditEntry.updateMany({ where: { siteId: fromSiteId }, data: { siteId: intoSiteId } });
+
+  const survivorVoters = await tx.siteEndorsement.findMany({
+    where: { siteId: intoSiteId },
+    select: { profileId: true },
+  });
+  const survivorVoterIds = survivorVoters.map((v) => v.profileId);
+  if (survivorVoterIds.length > 0) {
+    await tx.siteEndorsement.deleteMany({ where: { siteId: fromSiteId, profileId: { in: survivorVoterIds } } });
+  }
+  await tx.siteEndorsement.updateMany({ where: { siteId: fromSiteId }, data: { siteId: intoSiteId } });
+}
+
+async function carryZoneCommunityData(tx: CommunityTxDb, fromZoneId: string, intoZoneId: string): Promise<void> {
+  await tx.locationAuditEntry.updateMany({ where: { zoneId: fromZoneId }, data: { zoneId: intoZoneId } });
+
+  const survivorVoters = await tx.zoneEndorsement.findMany({
+    where: { zoneId: intoZoneId },
+    select: { profileId: true },
+  });
+  const survivorVoterIds = survivorVoters.map((v) => v.profileId);
+  if (survivorVoterIds.length > 0) {
+    await tx.zoneEndorsement.deleteMany({ where: { zoneId: fromZoneId, profileId: { in: survivorVoterIds } } });
+  }
+  await tx.zoneEndorsement.updateMany({ where: { zoneId: fromZoneId }, data: { zoneId: intoZoneId } });
+}
 
 export async function rename(siteId: string, rawName: string) {
   const validated = validateSiteName(rawName);
@@ -129,6 +193,14 @@ export async function merge(fromSiteId: string, intoSiteId: string, force = fals
     await tx.flight.updateMany({
       where: { landingSiteId: fromSiteId },
       data: locationCachePatch(into, null, "landing"),
+    });
+
+    // SPRINT-007: carry community history onto the survivor BEFORE the
+    // delete — the audit/endorsement rows must be re-pointed while
+    // fromSiteId still exists to re-point FROM.
+    await carrySiteCommunityData(tx, fromSiteId, intoSiteId);
+    await tx.locationAuditEntry.create({
+      data: { siteId: intoSiteId, actorId: null, action: "merge", detail: { fromId: fromSiteId, intoId: intoSiteId } },
     });
 
     // Now unreferenced (every flight was just reassigned above, in this same
@@ -217,6 +289,13 @@ export async function zoneMerge(fromZoneId: string, intoZoneId: string, force = 
       });
     }
 
+    // SPRINT-007: carry community history onto the survivor BEFORE the
+    // delete, same as site merge above.
+    await carryZoneCommunityData(tx, fromZoneId, intoZoneId);
+    await tx.locationAuditEntry.create({
+      data: { zoneId: intoZoneId, actorId: null, action: "merge", detail: { fromId: fromZoneId, intoId: intoZoneId } },
+    });
+
     // Now unreferenced — safe to delete directly.
     await tx.zone.delete({ where: { id: fromZoneId } });
   });
@@ -238,6 +317,11 @@ export async function boundaryClear(siteId: string) {
       boundaryUpdatedById: null,
     },
   });
+  // Operator actor is null (no Profile to attribute to) — distinguishable
+  // in `audit`'s output from a pilot's own clear via lib/sites/associate.ts.
+  await prisma.locationAuditEntry.create({
+    data: { siteId, actorId: null, action: "boundary_cleared", detail: { operator: true } },
+  });
   console.log(`cleared boundary on site ${siteId}`);
 }
 
@@ -254,7 +338,49 @@ export async function zoneBoundaryClear(zoneId: string) {
       boundaryUpdatedById: null,
     },
   });
+  await prisma.locationAuditEntry.create({
+    data: { zoneId, actorId: null, action: "boundary_cleared", detail: { operator: true } },
+  });
   console.log(`cleared boundary on zone ${zoneId}`);
+}
+
+/** Print a site's (or zone's) audit history, most recent first — the
+ *  operator-facing view onto the same LocationAuditEntry table the pilot-
+ *  facing community dialog reads from. */
+export async function audit(siteId: string) {
+  await prisma.site.findUniqueOrThrow({ where: { id: siteId } });
+  const rows = await prisma.locationAuditEntry.findMany({
+    where: { siteId },
+    orderBy: { createdAt: "desc" },
+    include: { actor: { select: { handle: true } } },
+  });
+  if (rows.length === 0) {
+    console.log(`no audit history for site ${siteId}`);
+    return;
+  }
+  for (const r of rows) {
+    console.log(
+      `${r.createdAt.toISOString()} ${r.action} by ${r.actor ? "@" + r.actor.handle : "operator/deleted pilot"} ${JSON.stringify(r.detail ?? {})}`,
+    );
+  }
+}
+
+export async function zoneAudit(zoneId: string) {
+  await prisma.zone.findUniqueOrThrow({ where: { id: zoneId } });
+  const rows = await prisma.locationAuditEntry.findMany({
+    where: { zoneId },
+    orderBy: { createdAt: "desc" },
+    include: { actor: { select: { handle: true } } },
+  });
+  if (rows.length === 0) {
+    console.log(`no audit history for zone ${zoneId}`);
+    return;
+  }
+  for (const r of rows) {
+    console.log(
+      `${r.createdAt.toISOString()} ${r.action} by ${r.actor ? "@" + r.actor.handle : "operator/deleted pilot"} ${JSON.stringify(r.detail ?? {})}`,
+    );
+  }
 }
 
 /** A short human-readable boundary summary — vertex count and area, or
@@ -328,9 +454,17 @@ async function main() {
     const [zoneId] = args;
     if (!zoneId) throw new Error("Usage: zone-boundary-clear <zoneId>");
     await zoneBoundaryClear(zoneId);
+  } else if (cmd === "audit") {
+    const [siteId] = args;
+    if (!siteId) throw new Error("Usage: audit <siteId>");
+    await audit(siteId);
+  } else if (cmd === "zone-audit") {
+    const [zoneId] = args;
+    if (!zoneId) throw new Error("Usage: zone-audit <zoneId>");
+    await zoneAudit(zoneId);
   } else {
     throw new Error(
-      `Unknown command "${cmd ?? ""}". Use: rename | force-private | merge | zone-rename | zone-force-private | zone-merge | list | boundary-clear | zone-boundary-clear`,
+      `Unknown command "${cmd ?? ""}". Use: rename | force-private | merge | zone-rename | zone-force-private | zone-merge | list | boundary-clear | zone-boundary-clear | audit | zone-audit`,
     );
   }
 }

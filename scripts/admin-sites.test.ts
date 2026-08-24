@@ -416,4 +416,97 @@ describe("admin-sites.ts — boundary commands", () => {
     expect(lines[0]).toContain("boundaryUpdatedBy=" + owner);
     expect(lines.some((l) => l.includes("circle matching"))).toBe(true); // the zone has none
   });
+
+  describe("SPRINT-007: community history survives merge, boundary-clear is attributed to the operator", () => {
+    it("merge re-points the source's audit entries and endorsements onto the survivor, and writes a `merge` entry", async () => {
+      const { merge } = await import("./admin-sites");
+      const owner = await createPilot("adminmergecommowner");
+      const editor = await createPilot("adminmergecommeditor");
+      const voter = await createPilot("adminmergecommvoter");
+      const bothSidesVoter = await createPilot("adminmergecommbothvoter");
+      const from = await createSite({ lat: 45.8, lon: 45.8, visibility: "public", ownerId: owner });
+      const into = await createSite({ lat: 45.81, lon: 45.81, visibility: "public", ownerId: owner });
+
+      const associate = await import("@/lib/sites/associate");
+      await associate.renameSite(from.id, editor, "Renamed before merge", "renamed before merge");
+      await prisma.siteEndorsement.create({ data: { siteId: from.id, profileId: voter } });
+      // This pilot endorsed BOTH sides — re-pointing must not collide on the
+      // composite PK (siteId, profileId).
+      await prisma.siteEndorsement.create({ data: { siteId: from.id, profileId: bothSidesVoter } });
+      await prisma.siteEndorsement.create({ data: { siteId: into.id, profileId: bothSidesVoter } });
+
+      await merge(from.id, into.id);
+      siteIds.splice(siteIds.indexOf(from.id), 1); // deleted by the merge
+
+      const auditRows = await prisma.locationAuditEntry.findMany({ where: { siteId: into.id } });
+      expect(auditRows.some((r) => r.action === "renamed" && r.actorId === editor)).toBe(true);
+      expect(auditRows.some((r) => r.action === "merge")).toBe(true);
+
+      const endorsements = await prisma.siteEndorsement.findMany({ where: { siteId: into.id } });
+      const voterIds = endorsements.map((e) => e.profileId).sort();
+      expect(voterIds).toEqual([bothSidesVoter, voter].sort());
+      // No duplicate/orphaned row for the both-sides voter — the composite
+      // PK still holds exactly one row for them on the survivor.
+      expect(endorsements.filter((e) => e.profileId === bothSidesVoter)).toHaveLength(1);
+    });
+
+    it("zone-merge re-points the source's audit entries and endorsements onto the survivor", async () => {
+      const { zoneMerge } = await import("./admin-sites");
+      const owner = await createPilot("adminzonemergecommowner");
+      const site = await createSite({ lat: 45.82, lon: 45.82, visibility: "public", ownerId: owner });
+      const from = await createZone({ siteId: site.id, lat: 45.82, lon: 45.82, visibility: "public", ownerId: owner });
+      const into = await createZone({ siteId: site.id, lat: 45.82, lon: 45.82, visibility: "public", ownerId: owner });
+
+      const associate = await import("@/lib/sites/associate");
+      const editor = await createPilot("adminzonemergecommeditor");
+      await associate.renameZone(from.id, editor, "Renamed before merge", "renamed before merge");
+
+      await zoneMerge(from.id, into.id);
+      zoneIds.splice(zoneIds.indexOf(from.id), 1);
+
+      const auditRows = await prisma.locationAuditEntry.findMany({ where: { zoneId: into.id } });
+      expect(auditRows.some((r) => r.action === "renamed" && r.actorId === editor)).toBe(true);
+      expect(auditRows.some((r) => r.action === "merge")).toBe(true);
+    });
+
+    it("boundary-clear writes an operator-attributed (null actor) audit entry, distinguishable from a pilot's own clear", async () => {
+      const { boundaryClear } = await import("./admin-sites");
+      const owner = await createPilot("adminbcaudit");
+      const site = await createSite({ lat: 45.83, lon: 45.83, visibility: "public", ownerId: owner, boundaryHalfSizeM: 100 });
+
+      await boundaryClear(site.id);
+
+      const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id, action: "boundary_cleared" } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].actorId).toBeNull();
+    });
+
+    it("audit/zone-audit print history most-recent-first", async () => {
+      const { audit, zoneAudit } = await import("./admin-sites");
+      const owner = await createPilot("adminauditcmd");
+      const editor = await createPilot("adminauditcmdeditor");
+      const site = await createSite({ lat: 45.84, lon: 45.84, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: 45.84, lon: 45.84, visibility: "public", ownerId: owner });
+
+      const associate = await import("@/lib/sites/associate");
+      await associate.renameSite(site.id, editor, "Renamed site", "renamed site");
+      await associate.renameZone(zone.id, editor, "Renamed zone", "renamed zone");
+
+      const siteLines: string[] = [];
+      const zoneLines: string[] = [];
+      const originalLog = console.log;
+      try {
+        console.log = (msg: string) => siteLines.push(msg);
+        await audit(site.id);
+        console.log = (msg: string) => zoneLines.push(msg);
+        await zoneAudit(zone.id);
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(siteLines[0]).toContain("renamed");
+      expect(siteLines[0]).toContain(`@${(await prisma.profile.findUniqueOrThrow({ where: { id: editor } })).handle}`);
+      expect(zoneLines[0]).toContain("renamed");
+    });
+  });
 });
