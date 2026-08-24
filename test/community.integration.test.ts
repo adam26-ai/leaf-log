@@ -353,6 +353,21 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
       );
     });
 
+    it("a failed mutation (invalid boundary, or unauthorized rename) writes NO audit entry", async () => {
+      const owner = await createPilot("fail1");
+      const stranger = await createPilot("fail2");
+      const publicSite = await createSite({ lat: 46.1, lon: 46.1, visibility: "public", ownerId: owner });
+      const privateSite = await createSite({ lat: 46.11, lon: 46.11, visibility: "private", ownerId: owner });
+
+      await expect(
+        associate.setSiteBoundary(publicSite.id, owner, { type: "Polygon", coordinates: [[[0, 0], [1, 1]]] }),
+      ).rejects.toThrow(/invalid boundary/i);
+      await expect(associate.renameSite(privateSite.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+
+      expect(await prisma.locationAuditEntry.findMany({ where: { siteId: publicSite.id } })).toHaveLength(0);
+      expect(await prisma.locationAuditEntry.findMany({ where: { siteId: privateSite.id } })).toHaveLength(0);
+    });
+
     it("publishing a private site writes exactly one `published` audit entry with no reference to the prior name", async () => {
       const owner = await createPilot("pub1");
       const site = await createSite({ lat: -154.4, lon: -154.4, visibility: "private", ownerId: owner });

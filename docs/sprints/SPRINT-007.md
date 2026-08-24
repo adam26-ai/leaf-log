@@ -569,12 +569,18 @@ passes all five gates independently.
   The existing `NameSiteDialog` (bind-to-this-flight) is untouched in
   behavior, just no longer the only reachable dialog.
 - `app/flights/[id]/community-action.ts` (new server actions):
-  `renamePublicLocation`, `setPublicLocationBoundary` (reusing the existing
-  boundary editor UI from SPRINT-006 where possible), `toggleEndorsement`,
-  `getCommunityInfo` — each re-authorizes server-side regardless of what
-  the client believes.
-- `components/flight/flight-header.tsx`: compact endorsement badge next to
-  a public site/zone label. Not added to logbook/feed rows.
+  `renamePublicRow`, `toggleEndorsement`, `getCommunityInfoForRow` — each
+  re-authorizes server-side regardless of what the client believes. Boundary
+  set/clear reuse the existing `saveBoundaryForOwnedRow`/
+  `clearBoundaryForOwnedRow` from SPRINT-006 verbatim, since PR2 already
+  made those accept any onboarded pilot on a public row — nothing
+  boundary-specific was left to re-derive.
+- **Implemented smaller than originally sketched here:** no separate
+  endorsement-count badge was added to `flight-header.tsx` — the count is
+  visible inside the community dialog itself, which satisfies the DoD's
+  actual checklist item (reachability + visible count), and keeps the
+  header exactly as uncluttered as before this sprint. Revisit only if real
+  usage shows the count needs to be visible without opening the dialog.
 - E2E: a second pilot opens a flight that ISN'T theirs, renames the public
   site shown on it, and the change is visible on the original flight too;
   a third pilot endorses it and the count updates; the same flow attempted
@@ -653,69 +659,69 @@ confuse the two).
 
 ## Definition of Done
 
-- [ ] `LocationAuditEntry`, `SiteEndorsement`, `ZoneEndorsement` exist per
+- [x] `LocationAuditEntry`, `SiteEndorsement`, `ZoneEndorsement` exist per
       the schema above; the target-discriminator and action-enum CHECKs are
       enforced at the DB level, not just in application code.
-- [ ] Backfill seeds a `create` contributor entry for every existing public
+- [x] Backfill seeds a `create` contributor entry for every existing public
       site/zone's `ownerId`, and an additional `boundary_set` entry for a
       differing `boundaryUpdatedById`; re-running it is a no-op.
-- [ ] Any signed-in, onboarded pilot can rename or set/clear the boundary of
+- [x] Any signed-in, onboarded pilot can rename or set/clear the boundary of
       a public `Site`/effectively-public `Zone` — verified by a non-owner
       integration test, not just a code-read.
-- [ ] The exact same actions are refused for a private row, and for a
+- [x] The exact same actions are refused for a private row, and for a
       public zone under a private site (conjunction holds).
-- [ ] `setSiteVisibility`/`unpublishOwnSite`/`setZoneVisibility`/
+- [x] `setSiteVisibility`/`unpublishOwnSite`/`setZoneVisibility`/
       `unpublishOwnZone` remain owner-only — unchanged.
-- [ ] A private-row mutation writes **zero** `LocationAuditEntry` rows.
+- [x] A private-row mutation writes **zero** `LocationAuditEntry` rows.
       Publishing writes exactly one `published` entry with no reference to
       the prior private name.
-- [ ] Every public create/rename/boundary-set/boundary-clear writes exactly
+- [x] Every public create/rename/boundary-set/boundary-clear writes exactly
       one audit entry, attributed to the actual caller, inside the same
       transaction as the mutation — verified by a test that a failed
       validation/authorization writes neither the mutation nor the audit
       row.
-- [ ] The contributor roster (`DISTINCT actorId` over the audit log) lists
+- [x] The contributor roster (`DISTINCT actorId` over the audit log) lists
       every pilot who has made a deliberate public edit, ordered by first
       contribution; a pilot whose flight was merely auto-matched there does
       NOT appear.
-- [ ] `DAILY_COMMUNITY_EDIT_CAP` (20/caller/day) blocks a 21st rename-or-
+- [x] `DAILY_COMMUNITY_EDIT_CAP` (20/caller/day) blocks a 21st rename-or-
       boundary edit regardless of the mix between the two action types.
-- [ ] `toggleSiteEndorsement`/`toggleZoneEndorsement` toggle exactly like
+- [x] `toggleSiteEndorsement`/`toggleZoneEndorsement` toggle exactly like
       `toggleKudo` (create/delete/P2002-race-converge); one vote per pilot
       per row, enforced by the composite PK; self-endorsement allowed with
       no special-casing.
-- [ ] Endorsing a private row, or a public zone under a private site, is
+- [x] Endorsing a private row, or a public zone under a private site, is
       refused (fails closed on the same conjunction `canSeeZone` uses).
-- [ ] `hasCommunityFootprint` blocks creator delete/demote once another
+- [x] `hasCommunityFootprint` blocks creator delete/demote once another
       pilot has made a real edit; an endorsement with no edit behind it
       does **not** block it (explicit regression test for decision 3).
-- [ ] A creator can still delete/demote a public row nobody else has
+- [x] A creator can still delete/demote a public row nobody else has
       touched, exactly as today.
-- [ ] `SiteNameControl`'s label is clickable for any viewer (including
+- [x] `SiteNameControl`'s label is clickable for any viewer (including
       anonymous, read-only) whenever the row is public; it remains
       byte-for-byte inert text for a non-owner viewing a private row.
-- [ ] The new community dialog is reachable from a flight that isn't the
+- [x] The new community dialog is reachable from a flight that isn't the
       viewer's own, for a public site/zone.
-- [ ] The existing bind-a-site-to-my-flight dialog is unchanged and still
+- [x] The existing bind-a-site-to-my-flight dialog is unchanged and still
       flight-owner-only.
-- [ ] `scripts/admin-sites.ts merge`/`zone-merge` re-point the losing row's
+- [x] `scripts/admin-sites.ts merge`/`zone-merge` re-point the losing row's
       audit/endorsement rows onto the survivor before deleting the source —
       verified by a test that they're queryable against the survivor's id
       afterward, not silently dropped.
-- [ ] `scripts/admin-sites.ts audit <id>` / `zone-audit <id>` print a row's
+- [x] `scripts/admin-sites.ts audit <id>` / `zone-audit <id>` print a row's
       history, most recent first.
-- [ ] No list/feed/logbook view gains an N+1 community query; every compact
+- [x] No list/feed/logbook view gains an N+1 community query; every compact
       count uses the batch helper.
-- [ ] `Flight` has no new column; `lib/sites/write-audit.test.ts` passes
+- [x] `Flight` has no new column; `lib/sites/write-audit.test.ts` passes
       unmodified.
-- [ ] E2E covers: a non-owner renames a public site reached from someone
+- [x] E2E covers: a non-owner renames a public site reached from someone
       else's flight; an endorsement toggle updates the count visible from
       both pilots' views; a creator is blocked from deleting a
       community-edited public site with a clear error.
-- [ ] All five gates green on every PR; `/whats-new` entry added;
+- [x] All five gates green on every PR; `/whats-new` entry added;
       `FEATURES.md` updated; `docs/architecture.md` documents the new
       model; a QA prompt exists under `docs/qa-prompts/`.
-- [ ] Deferred items **not** shipped: approval queues/moderation voting,
+- [x] Deferred items **not** shipped: approval queues/moderation voting,
       comments/reports/trust scores/notifications, endorsement-weighted
       ranking, new metadata fields, `/sites/<id>` pages, edit-conflict
       locking UI, a minimum-flight-count edit gate.

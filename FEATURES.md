@@ -196,17 +196,23 @@ Completed ideas (see git history / PRs for detail):
   the site, and an audit history of who did what — to hold folks accountable for screwing things
   up. Other users should also be able to "upvote" the current site to add "weight" to the
   legitimacy of that site. Later on, additional metadata could be added to sites and zones.
-- **Priority:** Medium
-- **Notes:** A substantial departure from the current model, not just an add-on: every `Site`/
-  `Zone` row has a single `ownerId`, and SPRINT-005's decision 4 explicitly gives a site's owner
-  rename/unpublish/delete power over zones *other* pilots contributed under it — a "community
-  property" model would need to revisit that decision, not just layer on top of it. A
-  `boundaryUpdatedById` attribution column (SPRINT-006) is the closest existing precedent for
-  "who touched this last," but a real audit history is a different shape (an append-only log, not
-  a single last-writer column) and would need its own table. "Contributors roster" and "upvote"
-  both need new join tables (site/zone × user) with their own abuse/spam considerations (can
-  someone upvote their own site repeatedly? does a contributor need to have actually flown
-  there?) — probably only enforceable for `visibility: "public"` rows, since a private site is
-  still meaningfully one person's own record. Likely touches `lib/sites/associate.ts` (the
-  ownership/edit-control checks), `lib/sites/repo.ts`, and `scripts/admin-sites.ts` (which today
-  assumes a single owner for its force-merge/boundary-preservation guards).
+- **Priority:** Medium — **shipped (SPRINT-007), 2026-08-23.**
+- **Notes:** Shipped as community-edit v1: any signed-in, onboarded pilot may now rename or
+  redraw the boundary of a PUBLIC `Site`/`Zone` — not just its owner. `ownerId` stays (creator/
+  provenance, still drives publish/unpublish and the delete guard); a new append-only
+  `LocationAuditEntry` table (nullable-FK + CHECK discriminator) is the accountability log,
+  written only for mutations made while the row is public so private history can never leak on a
+  later publish. The contributor roster is derived from the audit log (`DISTINCT actorId`), not a
+  separate table — no dual-write drift risk. `SiteEndorsement`/`ZoneEndorsement` mirror the
+  existing `Kudo` pattern — self-endorsement allowed, one vote per pilot per row via composite PK,
+  pure display signal (no ranking/matching effect). Destructive actions (delete, demote to
+  private) stay creator-gated and now also refuse once another pilot has made a real edit
+  (`hasCommunityFootprint`) — a bare endorsement never blocks it. A new, non-owner-reachable
+  `LocationCommunityDialog` (any viewer, including anonymous, read-only) is what makes the whole
+  feature reachable — `SiteNameControl` was owner-only before this sprint, which would have made
+  community editing dead code with no way to trigger it. `scripts/admin-sites.ts merge`/
+  `zone-merge` carry audit/endorsement rows onto the survivor rather than dropping them; new
+  `audit`/`zone-audit` operator commands. Full design/decision trail:
+  [`docs/sprints/SPRINT-007.md`](docs/sprints/SPRINT-007.md). Deferred: approval queues/
+  moderation voting, endorsement-weighted ranking, new metadata fields, edit-conflict locking UI,
+  a minimum-flight-count edit gate.
