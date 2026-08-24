@@ -80,6 +80,11 @@ model Profile {
   // boundary under lib/sites/associate.ts's findZoneEditableBy rule).
   boundaryUpdatedSites Site[]      @relation("BoundaryUpdatedSites")
   boundaryUpdatedZones Zone[]      @relation("BoundaryUpdatedZones")
+  // SPRINT-007: community ownership for PUBLIC sites/zones — an append-only
+  // audit trail plus one-vote-per-pilot endorsements. See Site/Zone below.
+  locationAuditEntries LocationAuditEntry[] @relation("LocationAuditEntries")
+  siteEndorsements     SiteEndorsement[]    @relation("SiteEndorsements")
+  zoneEndorsements     ZoneEndorsement[]    @relation("ZoneEndorsements")
   flights            Flight[]
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
@@ -317,6 +322,13 @@ model Site {
   boundaryUpdatedById String?
   boundaryUpdatedBy   Profile? @relation("BoundaryUpdatedSites", fields: [boundaryUpdatedById], references: [id], onDelete: SetNull)
 
+  // SPRINT-007: community ownership. auditEntries only ever exist for
+  // mutations made while this row was PUBLIC (see lib/sites/audit.ts) — a
+  // private row's edit history is never recorded, so there is nothing to
+  // leak on a later publish. endorsements are a pure display signal.
+  auditEntries LocationAuditEntry[] @relation("SiteAuditEntries")
+  endorsements SiteEndorsement[]    @relation("SiteEndorsements")
+
   @@index([lat, lon])
   @@index([ownerId])
   @@index([ownerId, normalizedName])
@@ -358,8 +370,61 @@ model Zone {
   boundaryUpdatedById String?
   boundaryUpdatedBy   Profile? @relation("BoundaryUpdatedZones", fields: [boundaryUpdatedById], references: [id], onDelete: SetNull)
 
+  // SPRINT-007: identical shape to Site — see the comment there.
+  auditEntries LocationAuditEntry[] @relation("ZoneAuditEntries")
+  endorsements ZoneEndorsement[]    @relation("ZoneEndorsements")
+
   @@index([lat, lon])
   @@index([siteId])
   @@index([siteId, normalizedName])
   @@index([ownerId])
+}
+
+// SPRINT-007: append-only accountability log for public Site/Zone mutations.
+// Exactly one of siteId/zoneId is non-null (enforced by a raw-SQL CHECK in
+// the migration, num_nonnulls = 1 — Prisma v6 can't express this
+// declaratively, same precedent as SPRINT-006's boundary bbox CHECK). Only
+// ever written for a mutation made while the row is PUBLIC — see
+// lib/sites/audit.ts.
+model LocationAuditEntry {
+  id        String   @id @default(cuid())
+  siteId    String?
+  site      Site?    @relation("SiteAuditEntries", fields: [siteId], references: [id], onDelete: Cascade)
+  zoneId    String?
+  zone      Zone?    @relation("ZoneAuditEntries", fields: [zoneId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     Profile? @relation("LocationAuditEntries", fields: [actorId], references: [id], onDelete: SetNull)
+  action    String   // create | published | renamed | boundary_set | boundary_cleared | merge
+  detail    Json?    // action-specific display context — never raw geometry, never a private name
+  createdAt DateTime @default(now())
+
+  @@index([siteId, createdAt])
+  @@index([zoneId, createdAt])
+  @@index([actorId])
+}
+
+// SPRINT-007: one-per-pilot-per-row endorsement ("upvote"). Self-endorsement
+// is allowed — the composite PK is the only thing preventing double-voting.
+// No denormalized count column; counts are computed with groupBy, mirroring
+// the shipped Kudo pattern (lib/social/kudos.ts).
+model SiteEndorsement {
+  siteId    String
+  site      Site     @relation("SiteEndorsements", fields: [siteId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile  @relation("SiteEndorsements", fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([siteId, profileId])
+  @@index([siteId, createdAt])
+}
+
+model ZoneEndorsement {
+  zoneId    String
+  zone      Zone     @relation("ZoneEndorsements", fields: [zoneId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile  @relation("ZoneEndorsements", fields: [profileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([zoneId, profileId])
+  @@index([zoneId, createdAt])
 }
