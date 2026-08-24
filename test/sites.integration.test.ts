@@ -1539,14 +1539,28 @@ describe("sites: read-path firewall", () => {
       expect(row.takeoffZoneName).toBeNull();
     });
 
-    it("a non-owner cannot rename or promote someone else's zone", async () => {
+    it("a non-owner cannot promote someone else's zone; renaming a PRIVATE zone also stays owner-only", async () => {
       const owner = await createPilot("zonenonowner");
       const stranger = await createPilot("zonenonownerstr");
       const site = await createSite({ lat: -122, lon: -122, visibility: "public", ownerId: owner });
       const zone = await createZone({ siteId: site.id, lat: -122, lon: -122, visibility: "public", ownerId: owner });
+      // SPRINT-007: renaming a PUBLIC zone is now open to any onboarded
+      // pilot (community edit v1) — that case is covered separately below.
+      // A PRIVATE zone is the one where a stranger must still be refused.
+      const privateZone = await createZone({ siteId: site.id, lat: -122, lon: -122, visibility: "private", ownerId: owner });
 
-      await expect(associate.renameZone(zone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+      await expect(associate.renameZone(privateZone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
       await expect(associate.setZoneVisibility(zone.id, stranger, "private")).rejects.toThrow();
+    });
+
+    it("SPRINT-007: an onboarded stranger MAY rename a PUBLIC zone — community edit v1", async () => {
+      const owner = await createPilot("zonecommrename-owner");
+      const stranger = await createPilot("zonecommrename-stranger");
+      const site = await createSite({ lat: -122.02, lon: -122.02, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -122.02, lon: -122.02, visibility: "public", ownerId: owner });
+
+      const renamed = await associate.renameZone(zone.id, stranger, "Renamed by stranger", "renamed by stranger");
+      expect(renamed.name).toBe("Renamed by stranger");
     });
   });
 
@@ -1749,14 +1763,16 @@ describe("sites: read-path firewall", () => {
       await expect(associate.deleteZone(zone.id, siteOwner)).rejects.toThrow(/depends on this zone/);
     });
 
-    it("a stranger who owns neither the zone nor its parent site still cannot edit it", async () => {
+    it("a stranger who owns neither the zone nor its parent site still cannot unpublish or delete it", async () => {
       const zoneCreator = await createPilot("neitherzonecreator");
       const siteOwner = await createPilot("neithersiteowner");
       const stranger = await createPilot("neitherstranger");
       const site = await createSite({ lat: -112.1, lon: -112.1, visibility: "public", ownerId: siteOwner });
       const zone = await createZone({ siteId: site.id, lat: -112.1, lon: -112.1, visibility: "public", ownerId: zoneCreator });
 
-      await expect(associate.renameZone(zone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
+      // SPRINT-007: renaming a PUBLIC zone is now open to any onboarded
+      // pilot (community edit v1) — covered separately. Unpublish/delete
+      // stay creator-or-site-owner-only, unaffected by this sprint.
       await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
       await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
     });
@@ -2433,9 +2449,8 @@ describe("sites: read-path firewall", () => {
       };
     }
 
-    it("setSiteBoundary: the owner can set a valid boundary; a non-owner is refused indistinguishably from not-found", async () => {
+    it("setSiteBoundary: the owner can set a valid boundary; a nonexistent site is refused", async () => {
       const owner = await createPilot("b6wpsiteowner");
-      const stranger = await createPilot("b6wpsitestranger");
       const site = await createSite({ lat: 77, lon: 77, visibility: "public", ownerId: owner });
 
       const updated = await associate.setSiteBoundary(site.id, owner, squarePolygon(77, 77, 200));
@@ -2443,12 +2458,24 @@ describe("sites: read-path firewall", () => {
       expect(updated.boundaryMinLat).not.toBeNull();
       expect(updated.boundaryUpdatedById).toBe(owner);
 
-      await expect(associate.setSiteBoundary(site.id, stranger, squarePolygon(77, 77, 200))).rejects.toThrow(
-        /not found or not owned/i,
-      );
       await expect(associate.setSiteBoundary("nonexistent-site-id", owner, squarePolygon(77, 77, 200))).rejects.toThrow(
-        /not found or not owned/i,
+        /not found/i,
       );
+    });
+
+    it("SPRINT-007: an onboarded STRANGER may set a PUBLIC site's boundary — community edit v1 — but not a PRIVATE one", async () => {
+      const owner = await createPilot("b6wpsitecomm-owner");
+      const stranger = await createPilot("b6wpsitecomm-stranger");
+      const publicSite = await createSite({ lat: 77.05, lon: 77.05, visibility: "public", ownerId: owner });
+      const privateSite = await createSite({ lat: 77.06, lon: 77.06, visibility: "private", ownerId: owner });
+
+      const byStranger = await associate.setSiteBoundary(publicSite.id, stranger, squarePolygon(77.05, 77.05, 200));
+      expect(byStranger.boundary).not.toBeNull();
+      expect(byStranger.boundaryUpdatedById).toBe(stranger); // attribution follows the actual editor, not the owner
+
+      await expect(
+        associate.setSiteBoundary(privateSite.id, stranger, squarePolygon(77.06, 77.06, 200)),
+      ).rejects.toThrow(/don't have permission to edit it/i);
     });
 
     it("setSiteBoundary rejects an invalid boundary with a named reason, and clearSiteBoundary always succeeds for the owner", async () => {
@@ -2468,7 +2495,7 @@ describe("sites: read-path firewall", () => {
       expect(cleared.boundaryUpdatedById).toBe(owner); // clearing still attributes who cleared it
     });
 
-    it("setZoneBoundary/clearZoneBoundary: the zone's own owner, and separately the parent site's owner, may edit — an unrelated pilot may not", async () => {
+    it("setZoneBoundary/clearZoneBoundary: the zone's own owner, the parent site's owner, and (SPRINT-007) any onboarded pilot on a PUBLIC zone may edit", async () => {
       const siteOwner = await createPilot("b6wpzonesiteowner");
       const zoneOwner = await createPilot("b6wpzonezoneowner");
       const stranger = await createPilot("b6wpzonestranger");
@@ -2489,12 +2516,29 @@ describe("sites: read-path firewall", () => {
       expect(bySiteOwner.boundary).not.toBeNull();
       expect(bySiteOwner.boundaryUpdatedById).toBe(siteOwner);
 
-      await expect(associate.setZoneBoundary(zone.id, stranger, squarePolygon(77.2, 77.2, 100))).rejects.toThrow(
-        /not found or not owned/i,
-      );
+      // SPRINT-007: this "stranger" is actually now a valid community
+      // editor of a PUBLIC zone — the assertion below moved to its own
+      // test using a PRIVATE zone, where a stranger is still refused.
+      const byStranger = await associate.setZoneBoundary(zone.id, stranger, squarePolygon(77.2, 77.2, 100));
+      expect(byStranger.boundaryUpdatedById).toBe(stranger);
 
       const cleared = await associate.clearZoneBoundary(zone.id, zoneOwner);
       expect(cleared.boundary).toBeNull();
+    });
+
+    it("SPRINT-007: a stranger may NOT edit a boundary under a PRIVATE site, even for an otherwise-public-looking zone", async () => {
+      const siteOwner = await createPilot("b6wpzonepriv-siteowner");
+      const zoneOwner = await createPilot("b6wpzonepriv-zoneowner");
+      const stranger = await createPilot("b6wpzonepriv-stranger");
+      const privateSite = await createSite({ lat: 77.25, lon: 77.25, visibility: "private", ownerId: siteOwner });
+      // A "public" zone under a PRIVATE site is not effectively public — the
+      // SPRINT-005 conjunction applies to community edit-control exactly as
+      // it does to everything else.
+      const zone = await createZone({ siteId: privateSite.id, lat: 77.25, lon: 77.25, visibility: "public", ownerId: zoneOwner });
+
+      await expect(
+        associate.setZoneBoundary(zone.id, stranger, squarePolygon(77.25, 77.25, 100)),
+      ).rejects.toThrow(/don't have permission to edit it/i);
     });
 
     it("a boundary edit is never refused because another pilot's flight references the row", async () => {
@@ -2603,19 +2647,19 @@ describe("sites: read-path firewall", () => {
     it("boundary writes are capped per caller per day", async () => {
       const owner = await createPilot("b6wpcap-owner");
       const sites = await Promise.all(
-        Array.from({ length: associate.DAILY_BOUNDARY_EDIT_CAP + 1 }, (_, i) =>
+        Array.from({ length: associate.DAILY_COMMUNITY_EDIT_CAP + 1 }, (_, i) =>
           createSite({ lat: 77.9 + i * 0.001, lon: 77.9 + i * 0.001, visibility: "public", ownerId: owner }),
         ),
       );
 
-      for (const site of sites.slice(0, associate.DAILY_BOUNDARY_EDIT_CAP)) {
+      for (const site of sites.slice(0, associate.DAILY_COMMUNITY_EDIT_CAP)) {
         await associate.setSiteBoundary(site.id, owner, squarePolygon(site.lat, site.lon, 50));
       }
 
-      const overCap = sites[associate.DAILY_BOUNDARY_EDIT_CAP];
+      const overCap = sites[associate.DAILY_COMMUNITY_EDIT_CAP];
       await expect(
         associate.setSiteBoundary(overCap.id, owner, squarePolygon(overCap.lat, overCap.lon, 50)),
-      ).rejects.toThrow(/daily boundary-edit limit/i);
+      ).rejects.toThrow(/daily community-edit limit/i);
     });
 
     it("suggestNearbyLocations offers a site whose boundary contains the point even when its anchor is outside the 2km suggest radius", async () => {

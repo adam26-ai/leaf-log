@@ -10,6 +10,23 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
+function squarePolygon(lat: number, lon: number, halfSizeM: number) {
+  const dLat = halfSizeM / 111_320;
+  const dLon = halfSizeM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  return {
+    type: "Polygon",
+    coordinates: [
+      [
+        [lon - dLon, lat - dLat],
+        [lon + dLon, lat - dLat],
+        [lon + dLon, lat + dLat],
+        [lon - dLon, lat + dLat],
+        [lon - dLon, lat - dLat],
+      ],
+    ],
+  };
+}
+
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for community integration tests.");
 }
@@ -21,6 +38,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
   let audit: typeof import("@/lib/sites/audit");
   let contributors: typeof import("@/lib/sites/contributors");
   let endorsements: typeof import("@/lib/sites/endorsements");
+  let associate: typeof import("@/lib/sites/associate");
   const ids: string[] = [];
   const siteIds: string[] = [];
   const zoneIds: string[] = [];
@@ -79,6 +97,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     audit = await import("@/lib/sites/audit");
     contributors = await import("@/lib/sites/contributors");
     endorsements = await import("@/lib/sites/endorsements");
+    associate = await import("@/lib/sites/associate");
   });
 
   afterAll(async () => {
@@ -265,6 +284,110 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
       const roster = await contributors.contributorsForSite(site.id);
       expect(roster).toHaveLength(0);
+    });
+  });
+
+  describe("PR2: community edit-control", () => {
+    it("requires the caller to be ONBOARDED (a real Profile), not merely a User row", async () => {
+      const owner = await createPilot("onb1");
+      const site = await createSite({ lat: -154.0, lon: -154.0, visibility: "public", ownerId: owner });
+
+      const bareUser = await prisma.user.create({ data: { email: `bare${suffix}@test.local` } });
+      ids.push(bareUser.id);
+
+      await expect(associate.renameSite(site.id, bareUser.id, "Hijacked", "hijacked")).rejects.toThrow(
+        /permission to edit it/i,
+      );
+    });
+
+    it("a non-owner's real community edit blocks the creator's own delete/unpublish — hasCommunityFootprint", async () => {
+      const owner = await createPilot("fp1");
+      const editor = await createPilot("fp2");
+      const site = await createSite({ lat: -154.1, lon: -154.1, visibility: "public", ownerId: owner });
+
+      await associate.renameSite(site.id, editor, "Edited by someone else", "edited by someone else");
+
+      await expect(associate.deleteSite(site.id, owner)).rejects.toThrow(/other pilots have contributed/i);
+      await expect(associate.unpublishOwnSite(site.id, owner)).rejects.toThrow(/other pilots have contributed/i);
+    });
+
+    it("an endorsement with NO edit behind it does NOT block the creator's delete — decision 3", async () => {
+      const owner = await createPilot("fp3");
+      const voter = await createPilot("fp4");
+      const site = await createSite({ lat: -154.2, lon: -154.2, visibility: "public", ownerId: owner });
+
+      await endorsements.toggleSiteEndorsement(site.id, voter);
+      await expect(associate.deleteSite(site.id, owner)).resolves.not.toThrow();
+    });
+
+    it("the creator can still delete/demote a public row nobody else has touched", async () => {
+      const owner = await createPilot("fp5");
+      const site = await createSite({ lat: -154.3, lon: -154.3, visibility: "public", ownerId: owner });
+      await expect(associate.unpublishOwnSite(site.id, owner)).resolves.not.toThrow();
+    });
+
+    it("the daily community-edit cap counts renames AND boundary edits together, not per-action-type", async () => {
+      // A genuinely valid lat/lon band — unlike this file's usual -15x.x
+      // convention, setSiteBoundary's real geographic-range check requires
+      // it. Disjoint from every other integration test file's 46.x usage.
+      const owner = await createPilot("cap1");
+      const editor = await createPilot("cap2");
+      const sites = await Promise.all(
+        Array.from({ length: associate.DAILY_COMMUNITY_EDIT_CAP }, (_, i) =>
+          createSite({ lat: 46.0 + i * 0.001, lon: 46.0 + i * 0.001, visibility: "public", ownerId: owner }),
+        ),
+      );
+      // Half by rename, half by boundary — a single shared counter, not two
+      // independent per-type budgets a vandal could double up on.
+      const half = Math.floor(sites.length / 2);
+      for (const site of sites.slice(0, half)) {
+        await associate.renameSite(site.id, editor, `Renamed ${site.id}`, `renamed ${site.id}`);
+      }
+      for (const site of sites.slice(half)) {
+        await associate.setSiteBoundary(site.id, editor, squarePolygon(site.lat, site.lon, 50));
+      }
+
+      const overCapSite = await createSite({ lat: 46.05, lon: 46.05, visibility: "public", ownerId: owner });
+      await expect(associate.renameSite(overCapSite.id, editor, "One too many", "one too many")).rejects.toThrow(
+        /daily community-edit limit/i,
+      );
+    });
+
+    it("publishing a private site writes exactly one `published` audit entry with no reference to the prior name", async () => {
+      const owner = await createPilot("pub1");
+      const site = await createSite({ lat: -154.4, lon: -154.4, visibility: "private", ownerId: owner });
+      await associate.setSiteVisibility(site.id, owner, "public");
+
+      const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].action).toBe("published");
+      const roster = await contributors.contributorsForSite(site.id);
+      expect(roster.map((r) => r.profileId)).toEqual([owner]);
+    });
+
+    it("an onboarded stranger renaming a public zone is attributed correctly, and the parent-site conjunction still gates it", async () => {
+      const siteOwner = await createPilot("zc1");
+      const zoneOwner = await createPilot("zc2");
+      const stranger = await createPilot("zc3");
+      const publicSite = await createSite({ lat: -154.5, lon: -154.5, visibility: "public", ownerId: siteOwner });
+      const publicZone = await createZone({ siteId: publicSite.id, lat: -154.5, lon: -154.5, visibility: "public", ownerId: zoneOwner });
+
+      const renamed = await associate.renameZone(publicZone.id, stranger, "Stranger's rename", "strangers rename");
+      expect(renamed.name).toBe("Stranger's rename");
+      const roster = await contributors.contributorsForZone(publicZone.id);
+      expect(roster.map((r) => r.profileId)).toContain(stranger);
+
+      const privateSite = await createSite({ lat: -154.6, lon: -154.6, visibility: "private", ownerId: siteOwner });
+      const zoneUnderPrivateSite = await createZone({
+        siteId: privateSite.id,
+        lat: -154.6,
+        lon: -154.6,
+        visibility: "public",
+        ownerId: zoneOwner,
+      });
+      await expect(
+        associate.renameZone(zoneUnderPrivateSite.id, stranger, "Should fail", "should fail"),
+      ).rejects.toThrow(/permission to edit it/i);
     });
   });
 });
