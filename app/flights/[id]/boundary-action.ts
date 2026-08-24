@@ -17,7 +17,7 @@ import {
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import type { Boundary } from "@/lib/sites/geo";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
-import { suggestNearbyLocations } from "@/lib/sites/repo";
+import { suggestNearbyLocations, getSiteForViewer, getZoneForViewer } from "@/lib/sites/repo";
 import { siteIdForFlightEndpoint, zoneIdForFlightEndpoint, revalidateSiteSurfaces } from "./site-action";
 
 export type BoundaryActionResult = { ok: true } | { ok: false; error: string };
@@ -171,6 +171,41 @@ export interface BoundaryEditorInitialState {
   nearby: NearbyContextItem[];
 }
 
+// suggestNearbyLocations deliberately exposes distance/bearing rather than
+// raw coordinates; re-derive an approximate position from them (same
+// small-extent approximation used throughout lib/sites) — plenty precise
+// for a faint context circle, which needs no exact fix.
+function destinationPoint(lat: number, lon: number, bearingDeg: number, distanceM: number) {
+  const bearing = (bearingDeg * Math.PI) / 180;
+  const dLat = (distanceM * Math.cos(bearing)) / 111_320;
+  const dLon = (distanceM * Math.sin(bearing)) / (111_320 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
+  return { lat: lat + dLat, lon: lon + dLon };
+}
+
+async function nearbyContext(
+  lat: number,
+  lon: number,
+  viewerId: string | null,
+  level: BoundaryLevel,
+  id: string,
+): Promise<NearbyContextItem[]> {
+  const suggestions = await suggestNearbyLocations(lat, lon, viewerId);
+  const items: NearbyContextItem[] = [];
+  for (const s of suggestions) {
+    if (!(level === "site" && s.id === id)) {
+      const pos = destinationPoint(lat, lon, s.bearingDeg, s.distanceM);
+      items.push({ ...pos, radiusM: radiusForKind("takeoff") });
+    }
+    for (const z of s.zones) {
+      if (!(level === "zone" && z.id === id)) {
+        const pos = destinationPoint(lat, lon, z.bearingDeg, z.distanceM);
+        items.push({ ...pos, radiusM: zoneRadiusForKind("takeoff") });
+      }
+    }
+  }
+  return items;
+}
+
 /**
  * The editor's initial state for a row the caller owns/edit-controls —
  * returns the anchor (always, so the editor can show it as a labelled
@@ -185,35 +220,6 @@ export async function getBoundaryForOwnedRow(
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
-  // suggestNearbyLocations deliberately exposes distance/bearing rather
-  // than raw coordinates; re-derive an approximate position from them
-  // (same small-extent approximation used throughout lib/sites) — plenty
-  // precise for a faint context circle, which needs no exact fix.
-  function destinationPoint(lat: number, lon: number, bearingDeg: number, distanceM: number) {
-    const bearing = (bearingDeg * Math.PI) / 180;
-    const dLat = (distanceM * Math.cos(bearing)) / 111_320;
-    const dLon = (distanceM * Math.sin(bearing)) / (111_320 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)));
-    return { lat: lat + dLat, lon: lon + dLon };
-  }
-
-  async function nearbyContext(lat: number, lon: number): Promise<NearbyContextItem[]> {
-    const suggestions = await suggestNearbyLocations(lat, lon, userId);
-    const items: NearbyContextItem[] = [];
-    for (const s of suggestions) {
-      if (!(level === "site" && s.id === id)) {
-        const pos = destinationPoint(lat, lon, s.bearingDeg, s.distanceM);
-        items.push({ ...pos, radiusM: radiusForKind("takeoff") });
-      }
-      for (const z of s.zones) {
-        if (!(level === "zone" && z.id === id)) {
-          const pos = destinationPoint(lat, lon, z.bearingDeg, z.distanceM);
-          items.push({ ...pos, radiusM: zoneRadiusForKind("takeoff") });
-        }
-      }
-    }
-    return items;
-  }
-
   if (level === "site") {
     const site = await prisma.site.findFirst({
       where: { id, ownerId: userId },
@@ -223,7 +229,7 @@ export async function getBoundaryForOwnedRow(
     return {
       anchor: { lat: site.lat, lon: site.lon },
       boundary: (site.boundary as Boundary | null) ?? null,
-      nearby: await nearbyContext(site.lat, site.lon),
+      nearby: await nearbyContext(site.lat, site.lon, userId, level, id),
     };
   }
 
@@ -235,6 +241,41 @@ export async function getBoundaryForOwnedRow(
   return {
     anchor: { lat: zone.lat, lon: zone.lon },
     boundary: (zone.boundary as Boundary | null) ?? null,
-    nearby: await nearbyContext(zone.lat, zone.lon),
+    nearby: await nearbyContext(zone.lat, zone.lon, userId, level, id),
+  };
+}
+
+/**
+ * SPRINT-007: the editor's initial state for the NEW community dialog —
+ * viewer-scoped (any visible PUBLIC row, not just one the caller owns),
+ * since community-edit v1 lets any onboarded pilot redraw a public
+ * boundary. Returns null for a hidden/nonexistent row, or a public zone
+ * under a private site (the effective-visibility conjunction, enforced by
+ * getZoneForViewer already). The viewer may be anonymous (null) — they'll
+ * see the same initial state, just unable to actually save (associate.ts's
+ * own gate refuses an unauthenticated/non-onboarded caller).
+ */
+export async function getBoundaryForPublicRow(
+  level: BoundaryLevel,
+  id: string,
+): Promise<BoundaryEditorInitialState | null> {
+  const userId = await getCurrentUserId();
+
+  if (level === "site") {
+    const site = await getSiteForViewer(id, userId);
+    if (!site) return null;
+    return {
+      anchor: { lat: site.lat, lon: site.lon },
+      boundary: (site.boundary as Boundary | null) ?? null,
+      nearby: await nearbyContext(site.lat, site.lon, userId, level, id),
+    };
+  }
+
+  const zone = await getZoneForViewer(id, userId);
+  if (!zone) return null;
+  return {
+    anchor: { lat: zone.lat, lon: zone.lon },
+    boundary: (zone.boundary as Boundary | null) ?? null,
+    nearby: await nearbyContext(zone.lat, zone.lon, userId, level, id),
   };
 }

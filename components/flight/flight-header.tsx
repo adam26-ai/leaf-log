@@ -18,6 +18,8 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
           endpoint="takeoff"
           initialSiteName={flight.takeoffSiteName}
           initialZoneName={flight.takeoffZoneName}
+          siteId={flight.takeoffSiteId}
+          zoneId={flight.takeoffZoneId}
           isOwner={isOwner}
           className="font-condensed text-4xl font-bold tracking-tight text-ink"
         />
@@ -39,6 +41,8 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
             endpoint="landing"
             initialSiteName={flight.landingSiteName}
             initialZoneName={flight.landingZoneName}
+            siteId={flight.landingSiteId}
+            zoneId={flight.landingZoneId}
             isOwner={isOwner}
             className="font-medium text-gray-700"
           />

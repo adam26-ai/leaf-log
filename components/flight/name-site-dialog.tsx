@@ -28,20 +28,29 @@ import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
+import { LocationCommunityDialog } from "@/components/flight/location-community-dialog";
 import { cn } from "@/lib/utils";
 
 /**
  * Click-to-edit control for a flight's takeoff/landing site+zone label.
- * Owner-only interactivity; other viewers just see the resolved label (or
- * "Unknown site") as plain text — the read-path firewall
- * (lib/flights/repo.ts) is what actually decides those names, this
- * component just displays them.
+ * The flight's OWNER can bind a different site/zone to their own flight
+ * (opens NameSiteDialog, unchanged). SPRINT-007: ANY viewer — including a
+ * stranger looking at someone else's flight, including anonymous — can
+ * open a lighter, PUBLIC community dialog (contributors, history,
+ * endorsement, and — for a signed-in pilot — rename/redraw actions) for a
+ * PUBLIC site/zone, since community-edit v1 means editing a public row is
+ * no longer tied to flight ownership at all. `siteId`/`zoneId` come from
+ * the viewer-scoped flight read (lib/flights/repo.ts's resolveLocationFields
+ * already nulls them out exactly when the name is hidden), so a non-null
+ * id here is always safe to hand to the client — it's never a private row.
  */
 export function SiteNameControl({
   flightId,
   endpoint,
   initialSiteName,
   initialZoneName,
+  siteId,
+  zoneId,
   isOwner,
   className,
   as: As = "span",
@@ -50,6 +59,8 @@ export function SiteNameControl({
   endpoint: SiteEndpoint;
   initialSiteName: string | null;
   initialZoneName: string | null;
+  siteId: string | null;
+  zoneId: string | null;
   isOwner: boolean;
   className?: string;
   as?: "h1" | "span";
@@ -57,6 +68,7 @@ export function SiteNameControl({
   const [siteName, setSiteName] = useState(initialSiteName);
   const [zoneName, setZoneName] = useState(initialZoneName);
   const [open, setOpen] = useState(false);
+  const [communityOpen, setCommunityOpen] = useState(false);
   // The zone is a detail of the site, not a co-equal heading — rendered at a
   // fraction of the site's own font size (em-based, so it scales whether
   // this is the big flight-header h1 or the small landing-line span) and
@@ -73,7 +85,33 @@ export function SiteNameControl({
   );
 
   if (!isOwner) {
-    return <As className={className}>{content}</As>;
+    if (!siteId) return <As className={className}>{content}</As>;
+    return (
+      <>
+        <As>
+          <button
+            type="button"
+            onClick={() => setCommunityOpen(true)}
+            className={cn(
+              className,
+              "cursor-pointer rounded-sm text-left underline decoration-dotted decoration-2 underline-offset-4 hover:decoration-solid",
+            )}
+            title="View this public location"
+          >
+            {content}
+          </button>
+        </As>
+        {communityOpen && (
+          <LocationCommunityDialog
+            level={zoneId ? "zone" : "site"}
+            id={zoneId ?? siteId}
+            name={zoneId ? (zoneName ?? "this spot") : (siteName ?? "this site")}
+            endpoint={endpoint}
+            onClose={() => setCommunityOpen(false)}
+          />
+        )}
+      </>
+    );
   }
 
   return (
