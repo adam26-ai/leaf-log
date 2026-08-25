@@ -6,3 +6,4 @@ sprint_id	title	status	updated_at
 005	Two-level site hierarchy: Site + Zone	completed	2026-08-21T01:07:28Z
 006	Custom boundaries for sites and zones	completed	2026-08-21T04:17:25Z
 007	Community-owned public sites and zones	completed	2026-08-23T18:50:00Z
+008	Hide zones (sites only, for now)	planned	2026-08-24T18:45:00Z
