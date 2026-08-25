@@ -12,6 +12,7 @@ import {
   type MatchKind,
 } from "./geo";
 import { normalizeSiteVisibility, canSeeZone, type SiteVisibility } from "./visibility";
+import { zonesEnabled } from "./zones-enabled";
 
 /**
  * SPRINT-006 rollback kill switch: SITE_BOUNDARY_MATCHING=off treats every
@@ -265,9 +266,11 @@ export async function findLocation(
 ): Promise<LocationMatch | null> {
   const { lat, lon, kind, viewerId } = options;
 
+  // SPRINT-008: zones hidden means no Zone query at all, not merely an
+  // empty/discarded result — see lib/sites/zones-enabled.ts.
   const [siteRows, zoneRows] = await Promise.all([
     siteCandidates(db, lat, lon, kind, viewerId),
-    zoneCandidates(db, lat, lon, kind, viewerId),
+    zonesEnabled() ? zoneCandidates(db, lat, lon, kind, viewerId) : Promise.resolve([]),
   ]);
 
   const zoneRanked = matchAll(zoneRows, lat, lon, zoneRadiusForKind(kind), "Zone")
