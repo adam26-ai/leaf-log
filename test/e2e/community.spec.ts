@@ -74,8 +74,8 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
-  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
+  // directly, no zone step to skip.
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.getByRole("button", { name: "Public" }).click();
@@ -151,16 +151,17 @@ test("SPRINT-007: the flight OWNER can also reach community info and endorse the
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
-  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
+  // directly, no zone step to skip.
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
   await page.getByRole("button", { name: "Public" }).click();
   await expect(page.getByRole("button", { name: "Public" })).toHaveAttribute("aria-pressed", "true");
 
-  // Re-open — already-bound site jumps straight to the zone step, which
-  // must offer a community entry point alongside "Edit site boundary".
+  // Re-open — already-bound site lands on the site step directly
+  // (SPRINT-008: no zone step exists), which must offer a community entry
+  // point alongside "Edit boundary".
   await page.locator("h1 button").click();
-  await page.getByRole("button", { name: "Site contributors & endorsements" }).click();
+  await page.getByRole("button", { name: "Contributors & endorsements" }).click();
   await expect(page.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
 
   await page.getByRole("button", { name: "Endorse", exact: true }).click();

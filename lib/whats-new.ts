@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-24",
+    title: "Simplifying: just sites for now",
+    body: "We added \"spots\" within a site a few sprints back — a north launch, a specific LZ — plus boundaries and community editing to go with them. It turned out to be more than most flying needs day to day, so we're stepping back to just sites for now, one name per launch or landing. Nothing you've named is gone: any spot you'd already added still keeps your flight tagged to its site, we're just not showing the extra layer right now. If it turns out pilots want it back, it's a quick flip, not a rebuild.",
+  },
+  {
     date: "2026-08-23",
     title: "Sites you make public are community property now",
     body: "A public site or spot isn't just yours anymore — it belongs to everyone who flies there. Any signed-in pilot can now fix a typo in a public name or redraw a boundary that's a little off, not just whoever created it. Every public site and spot shows who's contributed to it and a short history of what's changed, right in its info — tap its name from any flight to see it, even one that isn't yours. You can also endorse a site you trust with a one-tap upvote. Deleting or making a site private again still only works for the original creator, and locks once another pilot has pitched in — nobody can pull a place out from under the community that's built it up.",

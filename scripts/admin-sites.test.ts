@@ -152,6 +152,27 @@ describe("admin-sites.ts — zone commands", () => {
     expect(row.takeoffZoneName).toBe("Operator Renamed Zone");
   });
 
+  // SPRINT-008: this whole file never sets ZONES_ENABLED — every test above
+  // and below already runs with the pilot-facing gate at its default (off)
+  // value, so their passing is itself proof the operator commands work
+  // regardless. This test makes that fact explicit and intentional rather
+  // than incidental, per anchoring decision 6 (operator tooling is the one
+  // deliberate exemption from the gate).
+  it("zone-rename still works with the pilot-facing ZONES_ENABLED gate off — operator tooling is exempt by design", async () => {
+    const { zonesEnabled } = await import("@/lib/sites/zones-enabled");
+    expect(zonesEnabled()).toBe(false); // the production default; confirms this test proves what it claims
+
+    const { zoneRename } = await import("./admin-sites");
+    const owner = await createPilot("adminexemptowner");
+    const site = await createSite({ lat: -196, lon: -196, visibility: "public", ownerId: owner });
+    const zone = await createZone({ siteId: site.id, lat: -196, lon: -196, visibility: "public", ownerId: owner });
+
+    await zoneRename(zone.id, "Operator Renamed Despite Gate Off");
+
+    const row = await prisma.zone.findUniqueOrThrow({ where: { id: zone.id } });
+    expect(row.name).toBe("Operator Renamed Despite Gate Off");
+  });
+
   it("zone-force-private demotes regardless of references and nulls the cache", async () => {
     const { zoneForcePrivate } = await import("./admin-sites");
     const owner = await createPilot("adminforceprivowner");
