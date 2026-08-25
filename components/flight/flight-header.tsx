@@ -1,6 +1,7 @@
 import { AccentBar } from "@/components/ui/accent-bar";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
+import { zonesEnabled } from "@/lib/sites/zones-enabled";
 import type { Flight } from "@prisma/client";
 
 export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boolean }) {
@@ -8,6 +9,11 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
   const takeoff = formatLocalTime(flight.takeoffAt, offset);
   const landing = formatLocalTime(flight.landingAt, offset);
   const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
+  // SPRINT-008: a client component can't read process.env directly — the
+  // gate's value is computed here (server-side) and threaded down as a
+  // prop so NameSiteDialog's step machine can be gated too, not just the
+  // data it renders.
+  const zonesOn = zonesEnabled();
 
   return (
     <div className="flex flex-col gap-3">
@@ -21,6 +27,7 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
           siteId={flight.takeoffSiteId}
           zoneId={flight.takeoffZoneId}
           isOwner={isOwner}
+          zonesEnabled={zonesOn}
           className="font-condensed text-4xl font-bold tracking-tight text-ink"
         />
         <AccentBar width="3rem" />
@@ -44,6 +51,7 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
             siteId={flight.landingSiteId}
             zoneId={flight.landingZoneId}
             isOwner={isOwner}
+            zonesEnabled={zonesOn}
             className="font-medium text-gray-700"
           />
         </div>

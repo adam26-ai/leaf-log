@@ -52,6 +52,7 @@ export function SiteNameControl({
   siteId,
   zoneId,
   isOwner,
+  zonesEnabled,
   className,
   as: As = "span",
 }: {
@@ -62,6 +63,13 @@ export function SiteNameControl({
   siteId: string | null;
   zoneId: string | null;
   isOwner: boolean;
+  /** SPRINT-008: server-derived (a client component can't read
+   *  process.env), threaded down from FlightHeader — see
+   *  lib/sites/zones-enabled.ts. Gates the naming dialog's zone step and
+   *  zone-level community access; the data itself is already stripped by
+   *  lib/flights/repo.ts's resolveEndpoint when disabled, this closes the
+   *  path structurally too. */
+  zonesEnabled: boolean;
   className?: string;
   as?: "h1" | "span";
 }) {
@@ -103,12 +111,12 @@ export function SiteNameControl({
         </As>
         {communityOpen && (
           <LocationCommunityDialog
-            level={zoneId ? "zone" : "site"}
-            id={zoneId ?? siteId}
-            name={zoneId ? (zoneName ?? "this spot") : (siteName ?? "this site")}
+            level={zoneId && zonesEnabled ? "zone" : "site"}
+            id={zoneId && zonesEnabled ? zoneId : siteId}
+            name={zoneId && zonesEnabled ? (zoneName ?? "this spot") : (siteName ?? "this site")}
             endpoint={endpoint}
             onClose={() => setCommunityOpen(false)}
-            onRenamed={(newName) => (zoneId ? setZoneName(newName) : setSiteName(newName))}
+            onRenamed={(newName) => (zoneId && zonesEnabled ? setZoneName(newName) : setSiteName(newName))}
           />
         )}
       </>
@@ -136,6 +144,7 @@ export function SiteNameControl({
           endpoint={endpoint}
           currentSiteName={siteName}
           currentZoneName={zoneName}
+          zonesEnabled={zonesEnabled}
           onClose={() => setOpen(false)}
           onNamed={(result) => {
             setSiteName(result.siteName);
@@ -195,6 +204,7 @@ function NameSiteDialog({
   endpoint,
   currentSiteName,
   currentZoneName,
+  zonesEnabled,
   onClose,
   onNamed,
   onSiteUndone,
@@ -205,6 +215,8 @@ function NameSiteDialog({
   endpoint: SiteEndpoint;
   currentSiteName: string | null;
   currentZoneName: string | null;
+  /** SPRINT-008: see SiteNameControl's own prop doc. */
+  zonesEnabled: boolean;
   onClose: () => void;
   onNamed: (result: Extract<NameSiteResult, { ok: true }>) => void;
   onSiteUndone: () => void;
@@ -216,7 +228,7 @@ function NameSiteDialog({
 }) {
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
   const [boundInfo, setBoundInfo] = useState<BoundLocationInfo | null>(null);
-  const [step, setStep] = useState<Step>(currentSiteName ? "zone" : "site");
+  const [step, setStep] = useState<Step>(zonesEnabled && currentSiteName ? "zone" : "site");
   const [siteChoice, setSiteChoice] = useState<SiteChoice | null>(null);
   const [siteChoiceLabel, setSiteChoiceLabel] = useState<string | null>(currentSiteName);
   const [siteChoiceVisibility, setSiteChoiceVisibility] = useState<SiteVisibility>("public");
@@ -259,7 +271,10 @@ function NameSiteDialog({
     setSiteChoice({ mode: "reuse", id });
     setSiteChoiceLabel(name);
     setSiteChoiceVisibility(visibility);
-    setStep("zone");
+    // SPRINT-008: with zones hidden there's no "Which spot?" step to
+    // advance to — a site choice is the whole flow, so it submits itself.
+    if (zonesEnabled) setStep("zone");
+    else submit({ mode: "reuse", id }, undefined);
   }
 
   function chooseSiteCreate() {
@@ -271,21 +286,26 @@ function NameSiteDialog({
     setSiteChoice({ mode: "create", name: siteNameInput, visibility: siteVisibility });
     setSiteChoiceLabel(siteNameInput);
     setSiteChoiceVisibility(siteVisibility);
-    setStep("zone");
+    if (zonesEnabled) setStep("zone");
+    else submit({ mode: "create", name: siteNameInput, visibility: siteVisibility }, undefined);
   }
 
-  function submit(zone?: ZoneChoice) {
-    if (!siteChoice) return;
+  // SPRINT-008: takes `site` explicitly rather than reading the `siteChoice`
+  // state — chooseSiteReuse/chooseSiteCreate call this in the same tick
+  // they set that state (to submit immediately when zones are disabled),
+  // and a state update isn't visible to a same-tick closure.
+  function submit(site: SiteChoice, zone?: ZoneChoice) {
     setError(null);
     startTransition(async () => {
-      const result = await nameSite({ flightId, endpoint, site: siteChoice, zone });
+      const result = await nameSite({ flightId, endpoint, site, zone });
       if (result.ok) onNamed(result);
       else setError(result.error);
     });
   }
 
   function reuseZone(id: string) {
-    submit({ mode: "reuse", id });
+    if (!siteChoice) return;
+    submit(siteChoice, { mode: "reuse", id });
   }
 
   function createZone() {
@@ -302,11 +322,13 @@ function NameSiteDialog({
       setError("Enter a name for this spot.");
       return;
     }
-    submit({ mode: "create", name: zoneNameInput, visibility: zoneVisibility });
+    if (!siteChoice) return;
+    submit(siteChoice, { mode: "create", name: zoneNameInput, visibility: zoneVisibility });
   }
 
   function skipZone() {
-    submit(undefined);
+    if (!siteChoice) return;
+    submit(siteChoice, undefined);
   }
 
   function unpublishSite() {
@@ -458,7 +480,7 @@ function NameSiteDialog({
             onClose={onClose}
           />
         )}
-        {step === "zone" && (
+        {step === "zone" && zonesEnabled && (
           <ZoneStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             siteLabel={siteChoiceLabel}
@@ -949,17 +971,26 @@ function BoundaryPickerStep({
   onBack: () => void;
   onClose: () => void;
 }) {
+  // SPRINT-008: `rows.zones` is always [] when zones are disabled (the
+  // server action skips the query entirely) — deriving the copy from that
+  // already-gated data avoids threading yet another prop just for text.
+  const hasSpots = rows !== null && rows.zones.length > 0;
+
   return (
     <>
       <div className="flex flex-col gap-1">
         <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Edit a boundary</h2>
-        <p className="text-sm text-gray-500">Pick one of your sites or spots to draw or change its boundary.</p>
+        <p className="text-sm text-gray-500">
+          {hasSpots
+            ? "Pick one of your sites or spots to draw or change its boundary."
+            : "Pick one of your sites to draw or change its boundary."}
+        </p>
       </div>
 
       {rows === null ? (
         <p className="text-sm text-gray-500">Loading your sites…</p>
       ) : rows.sites.length === 0 && rows.zones.length === 0 ? (
-        <p className="text-sm text-gray-500">You don&rsquo;t own any named sites or spots yet.</p>
+        <p className="text-sm text-gray-500">You don&rsquo;t own any named sites yet.</p>
       ) : (
         <div className="flex flex-col gap-4">
           {rows.sites.length > 0 && (
