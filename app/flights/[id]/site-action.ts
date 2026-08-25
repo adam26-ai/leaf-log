@@ -18,6 +18,9 @@ import {
   type SiteEndpoint,
 } from "@/lib/sites/associate";
 import { SITE_VISIBILITIES, type SiteVisibility } from "@/lib/sites/visibility";
+import { zonesEnabled } from "@/lib/sites/zones-enabled";
+
+const ZONES_UNAVAILABLE = "Zones are not available.";
 
 function isValidSiteVisibility(v: unknown): v is SiteVisibility {
   return (SITE_VISIBILITIES as readonly unknown[]).includes(v);
@@ -64,6 +67,13 @@ export type NameSiteResult =
  * returned (lib/sites/repo.ts's hiddenOrMissingSite/hiddenOrMissingZone).
  */
 export async function nameSite(input: NameSiteInput): Promise<NameSiteResult> {
+  // SPRINT-008: the UI never offers a zone step when disabled, but this is
+  // the real gate — a stale client bundle or a direct call must not be
+  // able to create one anyway. Checked first (ahead of auth), same as
+  // every other zone-parallel action in this sprint, so the gate itself
+  // never depends on being signed in.
+  if (input.zone !== undefined && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
+
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -292,6 +302,7 @@ export async function unpublishZoneForFlight(
   flightId: string,
   endpoint: SiteEndpoint,
 ): Promise<SiteUndoResult> {
+  if (!zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -312,6 +323,7 @@ export async function deleteZoneForFlight(
   flightId: string,
   endpoint: SiteEndpoint,
 ): Promise<SiteUndoResult> {
+  if (!zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 

@@ -23,6 +23,8 @@ import { zonesEnabled } from "@/lib/sites/zones-enabled";
 
 export type BoundaryActionResult = { ok: true } | { ok: false; error: string };
 
+const ZONES_UNAVAILABLE = "Zones are not available.";
+
 function revalidateBoundarySurfaces() {
   revalidatePath("/logbook");
   revalidatePath("/feed");
@@ -43,6 +45,7 @@ export async function saveBoundaryForFlightEndpoint(
   level: BoundaryLevel,
   raw: unknown,
 ): Promise<BoundaryActionResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -67,6 +70,7 @@ export async function clearBoundaryForFlightEndpoint(
   endpoint: SiteEndpoint,
   level: BoundaryLevel,
 ): Promise<BoundaryActionResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -126,6 +130,7 @@ export async function saveBoundaryForOwnedRow(
   id: string,
   raw: unknown,
 ): Promise<BoundaryActionResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -140,6 +145,7 @@ export async function saveBoundaryForOwnedRow(
 }
 
 export async function clearBoundaryForOwnedRow(level: BoundaryLevel, id: string): Promise<BoundaryActionResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -221,6 +227,7 @@ export async function getBoundaryForOwnedRow(
   level: BoundaryLevel,
   id: string,
 ): Promise<BoundaryEditorInitialState | null> {
+  if (level === "zone" && !zonesEnabled()) return null;
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
@@ -263,6 +270,7 @@ export async function getBoundaryForPublicRow(
   level: BoundaryLevel,
   id: string,
 ): Promise<BoundaryEditorInitialState | null> {
+  if (level === "zone" && !zonesEnabled()) return null;
   const userId = await getCurrentUserId();
 
   if (level === "site") {

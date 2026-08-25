@@ -10,6 +10,14 @@
  * remedy for everything that power doesn't reach — a zone under a site the
  * operator doesn't otherwise own, or reparenting across sites entirely.
  *
+ * SPRINT-008: this file's `zone-*` commands are the one deliberate
+ * exemption from the `ZONES_ENABLED` gate (lib/sites/zones-enabled.ts) —
+ * operator tooling stays fully functional regardless, since a zone hidden
+ * from the product surface can still need a rename/force-private/merge
+ * while it waits. Every pilot-facing zone action (site-action.ts,
+ * boundary-action.ts, community-action.ts) rejects when the gate is off;
+ * this script intentionally does not.
+ *
  * Raw `prisma.site.delete`/`prisma.zone.delete` are forbidden everywhere
  * else in the app (`lib/sites/associate.ts`'s `deleteSite`/`deleteZone` are
  * the sanctioned, guarded paths). `merge`/`zone-merge` are the only places
