@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { Undo2, Eraser, Trash2, Save as SaveIcon, Check, X } from "lucide-react";
 import { styleFor } from "./basemaps";
+import { cn } from "@/lib/utils";
 import type { Boundary, Ring } from "@/lib/sites/geo";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import {
@@ -124,18 +126,59 @@ export interface NearbyContextItem {
   radiusM: number;
 }
 
-export function BoundaryEditor({
-  anchor,
-  initialBoundary,
-  level,
-  referenceRadiusM,
-  parent = null,
-  nearby = [],
-  onSave,
-  onClear,
-  onCancel,
-  onSaved,
+/** One square icon button in the on-map control stack — sized and styled to
+ *  sit visually alongside MapLibre's own NavigationControl buttons (white,
+ *  bordered, shadowed) rather than looking like a separate UI system. */
+function MapIconButton({
+  title,
+  icon: Icon,
+  onClick,
+  disabled,
+  variant = "default",
 }: {
+  title: string;
+  icon: typeof Undo2;
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: "default" | "danger" | "primary";
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded border shadow-sm transition-colors disabled:opacity-40",
+        variant === "primary" && "border-ink bg-ink text-paper hover:bg-ink-soft",
+        variant === "danger" && "border-gray-300 bg-paper text-red-600 hover:bg-red-50",
+        variant === "default" && "border-gray-300 bg-paper text-ink hover:bg-gray-50",
+      )}
+    >
+      <Icon size={16} />
+    </button>
+  );
+}
+
+/** Imperative escape hatch for an embedding context (SiteEditStep) that has
+ *  its OWN Save button and wants that single click to also commit any
+ *  pending boundary edit, rather than showing a second, confusingly
+ *  identical "Save" of its own. */
+export interface BoundaryEditorHandle {
+  /** Commits the current draft via `onSave` only if it's actually been
+   *  touched since load (see `dirtyRef`) — returns null when there's
+   *  nothing pending, so the caller can skip its own boundary-specific
+   *  error handling entirely in the common case. Returns the literal
+   *  "invalid" (not a BoundaryActionOutcome) when the draft is dirty but
+   *  fails live client-side validation — that failure is already shown
+   *  inline by this component's own error text, so the caller should just
+   *  block its own save silently rather than surface a second, duplicate
+   *  error banner for the same reason. */
+  commitIfDirty(): Promise<BoundaryActionOutcome | null | "invalid">;
+}
+
+export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   anchor: { lat: number; lon: number };
   initialBoundary: Boundary | null;
   level: BoundaryLevel;
@@ -154,12 +197,47 @@ export function BoundaryEditor({
   onClear: () => Promise<BoundaryActionOutcome>;
   onCancel: () => void;
   onSaved?: () => void;
-}) {
+  /** Overrides the Save button's own text — for an embedding context
+   *  (SiteEditStep) that has its own, differently-purposed "Save" button
+   *  alongside this one, so the two aren't identically labeled. */
+  saveLabel?: string;
+  /** Hides this editor's own bottom "Cancel" button — for an embedding
+   *  context that already has its own Cancel covering the same action
+   *  (onCancel), so the two aren't duplicated on screen. */
+  showCancel?: boolean;
+  /** Hides this editor's own on-map Save icon — for an embedding context
+   *  (SiteEditStep) that drives saving through the imperative handle
+   *  instead, so there's only ever one visible "Save" on screen. */
+  showSaveButton?: boolean;
+}>(function BoundaryEditor(
+  {
+    anchor,
+    initialBoundary,
+    level,
+    referenceRadiusM,
+    parent = null,
+    nearby = [],
+    onSave,
+    onClear,
+    onCancel,
+    onSaved,
+    saveLabel = "Save",
+    showCancel = true,
+    showSaveButton = true,
+  },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const vertexMarkersRef = useRef<maplibregl.Marker[]>([]);
   const initialRing: Ring | null = initialBoundary ? { coordinates: initialBoundary.geometry.coordinates[0] } : null;
   const stateRef = useRef<EditorState>(loadEditor(initialRing));
+  // True once the pilot has actually changed the draft since mount (any
+  // add/move/undo/clear) — distinguishes "nothing to save" from "the
+  // pre-existing saved boundary happens to already satisfy canSave" so an
+  // unrelated outer Save (e.g. renaming) never silently re-submits an
+  // untouched boundary and writes a spurious audit entry.
+  const dirtyRef = useRef(false);
   const [, forceRender] = useState(0);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -168,6 +246,7 @@ export function BoundaryEditor({
 
   function setState(next: EditorState) {
     stateRef.current = next;
+    dirtyRef.current = true;
     forceRender((n) => n + 1);
     syncDrawing();
   }
@@ -445,18 +524,36 @@ export function BoundaryEditor({
 
   const live = liveValidate(stateRef.current, level, anchor);
   const canSave = stateRef.current.vertices.length >= 3 && live.result === null;
+  const errorCopy = live.result && !live.result.ok ? ERROR_COPY[live.result.error] ?? "That shape isn't valid." : null;
 
-  async function handleSave() {
-    if (!canSave) return;
+  async function commitDraft(): Promise<BoundaryActionOutcome> {
     setSaving(true);
     setActionError(null);
     const closed = [...stateRef.current.vertices, stateRef.current.vertices[0]];
     const raw = { type: "Polygon" as const, coordinates: [closed] };
     const result = await onSave(raw);
     setSaving(false);
-    if (result.ok) onSaved?.();
-    else setActionError(result.error);
+    if (result.ok) {
+      dirtyRef.current = false;
+      onSaved?.();
+    } else {
+      setActionError(result.error);
+    }
+    return result;
   }
+
+  async function handleSave() {
+    if (!canSave) return;
+    await commitDraft();
+  }
+
+  useImperativeHandle(ref, () => ({
+    async commitIfDirty() {
+      if (!dirtyRef.current) return null;
+      if (!canSave) return "invalid";
+      return commitDraft();
+    },
+  }));
 
   async function handleClear() {
     setSaving(true);
@@ -472,104 +569,83 @@ export function BoundaryEditor({
     }
   }
 
-  const errorCopy = live.result && !live.result.ok ? ERROR_COPY[live.result.error] ?? "That shape isn't valid." : null;
+  const hasVertices = stateRef.current.vertices.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={containerRef} data-testid="boundary-editor-map" className="h-[360px] w-full rounded-lg" />
+      <div className="relative">
+        <div ref={containerRef} data-testid="boundary-editor-map" className="h-[520px] w-full rounded-lg" />
+        {/* On-map control stack, right below MapLibre's own zoom buttons
+         *  (top-right) — icons instead of the old below-map text row, which
+         *  crowded awkwardly against this component's embedding contexts'
+         *  own bottom action rows. */}
+        <div className="absolute right-[10px] top-[84px] z-10 flex flex-col items-end gap-1.5">
+          <MapIconButton
+            title="Undo last point"
+            icon={Undo2}
+            onClick={() => setState(undoLastVertex(stateRef.current))}
+            disabled={!hasVertices || saving}
+          />
+          {confirmingClear ? (
+            <div className="flex gap-1.5">
+              <MapIconButton
+                title="Yes, clear"
+                icon={Check}
+                variant="danger"
+                onClick={() => {
+                  setState(clearEditor());
+                  setConfirmingClear(false);
+                }}
+              />
+              <MapIconButton title="Cancel" icon={X} onClick={() => setConfirmingClear(false)} />
+            </div>
+          ) : (
+            <MapIconButton
+              title="Clear"
+              icon={Eraser}
+              onClick={() => setConfirmingClear(true)}
+              disabled={!hasVertices || saving}
+            />
+          )}
+          {initialBoundary &&
+            (confirmingRemove ? (
+              <div className="flex gap-1.5">
+                <MapIconButton title="Yes, remove boundary" icon={Check} variant="danger" onClick={handleClear} disabled={saving} />
+                <MapIconButton title="Cancel" icon={X} onClick={() => setConfirmingRemove(false)} />
+              </div>
+            ) : (
+              <MapIconButton title="Remove boundary" icon={Trash2} onClick={() => setConfirmingRemove(true)} disabled={saving} />
+            ))}
+          {showSaveButton && (
+            <MapIconButton
+              title={saving ? "Saving…" : saveLabel}
+              icon={SaveIcon}
+              variant="primary"
+              onClick={handleSave}
+              disabled={!canSave || saving}
+            />
+          )}
+        </div>
+      </div>
       {initialBoundary && (
         <p className="text-xs text-neutral-500">
           <span className="inline-block h-0 w-3 border-t-2 border-dashed border-[#3b7dd8] align-middle" /> dashed blue
           — the currently saved boundary
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-        <span>{live.vertexCount} point{live.vertexCount === 1 ? "" : "s"}</span>
-        {live.approxAreaM2 != null && (
-          <span>
-            &middot; ~{live.approxAreaM2 >= 1_000_000 ? `${(live.approxAreaM2 / 1_000_000).toFixed(2)} km²` : `${Math.round(live.approxAreaM2)} m²`}
-          </span>
-        )}
-        {errorCopy && <span className="font-medium text-red-600">&middot; {errorCopy}</span>}
-      </div>
+      {errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
-      <div className="flex flex-wrap gap-2">
+      {showCancel && (
         <button
           type="button"
-          onClick={() => setState(undoLastVertex(stateRef.current))}
-          disabled={stateRef.current.vertices.length === 0 || saving}
-          className="rounded border px-3 py-1.5 text-sm disabled:opacity-40"
+          onClick={onCancel}
+          disabled={saving}
+          className="self-start rounded border px-3 py-1.5 text-sm disabled:opacity-40"
         >
-          Undo last point
-        </button>
-        {confirmingClear ? (
-          <>
-            <span className="text-sm text-neutral-600">Clear the drawing?</span>
-            <button
-              type="button"
-              onClick={() => {
-                setState(clearEditor());
-                setConfirmingClear(false);
-              }}
-              className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-600"
-            >
-              Yes, clear
-            </button>
-            <button type="button" onClick={() => setConfirmingClear(false)} className="rounded border px-3 py-1.5 text-sm">
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirmingClear(true)}
-            disabled={stateRef.current.vertices.length === 0 || saving}
-            className="rounded border px-3 py-1.5 text-sm disabled:opacity-40"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave || saving}
-          className="rounded bg-neutral-900 px-4 py-1.5 text-sm text-white disabled:opacity-40"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        {initialBoundary &&
-          (confirmingRemove ? (
-            <>
-              <span className="text-sm text-neutral-600">Remove this boundary? Matching goes back to the default circle.</span>
-              <button
-                type="button"
-                onClick={handleClear}
-                disabled={saving}
-                className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-600"
-              >
-                Yes, remove
-              </button>
-              <button type="button" onClick={() => setConfirmingRemove(false)} className="rounded border px-3 py-1.5 text-sm">
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmingRemove(true)}
-              disabled={saving}
-              className="rounded border px-3 py-1.5 text-sm disabled:opacity-40"
-            >
-              Remove boundary
-            </button>
-          ))}
-        <button type="button" onClick={onCancel} disabled={saving} className="rounded border px-3 py-1.5 text-sm disabled:opacity-40">
           Cancel
         </button>
-      </div>
+      )}
     </div>
   );
-}
+});
 

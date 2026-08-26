@@ -122,16 +122,20 @@ describe("SPRINT-008 PR3: zone-parallel server actions reject when disabled", ()
   // nameSite's gate check is the very first line of the function, before
   // getCurrentUserId() — so this rejection needs no session at all.
   it("nameSite rejects a request carrying a zone choice, writing no Zone row", async () => {
-    const before = await prisma.zone.count();
+    // Scoped to this fixture's own name rather than a global prisma.zone.count()
+    // — this suite shares one Postgres with every other integration test
+    // file, and vitest can run files concurrently, so a global count races
+    // with unrelated zone creation elsewhere and flakes.
+    const zoneName = `S8 PR3 Never Created Zone ${suffix}`;
     const result = await siteAction.nameSite({
       flightId: "nonexistent-flight-id",
       endpoint: "takeoff",
       site: { mode: "create", name: "S8 PR3 Never Created", visibility: "public" },
-      zone: { mode: "create", name: "S8 PR3 Never Created Zone", visibility: "public" },
+      zone: { mode: "create", name: zoneName, visibility: "public" },
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/zones are not available/i);
-    expect(await prisma.zone.count()).toBe(before);
+    expect(await prisma.zone.count({ where: { name: zoneName } })).toBe(0);
   });
 
   it("nameSite with no zone choice is unaffected by the gate — fails on auth instead, not on zones", async () => {

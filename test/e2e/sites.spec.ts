@@ -95,7 +95,7 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   const siteName = `E2E Desert Ridge ${suffix}`;
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // 4. A distinct second IGC nearby (same pilot) auto-associates on upload —

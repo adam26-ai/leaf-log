@@ -19,6 +19,7 @@ import {
 } from "@/lib/sites/associate";
 import { SITE_VISIBILITIES, type SiteVisibility } from "@/lib/sites/visibility";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
+import type { Boundary } from "@/lib/sites/geo";
 
 const ZONES_UNAVAILABLE = "Zones are not available.";
 
@@ -143,8 +144,12 @@ export async function suggestLocationsForFlight(
 
 export interface BoundSiteInfo {
   id: string;
+  name: string;
   ownedByViewer: boolean;
   visibility: SiteVisibility;
+  lat: number;
+  lon: number;
+  boundary: Boundary | null;
 }
 
 export interface BoundZoneInfo {
@@ -156,6 +161,11 @@ export interface BoundZoneInfo {
 export interface BoundLocationInfo {
   site: BoundSiteInfo | null;
   zone: BoundZoneInfo | null;
+  /** This flight's own fix for `endpoint` — for the site-overview map's
+   *  "your takeoff/landing position" marker. Null only when the flight
+   *  itself has no fix there (shouldn't happen for a bound endpoint, but
+   *  the column is nullable). */
+  flightPoint: { lat: number; lon: number } | null;
 }
 
 /**
@@ -169,20 +179,34 @@ export async function getBoundLocationInfo(
   endpoint: SiteEndpoint,
 ): Promise<BoundLocationInfo> {
   const userId = await getCurrentUserId();
-  if (!userId) return { site: null, zone: null };
+  if (!userId) return { site: null, zone: null, flightPoint: null };
 
   const flight = await prisma.flight.findFirst({
     where: { id: flightId, ownerId: userId },
-    select: { takeoffSiteId: true, landingSiteId: true, takeoffZoneId: true, landingZoneId: true },
+    select: {
+      takeoffSiteId: true,
+      landingSiteId: true,
+      takeoffZoneId: true,
+      landingZoneId: true,
+      takeoffLat: true,
+      takeoffLon: true,
+      landingLat: true,
+      landingLon: true,
+    },
   });
-  if (!flight) return { site: null, zone: null };
+  if (!flight) return { site: null, zone: null, flightPoint: null };
 
   const siteId = endpoint === "takeoff" ? flight.takeoffSiteId : flight.landingSiteId;
   const zoneId = endpoint === "takeoff" ? flight.takeoffZoneId : flight.landingZoneId;
+  const flightLat = endpoint === "takeoff" ? flight.takeoffLat : flight.landingLat;
+  const flightLon = endpoint === "takeoff" ? flight.takeoffLon : flight.landingLon;
 
   const [siteRow, zoneRow] = await Promise.all([
     siteId
-      ? prisma.site.findUnique({ where: { id: siteId }, select: { id: true, ownerId: true, visibility: true } })
+      ? prisma.site.findUnique({
+          where: { id: siteId },
+          select: { id: true, name: true, ownerId: true, visibility: true, lat: true, lon: true, boundary: true },
+        })
       : null,
     zoneId
       ? prisma.zone.findUnique({ where: { id: zoneId }, select: { id: true, ownerId: true, visibility: true } })
@@ -193,8 +217,12 @@ export async function getBoundLocationInfo(
     site: siteRow
       ? {
           id: siteRow.id,
+          name: siteRow.name,
           ownedByViewer: siteRow.ownerId === userId,
           visibility: siteRow.visibility === "public" ? "public" : "private",
+          lat: siteRow.lat,
+          lon: siteRow.lon,
+          boundary: (siteRow.boundary as Boundary | null) ?? null,
         }
       : null,
     zone: zoneRow
@@ -208,6 +236,7 @@ export async function getBoundLocationInfo(
           visibility: zoneRow.visibility === "public" ? "public" : "private",
         }
       : null,
+    flightPoint: flightLat != null && flightLon != null ? { lat: flightLat, lon: flightLon } : null,
   };
 }
 

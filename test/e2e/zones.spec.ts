@@ -96,7 +96,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
   await page.locator("h1 button").click();
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect(page.locator('input[placeholder="e.g. North Launch"]')).not.toBeVisible({ timeout: 3_000 });
   await expect(page.getByText(/Which .* spot\?/i)).not.toBeVisible();
@@ -145,19 +145,30 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   await page.locator("h1 button").click();
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
-  // Re-open on the already-site-bound flight — lands on the site-editing
-  // view (rename/unpublish/delete/boundary), never a zone step.
+  // Re-open on the already-site-bound flight — lands on the read-only
+  // site-overview step (SPRINT-008), never a zone step.
   await page.locator("h1 button").click();
-  await page.getByText("Currently named").waitFor({ timeout: 5_000 });
-  await expect(page.locator('input[placeholder="e.g. North Launch"]')).not.toBeVisible();
-  const dialogText = await page.locator(".fixed.inset-0").innerText();
-  expect(dialogText.match(/\bspot\b/gi) ?? []).toEqual([]);
-  expect(dialogText.match(/\bzone\b/gi) ?? []).toEqual([]);
+  const dialog = page.locator(".fixed.inset-0");
+  await dialog.getByRole("heading", { name: siteName }).waitFor({ timeout: 5_000 });
+  const overviewText = await dialog.innerText();
+  expect(overviewText.match(/\bspot\b/gi) ?? []).toEqual([]);
+  expect(overviewText.match(/\bzone\b/gi) ?? []).toEqual([]);
 
-  // The boundary picker lists sites only.
+  // "Edit this site" reaches the management view — still no zone step,
+  // no "Which spot?" input, no zone/spot copy.
+  await page.getByRole("button", { name: "Edit this site" }).click();
+  await expect(page.locator('input[placeholder="e.g. North Launch"]')).not.toBeVisible();
+  const editText = await page.locator(".fixed.inset-0").innerText();
+  expect(editText.match(/\bspot\b/gi) ?? []).toEqual([]);
+  expect(editText.match(/\bzone\b/gi) ?? []).toEqual([]);
+
+  // Back to the overview, then "Choose a different site" reaches the
+  // choose/create flow, whose boundary picker lists sites only.
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Choose a different site" }).click();
   await page.getByText("Edit a boundary on one of my sites").click();
   await page.getByText("Edit a boundary").first().waitFor({ timeout: 5_000 });
   const pickerText = await page.locator(".fixed.inset-0").innerText();
