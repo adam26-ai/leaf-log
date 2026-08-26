@@ -3,7 +3,7 @@
 // SPRINT-004's heart: the site read-path firewall. Requires local Postgres
 // and must not skip — a skipped sites matrix means this sprint's privacy
 // work is unverified.
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { validateBoundary, boundaryColumns } from "@/lib/sites/boundary";
@@ -227,6 +227,15 @@ describe("sites: read-path firewall", () => {
     await prisma.site.deleteMany({ where: { id: { in: siteIds } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
+  });
+
+  // SPRINT-008: every "[gate-on legacy]" test/block below sets
+  // ZONES_ENABLED=true as its own setup, to prove the pre-SPRINT-008 zone
+  // machinery still works correctly while hidden from the product by
+  // default. This afterEach is the shared restore, so a mid-test failure
+  // can never leak the override into an unrelated later test.
+  afterEach(() => {
+    delete process.env.ZONES_ENABLED;
   });
 
   // ---------------------------------------------------------------------
@@ -1147,7 +1156,11 @@ describe("sites: read-path firewall", () => {
   // ---------------------------------------------------------------------
   // Matrix, second dimension: site visibility × zone visibility
   // ---------------------------------------------------------------------
-  describe("zone matrix — (public site, public zone)", () => {
+  describe("[gate-on legacy] zone matrix — (public site, public zone)", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("owner, friend, stranger, and anonymous all see the zone name", async () => {
       const owner = await createPilot("zmx-pubpub-owner");
       const friendViewer = await createPilot("zmx-pubpub-friend");
@@ -1167,7 +1180,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("zone matrix — (public site, private zone)", () => {
+  describe("[gate-on legacy] zone matrix — (public site, private zone)", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("only the zone's own owner sees the zone; everyone else falls back to the site name", async () => {
       const siteOwner = await createPilot("zmx-pubpriv-siteowner");
       const zoneOwner = await createPilot("zmx-pubpriv-zoneowner");
@@ -1191,7 +1208,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("zone matrix — (private site, private zone, same owner)", () => {
+  describe("[gate-on legacy] zone matrix — (private site, private zone, same owner)", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("only the shared owner sees both; everyone else sees Unknown site entirely", async () => {
       const owner = await createPilot("zmx-privpriv-owner");
       const stranger = await createPilot("zmx-privpriv-stranger");
@@ -1214,7 +1235,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("zone matrix — (private site, public zone — the incoherent row)", () => {
+  describe("[gate-on legacy] zone matrix — (private site, public zone — the incoherent row)", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("is neutralized at read time: visible only to the SITE's owner, never to the zone's own owner if different", async () => {
       const siteOwner = await createPilot("zmx-privpub-siteowner");
       const zoneOwner = await createPilot("zmx-privpub-zoneowner");
@@ -1239,7 +1264,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("zone matrix — logbook, profile list, feed, and listOwnFlightsByIds all agree", () => {
+  describe("[gate-on legacy] zone matrix — logbook, profile list, feed, and listOwnFlightsByIds all agree", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("a private zone under a public site never appears on any surface but its owner's", async () => {
       const siteOwner = await createPilot("zmx-surfaces-siteowner");
       const zoneOwner = await createPilot("zmx-surfaces-zoneowner");
@@ -1333,7 +1362,11 @@ describe("sites: read-path firewall", () => {
   // ---------------------------------------------------------------------
   // Stale-row defence — zones
   // ---------------------------------------------------------------------
-  describe("stale-row defence — zones", () => {
+  describe("[gate-on legacy] stale-row defence — zones", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("strips a hand-written cached zone name pointing at a private zone", async () => {
       const owner = await createPilot("stalezoneowner");
       const stranger = await createPilot("stalezonestranger");
@@ -1413,7 +1446,8 @@ describe("sites: read-path firewall", () => {
   // Conjunction: a public zone under a demoted site
   // ---------------------------------------------------------------------
   describe("conjunction — demote/re-promote", () => {
-    it("a public zone under a demoted site is invisible to everyone but the owner, in matching AND display, with no write to the zone's own visibility", async () => {
+    it("[gate-on legacy] a public zone under a demoted site is invisible to everyone but the owner, in matching AND display, with no write to the zone's own visibility", async () => {
+      process.env.ZONES_ENABLED = "true";
       const owner = await createPilot("conjowner");
       const stranger = await createPilot("conjstranger");
       const site = await createSite({ lat: -129, lon: -129, visibility: "public", ownerId: owner });
@@ -1661,7 +1695,8 @@ describe("sites: read-path firewall", () => {
   // Creator undo — zones
   // ---------------------------------------------------------------------
   describe("zone creator undo", () => {
-    it("unpublishes a zone with no other pilot's flight attached", async () => {
+    it("[gate-on legacy] unpublishes a zone with no other pilot's flight attached", async () => {
+      process.env.ZONES_ENABLED = "true";
       const owner = await createPilot("zoneundopub");
       const site = await createSite({ lat: -116, lon: -116, visibility: "public", ownerId: owner });
       const zone = await createZone({ siteId: site.id, lat: -116, lon: -116, visibility: "public", ownerId: owner });
@@ -1863,7 +1898,11 @@ describe("sites: read-path firewall", () => {
   // =======================================================================
   // SPRINT-005 PR3 — "Which spot?" (create, dedup, re-associate)
   // =======================================================================
-  describe("createOrAttachSiteFromFlight — zones", () => {
+  describe("[gate-on legacy] createOrAttachSiteFromFlight — zones", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("creates a site AND a first zone together in one call", async () => {
       const owner = await createPilot("createsitezone");
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 90, takeoffLon: 90 });
@@ -2159,7 +2198,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("suggestNearbyLocations — nested zones under sites", () => {
+  describe("[gate-on legacy] suggestNearbyLocations — nested zones under sites", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("surfaces a site's visible zones nested underneath it", async () => {
       const owner = await createPilot("nestedsuggest");
       const site = await createSite({ lat: -96, lon: -96, visibility: "public", ownerId: owner });
@@ -2206,7 +2249,11 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("reassociateOwnFlights — zone upgrades the creator's already-site-bound back-catalog", () => {
+  describe("[gate-on legacy] reassociateOwnFlights — zone upgrades the creator's already-site-bound back-catalog", () => {
+    beforeEach(() => {
+      process.env.ZONES_ENABLED = "true";
+    });
+
     it("upgrades the creator's own already-site-bound flights to the new zone; another pilot's stay at the site level", async () => {
       const owner = await createPilot("upgradeowner");
       const other = await createPilot("upgradeother");
@@ -2310,7 +2357,8 @@ describe("sites: read-path firewall", () => {
       }
     });
 
-    it("zone conjunction holds for a boundary-bearing PRIVATE zone under a PUBLIC site — hidden from a stranger, visible to the zone owner", async () => {
+    it("[gate-on legacy] zone conjunction holds for a boundary-bearing PRIVATE zone under a PUBLIC site — hidden from a stranger, visible to the zone owner", async () => {
+      process.env.ZONES_ENABLED = "true";
       const siteOwner = await createPilot("b6zoneconjsiteowner");
       const zoneOwner = await createPilot("b6zoneconjzoneowner");
       const stranger = await createPilot("b6zoneconjstranger");
@@ -2334,7 +2382,8 @@ describe("sites: read-path firewall", () => {
       expect(strangerView?.takeoffSiteName).toBe(site.name); // conjunction: only the ZONE name is stripped
     });
 
-    it("zone conjunction holds for a boundary-bearing zone under a PRIVATE site — the site gate strips the zone too, even though the zone itself is public", async () => {
+    it("[gate-on legacy] zone conjunction holds for a boundary-bearing zone under a PRIVATE site — the site gate strips the zone too, even though the zone itself is public", async () => {
+      process.env.ZONES_ENABLED = "true";
       const owner = await createPilot("b6zoneconjprivsiteowner");
       const stranger = await createPilot("b6zoneconjprivsitestranger");
       const site = await createSite({ lat: 73, lon: 73, visibility: "private", ownerId: owner });
@@ -2357,7 +2406,8 @@ describe("sites: read-path firewall", () => {
       expect(ownerView?.takeoffZoneName).toBe(zone.name);
     });
 
-    it("a boundary-bearing site/zone pair behaves identically whether or not either row actually carries a boundary", async () => {
+    it("[gate-on legacy] a boundary-bearing site/zone pair behaves identically whether or not either row actually carries a boundary", async () => {
+      process.env.ZONES_ENABLED = "true";
       // Two byte-identical scenarios except one pair of rows has boundaries
       // and the other doesn't — same visibility inputs must produce the
       // same read-path outcome.
@@ -2732,6 +2782,98 @@ describe("sites: read-path firewall", () => {
 
       const landingMatch = await findLocation(appPrisma, { lat: 56, lon: farLon, kind: "landing", viewerId: null });
       expect(landingMatch?.site.id).toBe(site.id);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // SPRINT-008: default-off — zones hidden from creation, suggestion, and
+  // display unless ZONES_ENABLED=true. Coordinate band 44-45 is disjoint
+  // from every other lat/lon range used across this file and
+  // lib/sites/lookup.test.ts.
+  // ---------------------------------------------------------------------
+  describe("[default-off] SPRINT-008: zones hidden from the product surface", () => {
+    it("createOrAttachSiteFromFlight rejects a zone input, writes no Zone row, and still creates the site fine on its own", async () => {
+      const owner = await createPilot("s8-reject-zone");
+      const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 44, takeoffLon: 44 });
+
+      const before = await prisma.zone.count();
+      await expect(
+        siteRepo.createOrAttachSiteFromFlight({
+          flightId: flight.id,
+          ownerId: owner,
+          endpoint: "takeoff",
+          site: { mode: "create", name: "S8 Reject Zone Ridge", visibility: "public" },
+          zone: { mode: "create", name: "Should Never Exist", visibility: "public" },
+        }),
+      ).rejects.toThrow(/zones are not available/i);
+      const after = await prisma.zone.count();
+      expect(after).toBe(before);
+
+      // The same call, with the zone input simply omitted, succeeds exactly
+      // as SPRINT-004's site-only flow.
+      const result = await siteRepo.createOrAttachSiteFromFlight({
+        flightId: flight.id,
+        ownerId: owner,
+        endpoint: "takeoff",
+        site: { mode: "create", name: "S8 Reject Zone Ridge", visibility: "public" },
+      });
+      siteIds.push(result.site.id);
+      expect(result.createdSite).toBe(true);
+      expect(result.zone).toBeNull();
+    });
+
+    it("suggestNearbyLocations returns zones: [] on every entry even when a real, visible zone exists nested under a matched site", async () => {
+      const owner = await createPilot("s8-suggest-nozones");
+      const site = await createSite({ lat: 44.5, lon: 44.5, visibility: "public", ownerId: owner });
+      await createZone({ siteId: site.id, lat: 44.5, lon: 44.5, visibility: "public", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbyLocations(44.5, 44.5, owner);
+      const match = suggestions.find((s) => s.id === site.id);
+      expect(match).toBeTruthy();
+      expect(match?.zones).toEqual([]);
+    });
+
+    it("does not surface a site that only qualified via a hidden zone's own proximity", async () => {
+      const owner = await createPilot("s8-suggest-hidden");
+      // Site anchor ~4.5km from the query point — outside the padded
+      // suggestion box on its own. Its zone sits AT the query point — well
+      // inside the zone's own box+radius. With zones on, the site is pulled
+      // into suggestions via the zone (union-by-zone); with zones off (the
+      // default), the zone query never runs, so nothing pulls the site in.
+      const site = await createSite({ lat: 44.5, lon: 44.5, visibility: "public", ownerId: owner });
+      const queryLat = 44.5 + 4500 / 111_320;
+      await createZone({ siteId: site.id, lat: queryLat, lon: 44.5, visibility: "public", ownerId: owner });
+
+      const suggestions = await siteRepo.suggestNearbyLocations(queryLat, 44.5, owner);
+      expect(suggestions.some((s) => s.id === site.id)).toBe(false);
+    });
+
+    it("a zone-bound flight's resolved location hides zoneId/zoneName for every viewer including the owner, while the Flight row itself is untouched", async () => {
+      const owner = await createPilot("s8-hide-zonebound");
+      const stranger = await createPilot("s8-hide-zonebound-stranger");
+      const site = await createSite({ lat: 45, lon: 45, visibility: "public", ownerId: owner });
+
+      // Simulate pre-existing SPRINT-005/006/007 data: bind the flight to a
+      // zone with the gate ON, exactly as a pilot could have done before
+      // this sprint.
+      process.env.ZONES_ENABLED = "true";
+      const zone = await createZone({ siteId: site.id, lat: 45, lon: 45, visibility: "public", ownerId: owner });
+      const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
+      delete process.env.ZONES_ENABLED;
+
+      // The stored row still carries the zone binding — no data was touched.
+      const row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(row.takeoffZoneId).toBe(zone.id);
+      expect(row.takeoffZoneName).toBe(zone.name);
+
+      // But every viewer-scoped read, gate off, shows site-only — including
+      // the flight's own owner.
+      for (const viewerId of [owner, stranger, null]) {
+        const seen = await repo.getFlightForViewer(flight.id, viewerId);
+        expect(seen?.takeoffSiteId).toBe(site.id);
+        expect(seen?.takeoffZoneId).toBeNull();
+        expect(seen?.takeoffZoneName).toBeNull();
+      }
     });
   });
 });

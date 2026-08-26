@@ -5,6 +5,7 @@ import {
   type FlightVisibility,
 } from "@/lib/flights/visibility";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility } from "@/lib/sites/visibility";
+import { zonesEnabled } from "@/lib/sites/zones-enabled";
 import { kudoCountsFor } from "@/lib/social/kudos";
 
 /**
@@ -207,7 +208,10 @@ function resolveEndpoint(
   }
 
   const resolvedSite: ResolvedEndpoint = { siteId, siteName: site.name, zoneId: null, zoneName: null };
-  if (zoneId === null) return resolvedSite;
+  // SPRINT-008: zones hidden means every read surface shows site-only, even
+  // for a flight bound to a zone before this sprint — the stored Flight
+  // columns are never touched, only what this function returns.
+  if (zoneId === null || !zonesEnabled()) return resolvedSite;
 
   const zone = zones.get(zoneId);
   const zoneVisible =

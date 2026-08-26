@@ -18,6 +18,7 @@ import { locationCachePatch, type SiteEndpoint, type LocationFieldPatch } from "
 import { normalizeSiteVisibility, canSeeSite, canSeeZone, type SiteVisibility } from "./visibility";
 import { validateSiteName } from "./name";
 import { writeAuditEntry } from "./audit";
+import { zonesEnabled } from "./zones-enabled";
 
 /**
  * App-layer privacy enforcement for sites AND zones, mirroring
@@ -151,25 +152,31 @@ export async function suggestNearbyLocations(
     boundaryPrefilterWhere(lat, lon),
   ];
 
+  // SPRINT-008: skipping the zone query entirely (not just discarding its
+  // result) is what also makes the "site's own distance only" property
+  // below fall out for free — zoneRanked stays empty, so no site is pulled
+  // into suggestions solely because a now-hidden zone under it is closer.
   const [siteRows, zoneRows] = await Promise.all([
     prisma.site.findMany({
       where: { AND: [{ OR: locationOr }, siteVisibleWhere(viewerId)] },
       select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, license: true },
     }),
-    prisma.zone.findMany({
-      where: { AND: [{ OR: locationOr }, zoneVisibleWhere(viewerId)] },
-      select: {
-        id: true,
-        name: true,
-        lat: true,
-        lon: true,
-        kind: true,
-        visibility: true,
-        siteId: true,
-        boundary: true,
-        site: { select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, license: true } },
-      },
-    }),
+    zonesEnabled()
+      ? prisma.zone.findMany({
+          where: { AND: [{ OR: locationOr }, zoneVisibleWhere(viewerId)] },
+          select: {
+            id: true,
+            name: true,
+            lat: true,
+            lon: true,
+            kind: true,
+            visibility: true,
+            siteId: true,
+            boundary: true,
+            site: { select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, license: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   const zoneRanked = zoneRows
@@ -391,6 +398,8 @@ export async function createOrAttachSiteFromFlight(
   input: CreateOrAttachInput,
 ): Promise<CreateOrAttachResult> {
   const { flightId, ownerId, endpoint } = input;
+
+  if (input.zone && !zonesEnabled()) throw new Error("Zones are not available.");
 
   const flight = await prisma.flight.findFirst({ where: { id: flightId, ownerId } });
   if (!flight) throw new Error("Flight not found or not owned by caller.");

@@ -13,6 +13,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { findLocation, type SiteMatch } from "@/lib/sites/lookup";
 import { locationCachePatch, type LocationFieldPatch } from "@/lib/sites/associate";
 
@@ -95,8 +96,17 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
       ...(takeoff ? locationCachePatch(takeoff, null, "takeoff") : {}),
       ...(landing ? locationCachePatch(landing, null, "landing") : {}),
     };
-    await prisma.flight.update({ where: { id: f.id }, data: patch });
-    updated++;
+    try {
+      await prisma.flight.update({ where: { id: f.id }, data: patch });
+      updated++;
+    } catch (error) {
+      // A row that vanished between the initial scan and this write (e.g.
+      // deleted concurrently) isn't a backfill failure — skip it and keep
+      // sweeping the rest, the same idempotent-and-resilient posture the
+      // rest of this best-effort maintenance script already has.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") continue;
+      throw error;
+    }
   }
   return updated;
 }

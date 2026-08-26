@@ -55,6 +55,12 @@ RLS, enforcement lives in one repo layer" shape, applied to `Site` and, since
 SPRINT-005, to `Zone` (a specific launch/landing spot *within* a site, e.g.
 "Mission Ridge — North Launch") one level down.
 
+> **As of SPRINT-008, zones are hidden from the product surface** (see
+> [Zones hidden from the product surface](#zones-hidden-from-the-product-surface-sprint-008)
+> below) — everything in this section describes the `Zone` model,
+> matching, and privacy rules exactly as they still exist and still run;
+> only pilot-facing *reachability* changed.
+
 - `Flight.{takeoff,landing}{Site,Zone}{Id,Name}` (eight columns) are a
   **cache**, not the source of truth. `Site`/`Zone` (`ownerId`, `visibility`)
   are authoritative whenever their id is non-null. The cached **site** name
@@ -263,6 +269,62 @@ the delete guard.
   cascade-and-lose) before the delete, deduping any endorsement that would
   collide with an existing composite-PK row on the target. New `audit`/
   `zone-audit` commands print a row's full history, most recent first.
+
+### Zones hidden from the product surface (SPRINT-008)
+
+Zones got "too complicated" (the user's own words) after three sprints of
+added surface area (two-level hierarchy, boundaries, community ownership) —
+SPRINT-008 hides the zone level from pilots while keeping every zone-aware
+code path, and every row, exactly as it was. **This is a hide, not a
+delete**: zero schema migration, zero data touched. Reversing it later is a
+re-exposure pass (flip the gate, confirm the preserved gate-on test suites
+still pass), not a reconstruction.
+
+- **One centralized, fail-closed, default-off gate**: `zonesEnabled()`
+  (`lib/sites/zones-enabled.ts`) reads `process.env.ZONES_ENABLED` fresh on
+  every call — `true` only for the literal string `"true"`, everything else
+  (including absent, the production default) means hidden. Same operational
+  shape as SPRINT-006's `boundaryMatchingEnabled()` kill switch.
+- **Matching**: `findLocation` (`lib/sites/lookup.ts`) skips the `Zone`
+  candidates query entirely when disabled — not merely discarding the
+  result, no query at all. A flight endpoint always resolves to a site.
+- **Display**: `lib/flights/repo.ts`'s `resolveEndpoint` suppresses
+  `zoneId`/`zoneName` for every viewer, including a flight's own owner, on
+  an endpoint bound to a zone *before* this sprint — the stored `Flight`
+  columns are untouched, only what this function returns changes.
+- **Creation**: `createOrAttachSiteFromFlight` (`lib/sites/repo.ts`) rejects
+  a `zone` input outright; `suggestNearbyLocations` skips its zone query and
+  no longer lets a now-hidden zone's proximity pull an otherwise-unqualified
+  site into the reuse-first suggestions.
+- **UI client gate plumbing.** A client component can't read
+  `process.env` — `FlightHeader` computes `zonesEnabled()` server-side and
+  threads it as a prop through `SiteNameControl` into `NameSiteDialog`,
+  which needs it structurally (not just data-driven): the dialog's initial
+  step, whether choosing/creating a site submits immediately vs. advances
+  to a "Which spot?" step, and whether `ZoneStep` renders at all, are all
+  client-side decisions the stripped data alone can't make. This gap — a
+  client component needing the gate as an explicit prop, not inferring it
+  from already-hidden data — was the one thing the sprint's cross-critique
+  caught that neither independent planning draft fully solved alone.
+- **Server actions reject, don't just hide.** Every zone-parallel action
+  across `site-action.ts`/`boundary-action.ts`/`community-action.ts`
+  rejects or null-returns when disabled, with the same generic
+  ("Zones are not available.") error every other hidden/nonexistent-row
+  path in this app already uses — the real boundary is the server action,
+  not the UI's decision not to offer the affordance.
+- **Operator tooling is the one deliberate exemption.** `scripts/
+  admin-sites.ts`'s `zone-*` commands stay fully functional regardless of
+  the gate (anchoring decision 6) — a zone hidden from the product can
+  still need an operator rename/force-private/merge while it waits.
+- **Tests are split, not dropped.** Every pre-SPRINT-008 zone-outcome test
+  that would only pass under the old always-on behavior sets
+  `ZONES_ENABLED=true` in its own setup and becomes explicit "gate-on
+  legacy" coverage — the concrete proof that reversibility is real, not
+  just claimed, and the guard against a future re-enable discovering the
+  hidden machinery has rotted. New "default-off" tests prove the shipped
+  hidden behavior. Tests of pure gate-agnostic helpers (`canSeeZone`,
+  boundary validation, the audit/contributor/endorsement library functions)
+  are untouched either way.
 
 ## Auth
 

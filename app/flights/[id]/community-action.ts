@@ -7,8 +7,11 @@ import { validateSiteName } from "@/lib/sites/name";
 import { siteCommunityInfo, zoneCommunityInfo, type LocationCommunityInfo } from "@/lib/sites/community";
 import { toggleSiteEndorsement, toggleZoneEndorsement } from "@/lib/sites/endorsements";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
+import { zonesEnabled } from "@/lib/sites/zones-enabled";
 
 export type CommunityActionResult = { ok: true } | { ok: false; error: string };
+
+const ZONES_UNAVAILABLE = "Zones are not available.";
 
 function revalidateCommunitySurfaces() {
   revalidatePath("/logbook");
@@ -24,6 +27,7 @@ function revalidateCommunitySurfaces() {
  * hidden/nonexistent/private row.
  */
 export async function getCommunityInfoForRow(level: BoundaryLevel, id: string): Promise<LocationCommunityInfo | null> {
+  if (level === "zone" && !zonesEnabled()) return null;
   const userId = await getCurrentUserId();
   return level === "site" ? siteCommunityInfo(id, userId) : zoneCommunityInfo(id, userId);
 }
@@ -35,6 +39,7 @@ export async function getCommunityInfoForRow(level: BoundaryLevel, id: string): 
  * beyond the raw name string, exactly like every other site/zone action.
  */
 export async function renamePublicRow(level: BoundaryLevel, id: string, rawName: string): Promise<CommunityActionResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 
@@ -56,6 +61,7 @@ export type ToggleEndorsementResult = CommunityActionResult | { ok: true; endors
 /** One-tap endorsement toggle, public rows only — endorsements.ts fails
  *  closed on a private (or effectively-private) target. */
 export async function toggleEndorsement(level: BoundaryLevel, id: string): Promise<ToggleEndorsementResult> {
+  if (level === "zone" && !zonesEnabled()) return { ok: false, error: ZONES_UNAVAILABLE };
   const userId = await getCurrentUserId();
   if (!userId) return { ok: false, error: "You must be signed in." };
 

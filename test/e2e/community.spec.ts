@@ -73,9 +73,9 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await page.locator("h1 button").click();
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
-  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
+  // directly, no zone step to skip.
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.getByRole("button", { name: "Public" }).click();
@@ -127,43 +127,14 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await bContext.close();
 });
 
-test("SPRINT-007: the flight OWNER can also reach community info and endorse their own public site", async ({
-  page,
-}) => {
-  // Clicking the h1 as the flight's own owner opens the bind-a-site flow
-  // (NameSiteDialog), not the new community dialog directly — without a
-  // dedicated entry point there, an owner would have no way to reach
-  // contributors/history/endorse for their OWN site at all.
-  const suffix = `${Date.now()}`;
-  const handle = `commOwn${suffix}`.slice(0, 18);
-
-  await signUp(page, `comm_owner_${suffix}@test.local`, handle, "Community Owner");
-  await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
-    name: "comm-owner.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(20.0 + (Number(suffix) % 5000) * 0.001, -175.0, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
-  const siteName = `E2E Owner Community Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await page.locator('input[placeholder="e.g. North Launch"]').waitFor({ timeout: 5_000 });
-  await page.getByRole("button", { name: /Skip.*just the site/i }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
-  await page.getByRole("button", { name: "Public" }).click();
-  await expect(page.getByRole("button", { name: "Public" })).toHaveAttribute("aria-pressed", "true");
-
-  // Re-open — already-bound site jumps straight to the zone step, which
-  // must offer a community entry point alongside "Edit site boundary".
-  await page.locator("h1 button").click();
-  await page.getByRole("button", { name: "Site contributors & endorsements" }).click();
-  await expect(page.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
-
-  await page.getByRole("button", { name: "Endorse", exact: true }).click();
-  await expect(page.getByText("1 endorsement", { exact: true })).toBeVisible({ timeout: 5_000 });
-  await expect(page.getByRole("button", { name: /Endorsed/ })).toBeVisible();
-});
+// SPRINT-007 used to add a "Contributors & endorsements" entry point to the
+// flight owner's own naming/editing dialog (NameSiteDialog), since without
+// one an owner had no way to reach community info for their OWN site at
+// all — a stranger could always reach it directly (see the test above),
+// but the owner's h1 click always opened the bind-a-site flow instead.
+// Removed again after this sprint's own simplification pass: the
+// site-edit view no longer surfaces "Contributors & endorsements" at all,
+// so the owner has gone back to relying on some OTHER viewer's endorsement
+// of their site, or (if they want to see it themselves) viewing their own
+// public flight the way a stranger would. No e2e coverage for that
+// specific owner-reachability path remains, by design.

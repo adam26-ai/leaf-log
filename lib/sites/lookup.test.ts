@@ -4,7 +4,7 @@
 // SPRINT-005). Requires a local Postgres and must not skip — a skipped
 // matrix means the privacy work this and the prior sprint establish is
 // unverified.
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 import { findLocation } from "./lookup";
@@ -131,6 +131,15 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       await prisma.site.deleteMany({ where: { id: { in: siteIds } } });
       siteIds.length = 0;
     }
+  });
+
+  // SPRINT-008: every "[gate-on legacy]" test below sets ZONES_ENABLED=true
+  // as its own setup, per-test, to prove the pre-SPRINT-008 zone machinery
+  // still works correctly while hidden from the product by default. This
+  // afterEach is the shared restore, so a mid-test failure can never leak
+  // the override into an unrelated later test.
+  afterEach(() => {
+    delete process.env.ZONES_ENABLED;
   });
 
   afterAll(async () => {
@@ -330,10 +339,83 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
   });
 
   // ---------------------------------------------------------------------
+  // SPRINT-008: default-off — zones hidden from matching unless
+  // ZONES_ENABLED=true. Coordinate band 88-89 is disjoint from every other
+  // lat/lon range used across this file and the other integration test
+  // files sharing the live Postgres test DB.
+  // ---------------------------------------------------------------------
+
+  it("[default-off] a zone in range does not win — matching returns site-only", async () => {
+    const site = await createSite({
+      lat: 88,
+      lon: 88,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: null,
+    });
+    await createZone({
+      siteId: site.id,
+      lat: 88,
+      lon: 88,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: null,
+    });
+
+    const match = await findLocation(prisma, {
+      lat: 88,
+      lon: 88,
+      kind: "takeoff",
+      viewerId: null,
+    });
+    expect(match?.site.id).toBe(site.id);
+    expect(match?.zone).toBeNull();
+  });
+
+  it("[default-off] zero Zone queries are issued when the gate is off", async () => {
+    const owner = await createPilot("s8-zero-zone-queries");
+    const site = await createSite({
+      lat: 89,
+      lon: 89,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+    });
+    await createZone({
+      siteId: site.id,
+      lat: 89,
+      lon: 89,
+      kind: "takeoff",
+      visibility: "public",
+      ownerId: owner,
+    });
+
+    const { PrismaClient } = await import("@prisma/client");
+    const countingClient = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
+    let zoneQueries = 0;
+    countingClient.$on("query", (e: { query: string }) => {
+      if (/FROM\s+"public"\."Zone"/.test(e.query)) zoneQueries++;
+    });
+
+    try {
+      const match = await findLocation(
+        countingClient as unknown as Pick<import("@/lib/prisma").Db, "site" | "zone">,
+        { lat: 89, lon: 89, kind: "takeoff", viewerId: null },
+      );
+      expect(match?.site.id).toBe(site.id);
+      expect(match?.zone).toBeNull();
+    } finally {
+      await countingClient.$disconnect();
+    }
+    expect(zoneQueries).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------
   // SPRINT-005: zone matching
   // ---------------------------------------------------------------------
 
-  it("a zone beats its parent site at the same spot", async () => {
+  it("[gate-on legacy] a zone beats its parent site at the same spot", async () => {
+    process.env.ZONES_ENABLED = "true";
     const site = await createSite({
       lat: -70,
       lon: -70,
@@ -360,7 +442,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match?.site.id).toBe(site.id);
   });
 
-  it("a site with a zone still matches a flight outside every zone radius but inside the site radius (no dead ends)", async () => {
+  it("[gate-on legacy] a site with a zone still matches a flight outside every zone radius but inside the site radius (no dead ends)", async () => {
+    process.env.ZONES_ENABLED = "true";
     const site = await createSite({
       lat: -69,
       lon: -69,
@@ -388,7 +471,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match?.zone).toBeNull();
   });
 
-  it("a private zone matches its own owner and no one else, including the site's owner", async () => {
+  it("[gate-on legacy] a private zone matches its own owner and no one else, including the site's owner", async () => {
+    process.env.ZONES_ENABLED = "true";
     const siteOwner = await createPilot("zone-site-owner");
     const zoneOwner = await createPilot("zone-owner");
     const stranger = await createPilot("zone-stranger");
@@ -430,7 +514,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     }
   });
 
-  it("a public zone under a private site matches nobody but the site's owner", async () => {
+  it("[gate-on legacy] a public zone under a private site matches nobody but the site's owner", async () => {
+    process.env.ZONES_ENABLED = "true";
     const siteOwner = await createPilot("private-site-owner");
     const stranger = await createPilot("private-site-stranger");
     const site = await createSite({
@@ -472,7 +557,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     }
   });
 
-  it("an anonymous caller matches no private zone, orphaned or not", async () => {
+  it("[gate-on legacy] an anonymous caller matches no private zone, orphaned or not", async () => {
+    process.env.ZONES_ENABLED = "true";
     const owner = await createPilot("zone-orphan-source");
     const site = await createSite({
       lat: -66,
@@ -510,7 +596,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(ownerMatch?.zone).toBeNull();
   });
 
-  it("a zone under a different, farther site can beat a nearer bare site — accepted collision, tested", async () => {
+  it("[gate-on legacy] a zone under a different, farther site can beat a nearer bare site — accepted collision, tested", async () => {
+    process.env.ZONES_ENABLED = "true";
     const nearSite = await createSite({
       lat: -65,
       lon: -65,
@@ -601,7 +688,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match).toBeNull();
   });
 
-  it("a zone boundary reaching past its parent site's circle still yields the zone with its parent", async () => {
+  it("[gate-on legacy] a zone boundary reaching past its parent site's circle still yields the zone with its parent", async () => {
+    process.env.ZONES_ENABLED = "true";
     const owner = await createPilot("b6-zone-past-parent");
     const site = await createSite({ lat: 82, lon: 82, kind: "landing", visibility: "public", ownerId: owner });
     const zone = await createZone({
@@ -724,7 +812,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     }
   });
 
-  it("the boundary prefilter is an OR branch inside the existing site/zone WHERE clauses, not a separate query", async () => {
+  it("[gate-on legacy] the boundary prefilter is an OR branch inside the existing site/zone WHERE clauses, not a separate query", async () => {
+    process.env.ZONES_ENABLED = "true";
     const owner = await createPilot("b6-query-count");
     const site = await createSite({
       lat: 87,

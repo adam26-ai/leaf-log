@@ -146,7 +146,10 @@ Completed ideas (see git history / PRs for detail):
   (which also handles reparenting a zone to a different site) / `list` for what neither reaches.
   Along the way, found and fixed a real Postgres limitation (two FK cascade paths converging on
   one `Flight` row during a site delete) and a latent regex bug in the SPRINT-004 write-audit that
-  silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005)
+  silently stopped excluding Prettier-formatted `: true` boolean flags. (SPRINT-005) **Hidden from
+  the product surface as of SPRINT-008** ("too complicated" — the user's own call) behind the
+  `ZONES_ENABLED` gate, default off; every zone here is preserved data and code, not deleted, and
+  a future re-enable is a re-exposure pass, not a reconstruction.
 - Custom boundaries for sites and zones — a pilot can now draw a polygon that **replaces** the
   fixed-radius circle for that one `Site` or `Zone` (a versioned `jsonb` envelope + derived bbox
   columns, no PostGIS), so a 3 km ridge site can finally catch flights from both ends and two
@@ -165,7 +168,8 @@ Completed ideas (see git history / PRs for detail):
   in `docs/sprints/SPRINT-006.md`'s Risks section. Ships with a `SITE_BOUNDARY_MATCHING=off` kill
   switch, a `boundaryUpdatedById` attribution column, a per-caller daily edit cap, and
   `scripts/admin-sites.ts`'s `boundary-clear` / `zone-boundary-clear` (plus a boundary-preservation
-  guard on `merge`/`zone-merge`). (SPRINT-006)
+  guard on `merge`/`zone-merge`). (SPRINT-006) **Zone boundaries specifically are hidden from
+  pilots as of SPRINT-008** (see the SPRINT-005 note above) — site boundaries are unaffected.
 
 ## Manual Zone Correction on a Flight
 - **Area:** Flight page / sites & zones
@@ -175,7 +179,8 @@ Completed ideas (see git history / PRs for detail):
   Motivated by a real gap: if the Leaf device starts recording a few seconds after actual launch,
   the recorded endpoint can sit meters to tens of meters past the true launch point — enough to
   miss a zone's 300 m/400 m match radius even though the pilot knows exactly which zone it was.
-- **Priority:** Medium
+- **Priority:** Medium — **on hold as of SPRINT-008**, since zones are currently hidden from the
+  product surface; revisit if/when `ZONES_ENABLED` is turned back on.
 - **Notes:** "Remove a zone" is mostly already there in spirit (`unpublishZoneForFlight` /
   `deleteZoneForFlight` in `app/flights/[id]/site-action.ts` cover unpublishing/deleting the zone
   *itself*), but there's no existing action to simply *unbind* a flight from its matched zone
@@ -196,7 +201,9 @@ Completed ideas (see git history / PRs for detail):
   the site, and an audit history of who did what — to hold folks accountable for screwing things
   up. Other users should also be able to "upvote" the current site to add "weight" to the
   legitimacy of that site. Later on, additional metadata could be added to sites and zones.
-- **Priority:** Medium — **shipped (SPRINT-007), 2026-08-23.**
+- **Priority:** Medium — **shipped (SPRINT-007), 2026-08-23.** The zone half of this feature is
+  hidden from pilots as of SPRINT-008 (`ZONES_ENABLED` off) — community ownership on **sites**
+  (contributors, audit log, endorsements, community-edit v1) is unaffected and fully reachable.
 - **Notes:** Shipped as community-edit v1: any signed-in, onboarded pilot may now rename or
   redraw the boundary of a PUBLIC `Site`/`Zone` — not just its owner. `ownerId` stays (creator/
   provenance, still drives publish/unpublish and the delete guard); a new append-only
@@ -216,3 +223,32 @@ Completed ideas (see git history / PRs for detail):
   [`docs/sprints/SPRINT-007.md`](docs/sprints/SPRINT-007.md). Deferred: approval queues/
   moderation voting, endorsement-weighted ranking, new metadata fields, edit-conflict locking UI,
   a minimum-flight-count edit gate.
+
+## Hide Zones (Sites Only, For Now)
+- **Area:** Sites & zones / product surface
+- **Description:** After three sprints of added zone surface area (two-level hierarchy, custom
+  boundaries, community ownership), the user's own call: "let's go ahead and remove zones... we
+  will just keep sites. the zones are getting too complicated." Every pilot-facing zone
+  affordance (naming, matching, boundaries, community info) is hidden; sites are unaffected and
+  remain the app's one location concept for now.
+- **Priority:** High — **shipped (SPRINT-008), 2026-08-24.**
+- **Notes:** A hide, not a delete — chosen explicitly over removal after a clarifying interview.
+  Zero schema migration, zero data touched: the `Zone` table, `Flight`'s zone columns, and every
+  zone-aware matching/boundary/audit/endorsement code path stay exactly as they are. One
+  centralized, fail-closed, default-off gate (`zonesEnabled()`, `lib/sites/zones-enabled.ts`,
+  `ZONES_ENABLED` env var) is checked everywhere a pilot could otherwise reach a zone: matching
+  (`findLocation` skips the `Zone` query entirely), display (`resolveEndpoint` suppresses
+  zoneId/zoneName for every viewer, including on flights bound to a zone before this sprint),
+  creation (`createOrAttachSiteFromFlight` rejects a zone input), the naming dialog (a
+  server-derived prop threaded from `FlightHeader`, since a client component can't read
+  `process.env` — the one real implementation gap the sprint's cross-critique caught), and every
+  zone-parallel server action (rejects/null-returns with a generic "Zones are not available.",
+  never revealing whether a given zone exists, is private, or is owned by someone else).
+  `scripts/admin-sites.ts`'s `zone-*` operator commands are the one deliberate exemption — they
+  keep working regardless, since a hidden zone can still need an operator remedy. Pre-existing
+  zone tests are split into "gate-on legacy" (set `ZONES_ENABLED=true`, prove the hidden
+  machinery still works — the reversibility proof) and "default-off" (prove the shipped hidden
+  behavior); nothing was deleted or skipped. Full design/decision trail:
+  [`docs/sprints/SPRINT-008.md`](docs/sprints/SPRINT-008.md). A future "bring zones back" sprint
+  should be a small re-exposure pass (flip the gate, confirm the preserved suites still pass),
+  not a reconstruction.

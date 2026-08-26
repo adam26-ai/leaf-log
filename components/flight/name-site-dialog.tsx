@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import {
   nameSite,
   suggestLocationsForFlight,
   getBoundLocationInfo,
-  unpublishSiteForFlight,
   deleteSiteForFlight,
   unpublishZoneForFlight,
   deleteZoneForFlight,
   type NameSiteResult,
   type BoundLocationInfo,
+  type BoundSiteInfo,
 } from "@/app/flights/[id]/site-action";
 import {
   listMyBoundaryEditableRows,
@@ -20,6 +20,7 @@ import {
   type BoundaryEditableRows,
   type BoundaryEditorInitialState,
 } from "@/app/flights/[id]/boundary-action";
+import { renamePublicRow } from "@/app/flights/[id]/community-action";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteChoice, ZoneChoice, SiteSuggestion, ZoneSuggestion } from "@/lib/sites/repo";
 import type { SiteVisibility } from "@/lib/sites/visibility";
@@ -27,8 +28,9 @@ import type { BoundaryLevel } from "@/lib/sites/boundary";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
-import { BoundaryEditor } from "@/components/flight/boundary-editor";
+import { BoundaryEditor, type BoundaryEditorHandle } from "@/components/flight/boundary-editor";
 import { LocationCommunityDialog } from "@/components/flight/location-community-dialog";
+import { SiteAreaMap } from "@/components/flight/site-area-map";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,6 +54,7 @@ export function SiteNameControl({
   siteId,
   zoneId,
   isOwner,
+  zonesEnabled,
   className,
   as: As = "span",
 }: {
@@ -62,6 +65,13 @@ export function SiteNameControl({
   siteId: string | null;
   zoneId: string | null;
   isOwner: boolean;
+  /** SPRINT-008: server-derived (a client component can't read
+   *  process.env), threaded down from FlightHeader — see
+   *  lib/sites/zones-enabled.ts. Gates the naming dialog's zone step and
+   *  zone-level community access; the data itself is already stripped by
+   *  lib/flights/repo.ts's resolveEndpoint when disabled, this closes the
+   *  path structurally too. */
+  zonesEnabled: boolean;
   className?: string;
   as?: "h1" | "span";
 }) {
@@ -103,12 +113,12 @@ export function SiteNameControl({
         </As>
         {communityOpen && (
           <LocationCommunityDialog
-            level={zoneId ? "zone" : "site"}
-            id={zoneId ?? siteId}
-            name={zoneId ? (zoneName ?? "this spot") : (siteName ?? "this site")}
+            level={zoneId && zonesEnabled ? "zone" : "site"}
+            id={zoneId && zonesEnabled ? zoneId : siteId}
+            name={zoneId && zonesEnabled ? (zoneName ?? "this spot") : (siteName ?? "this site")}
             endpoint={endpoint}
             onClose={() => setCommunityOpen(false)}
-            onRenamed={(newName) => (zoneId ? setZoneName(newName) : setSiteName(newName))}
+            onRenamed={(newName) => (zoneId && zonesEnabled ? setZoneName(newName) : setSiteName(newName))}
           />
         )}
       </>
@@ -136,6 +146,7 @@ export function SiteNameControl({
           endpoint={endpoint}
           currentSiteName={siteName}
           currentZoneName={zoneName}
+          zonesEnabled={zonesEnabled}
           onClose={() => setOpen(false)}
           onNamed={(result) => {
             setSiteName(result.siteName);
@@ -163,7 +174,7 @@ const ENDPOINT_LABEL: Record<SiteEndpoint, string> = {
   landing: "landing",
 };
 
-type Step = "site" | "zone" | "boundary-picker" | "boundary-editor" | "community";
+type Step = "site-overview" | "site-edit" | "site" | "zone" | "boundary-picker" | "boundary-editor" | "community";
 
 /** The row the new community dialog (contributors/history/endorse — plus
  *  rename/redraw for a signed-in pilot) is currently open for, reached as a
@@ -195,6 +206,7 @@ function NameSiteDialog({
   endpoint,
   currentSiteName,
   currentZoneName,
+  zonesEnabled,
   onClose,
   onNamed,
   onSiteUndone,
@@ -205,6 +217,8 @@ function NameSiteDialog({
   endpoint: SiteEndpoint;
   currentSiteName: string | null;
   currentZoneName: string | null;
+  /** SPRINT-008: see SiteNameControl's own prop doc. */
+  zonesEnabled: boolean;
   onClose: () => void;
   onNamed: (result: Extract<NameSiteResult, { ok: true }>) => void;
   onSiteUndone: () => void;
@@ -216,7 +230,13 @@ function NameSiteDialog({
 }) {
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
   const [boundInfo, setBoundInfo] = useState<BoundLocationInfo | null>(null);
-  const [step, setStep] = useState<Step>(currentSiteName ? "zone" : "site");
+  // A bound-flight opens on a read-only overview first (SPRINT-008: bug
+  // report — typing a new name while a site was pre-selected could still
+  // silently create a site from stale text). An unknown site has nothing
+  // to show an overview of, so it goes straight to the create/choose flow.
+  const [step, setStep] = useState<Step>(
+    zonesEnabled && currentSiteName ? "zone" : currentSiteName ? "site-overview" : "site",
+  );
   const [siteChoice, setSiteChoice] = useState<SiteChoice | null>(null);
   const [siteChoiceLabel, setSiteChoiceLabel] = useState<string | null>(currentSiteName);
   const [siteChoiceVisibility, setSiteChoiceVisibility] = useState<SiteVisibility>("public");
@@ -259,33 +279,83 @@ function NameSiteDialog({
     setSiteChoice({ mode: "reuse", id });
     setSiteChoiceLabel(name);
     setSiteChoiceVisibility(visibility);
-    setStep("zone");
+    // Clear any leftover text in the "new site" field — otherwise it would
+    // silently win over this explicit reuse pick the moment Save is
+    // clicked, since chooseSiteCreate branches on the input being non-empty.
+    setSiteNameInput("");
+    // "Use this site" only SELECTS it — it never submits on its own. The
+    // pilot still has to click "Save" to persist it, the same as picking a
+    // zone always required before this sprint (reuseZone never auto-saved
+    // either). Zones-enabled keeps its own separate step to advance to.
+    if (zonesEnabled) setStep("zone");
   }
 
   function chooseSiteCreate() {
     setError(null);
     if (siteNameInput.trim().length === 0) {
+      // Nothing typed. If a site is already selected (the flight's current
+      // binding, pre-filled on open, or a prior "Use this site" pick),
+      // "Save" just confirms it rather than demanding a name for a site
+      // that already has one — mirrors the same pattern the (now-hidden)
+      // zone step's blank-name Save already used for its own current zone.
+      if (siteChoice) {
+        submit(siteChoice, undefined);
+        return;
+      }
       setError("Enter a name for this site.");
       return;
     }
     setSiteChoice({ mode: "create", name: siteNameInput, visibility: siteVisibility });
     setSiteChoiceLabel(siteNameInput);
     setSiteChoiceVisibility(siteVisibility);
-    setStep("zone");
+    if (zonesEnabled) setStep("zone");
+    else submit({ mode: "create", name: siteNameInput, visibility: siteVisibility }, undefined);
   }
 
-  function submit(zone?: ZoneChoice) {
-    if (!siteChoice) return;
+  // SPRINT-008: typing a new name is a clear signal the pilot means to
+  // create a different site, not confirm whichever one was pre-selected
+  // (the flight's current binding, or an earlier "Use this site" pick) —
+  // deselect it so "Save" goes back to requiring/using the typed name.
+  function handleSiteNameInputChange(value: string) {
+    setSiteNameInput(value);
+    if (value.trim().length > 0 && siteChoice) {
+      setSiteChoice(null);
+      setSiteChoiceLabel(null);
+    }
+  }
+
+  function openSiteEdit() {
+    setError(null);
+    setStep("site-edit");
+  }
+
+  // Starting fresh — clears whatever was pre-selected (the flight's
+  // current binding) so the choose/create step doesn't show it as
+  // "Current" or let a blank Save silently re-confirm it.
+  function chooseCreateDifferentSite() {
+    setError(null);
+    setSiteChoice(null);
+    setSiteChoiceLabel(null);
+    setSiteNameInput("");
+    setStep("site");
+  }
+
+  // SPRINT-008: takes `site` explicitly rather than reading the `siteChoice`
+  // state — chooseSiteReuse/chooseSiteCreate call this in the same tick
+  // they set that state (to submit immediately when zones are disabled),
+  // and a state update isn't visible to a same-tick closure.
+  function submit(site: SiteChoice, zone?: ZoneChoice) {
     setError(null);
     startTransition(async () => {
-      const result = await nameSite({ flightId, endpoint, site: siteChoice, zone });
+      const result = await nameSite({ flightId, endpoint, site, zone });
       if (result.ok) onNamed(result);
       else setError(result.error);
     });
   }
 
   function reuseZone(id: string) {
-    submit({ mode: "reuse", id });
+    if (!siteChoice) return;
+    submit(siteChoice, { mode: "reuse", id });
   }
 
   function createZone() {
@@ -302,20 +372,50 @@ function NameSiteDialog({
       setError("Enter a name for this spot.");
       return;
     }
-    submit({ mode: "create", name: zoneNameInput, visibility: zoneVisibility });
+    if (!siteChoice) return;
+    submit(siteChoice, { mode: "create", name: zoneNameInput, visibility: zoneVisibility });
   }
 
   function skipZone() {
-    submit(undefined);
+    if (!siteChoice) return;
+    submit(siteChoice, undefined);
   }
 
-  function unpublishSite() {
+  // Renames the bound site itself (not the "name a new site" flow) —
+  // renamePublicRow already allows this for the site's own owner
+  // regardless of visibility (canCommunityEditSite: owner always passes).
+  // On success, propagates live the same way a community-dialog rename
+  // does (onCommunityRenamed updates SiteNameControl's own displayed h1).
+  function saveSiteName(newName: string) {
     setError(null);
+    const trimmed = newName.trim();
+    if (trimmed.length === 0) {
+      setError("Enter a name for this site.");
+      return;
+    }
+    const siteId = boundInfo?.site?.id;
+    if (!siteId) return;
     startTransition(async () => {
-      const result = await unpublishSiteForFlight(flightId, endpoint);
-      if (result.ok) setBoundInfo((prev) => (prev?.site ? { ...prev, site: { ...prev.site, visibility: "private" } } : prev));
-      else setError(result.error);
+      const result = await renamePublicRow("site", siteId, trimmed);
+      if (result.ok) {
+        setSiteChoiceLabel(trimmed);
+        setBoundInfo((prev) => (prev?.site ? { ...prev, site: { ...prev.site, name: trimmed } } : prev));
+        onCommunityRenamed(trimmed, "site");
+        setStep("site-overview");
+      } else {
+        setError(result.error);
+      }
     });
+  }
+
+  // SiteEditStep calls this right after successfully committing a boundary
+  // edit — boundInfo.site.boundary is otherwise only ever fetched once, on
+  // mount, so without this the site-overview map a successful Save
+  // returns to would keep showing whatever boundary (or lack of one)
+  // existed when the dialog first opened.
+  async function refreshBoundInfo() {
+    const info = await getBoundLocationInfo(flightId, endpoint);
+    setBoundInfo(info);
   }
 
   function removeSite() {
@@ -433,32 +533,54 @@ function NameSiteDialog({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
         onClick={(e) => e.stopPropagation()}
       >
+        {step === "site-overview" && (
+          <SiteOverviewStep
+            endpointLabel={ENDPOINT_LABEL[endpoint]}
+            currentSiteName={currentSiteName}
+            siteInfo={boundInfo?.site ?? null}
+            flightPoint={boundInfo?.flightPoint ?? null}
+            radiusM={radiusForKind(endpoint)}
+            onEdit={openSiteEdit}
+            onChooseDifferent={chooseCreateDifferentSite}
+            onClose={onClose}
+          />
+        )}
+        {step === "site-edit" && boundInfo?.site && (
+          <SiteEditStep
+            endpointLabel={ENDPOINT_LABEL[endpoint]}
+            siteId={boundInfo.site.id}
+            initialName={boundInfo.site.name}
+            radiusM={radiusForKind(endpoint)}
+            pending={pending}
+            error={error}
+            onSaveName={saveSiteName}
+            onBoundarySaved={refreshBoundInfo}
+            onDelete={removeSite}
+            onBack={() => setStep("site-overview")}
+          />
+        )}
         {step === "site" && (
           <SiteStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             currentSiteName={currentSiteName}
             suggestions={suggestions}
-            boundInfo={boundInfo}
+            selectedSiteId={siteChoice?.mode === "reuse" ? siteChoice.id : null}
             pending={pending}
             error={error}
             siteNameInput={siteNameInput}
-            setSiteNameInput={setSiteNameInput}
+            setSiteNameInput={handleSiteNameInputChange}
             siteVisibility={siteVisibility}
             setSiteVisibility={setSiteVisibility}
             onReuse={chooseSiteReuse}
             onCreate={chooseSiteCreate}
-            onUnpublish={unpublishSite}
-            onDelete={removeSite}
-            onEditBoundary={boundInfo?.site?.ownedByViewer ? openBoundaryForCurrentSite : undefined}
-            onViewCommunity={boundInfo?.site?.visibility === "public" ? openCommunityForCurrentSite : undefined}
             onOpenPicker={openBoundaryPicker}
             onClose={onClose}
           />
         )}
-        {step === "zone" && (
+        {step === "zone" && zonesEnabled && (
           <ZoneStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             siteLabel={siteChoiceLabel}
@@ -514,11 +636,234 @@ function NameSiteDialog({
   );
 }
 
+/**
+ * The dialog's landing view for a flight that already has a site bound
+ * (SPRINT-008): read-only summary plus a map of the site's own area
+ * (drawn boundary, or the reference circle) with this flight's own fix
+ * marked on it — so a pilot can tell at a glance whether they're looking
+ * at the right place before deciding to edit it or pick something else.
+ * A flight with no site bound skips this step entirely (nothing to show
+ * an overview of) and lands directly on SiteStep's choose/create flow.
+ */
+function SiteOverviewStep({
+  endpointLabel,
+  currentSiteName,
+  siteInfo,
+  flightPoint,
+  radiusM,
+  onEdit,
+  onChooseDifferent,
+  onClose,
+}: {
+  endpointLabel: string;
+  currentSiteName: string | null;
+  siteInfo: BoundSiteInfo | null;
+  flightPoint: { lat: number; lon: number } | null;
+  radiusM: number;
+  onEdit: () => void;
+  onChooseDifferent: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">
+          {siteInfo?.name ?? currentSiteName}
+        </h2>
+        <p className="text-sm text-gray-500">
+          {endpointLabel} site{siteInfo ? ` · ${siteInfo.visibility === "public" ? "Public" : "Private"}` : ""}
+        </p>
+      </div>
+
+      {siteInfo ? (
+        <SiteAreaMap
+          anchor={{ lat: siteInfo.lat, lon: siteInfo.lon }}
+          radiusM={radiusM}
+          boundary={siteInfo.boundary}
+          flightPoint={flightPoint}
+        />
+      ) : (
+        <p className="text-sm text-gray-500">Loading site details…</p>
+      )}
+
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          Cancel
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onChooseDifferent}>
+            Choose a different site
+          </Button>
+          {siteInfo?.ownedByViewer && (
+            <Button type="button" size="sm" onClick={onEdit}>
+              Edit this site
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The owned-site management view, reached from SiteOverviewStep's "Edit
+ * this site": rename the site and draw/redraw its boundary in one screen
+ * (both reachable with no extra click, per the user's own report that a
+ * separate "Edit boundary" hop was one click too many), then Cancel/
+ * Delete/Save at the bottom. Visibility is deliberately NOT editable here
+ * (see the user's own call — SPRINT-008 chat) — a site's visibility stays
+ * fixed after creation.
+ */
+function SiteEditStep({
+  endpointLabel,
+  siteId,
+  initialName,
+  radiusM,
+  pending,
+  error,
+  onSaveName,
+  onBoundarySaved,
+  onDelete,
+  onBack,
+}: {
+  endpointLabel: string;
+  siteId: string;
+  initialName: string;
+  radiusM: number;
+  pending: boolean;
+  error: string | null;
+  onSaveName: (newName: string) => void;
+  /** Tells the dialog to refetch boundInfo — the site-overview map this
+   *  screen returns to on a successful Save otherwise keeps showing
+   *  whatever boundary existed when the dialog first opened. */
+  onBoundarySaved: () => void | Promise<void>;
+  onDelete: () => void;
+  onBack: () => void;
+}) {
+  const [nameInput, setNameInput] = useState(initialName);
+  const [boundaryInitial, setBoundaryInitial] = useState<BoundaryEditorInitialState | null | undefined>(undefined);
+  // Bumped only once the refetch below has actually landed, so the remount
+  // it triggers (via BoundaryEditor's key) picks up the FRESH
+  // initialBoundary — it only reads that prop at mount time (the live
+  // draft lives in a ref, deliberately unreactive to prop changes so a
+  // stray re-render can't blow away in-progress edits), so without this
+  // the "currently saved boundary" dashed reference would stay stale after
+  // a save in the same sitting, without needing to close and re-open.
+  const [boundaryVersion, setBoundaryVersion] = useState(0);
+  const boundaryRef = useRef<BoundaryEditorHandle>(null);
+  const [combinedSaving, setCombinedSaving] = useState(false);
+  const [boundaryError, setBoundaryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBoundaryForOwnedRow("site", siteId).then((result) => {
+      if (!cancelled) setBoundaryInitial(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+
+  function refreshBoundary() {
+    getBoundaryForOwnedRow("site", siteId).then((result) => {
+      setBoundaryInitial(result);
+      setBoundaryVersion((v) => v + 1);
+    });
+  }
+
+  // The single Save button covers both the name AND any pending boundary
+  // edit — the boundary editor no longer has its own visible Save (see
+  // showSaveButton={false} below). commitIfDirty() is a no-op (returns
+  // null) unless the pilot actually touched the boundary, so renaming
+  // alone never triggers a spurious boundary re-save/audit entry.
+  async function handleSaveAll() {
+    setBoundaryError(null);
+    setCombinedSaving(true);
+    const result = await boundaryRef.current?.commitIfDirty();
+    setCombinedSaving(false);
+    // "invalid" means the draft failed live client-side validation — the
+    // boundary editor already shows that inline, so block silently rather
+    // than repeat it in a second, duplicate error banner here.
+    if (result === "invalid") return;
+    if (result && !result.ok) {
+      setBoundaryError(result.error);
+      return;
+    }
+    if (result?.ok) await onBoundarySaved();
+    onSaveName(nameInput);
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Editing this site</h2>
+        <p className="text-sm text-gray-500">This is your {endpointLabel} site.</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Name</p>
+        <input
+          type="text"
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          maxLength={60}
+          disabled={pending}
+          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-amber"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-gray-200 pt-4">
+        <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Boundary</p>
+        {boundaryInitial === undefined ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : boundaryInitial === null ? (
+          <p className="text-sm text-red-600">You don&rsquo;t have permission to edit this boundary.</p>
+        ) : (
+          <BoundaryEditor
+            // Remounts on every successful save/clear (see boundaryVersion's
+            // own comment) — the fresh initialBoundary is only ever read at
+            // mount time.
+            key={boundaryVersion}
+            ref={boundaryRef}
+            anchor={boundaryInitial.anchor}
+            initialBoundary={boundaryInitial.boundary}
+            level="site"
+            referenceRadiusM={radiusM}
+            nearby={boundaryInitial.nearby}
+            onSave={(raw) => saveBoundaryForOwnedRow("site", siteId, raw)}
+            onClear={() => clearBoundaryForOwnedRow("site", siteId)}
+            onCancel={onBack}
+            onSaved={refreshBoundary}
+            showCancel={false}
+            showSaveButton={false}
+          />
+        )}
+      </div>
+
+      {(boundaryError ?? error) && <p className="text-sm text-red-600">{boundaryError ?? error}</p>}
+
+      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
+        <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={pending || combinedSaving}>
+          Cancel
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="danger" size="sm" onClick={onDelete} disabled={pending || combinedSaving}>
+            Delete
+          </Button>
+          <Button type="button" size="sm" onClick={handleSaveAll} disabled={pending || combinedSaving}>
+            {pending || combinedSaving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function SiteStep({
   endpointLabel,
   currentSiteName,
   suggestions,
-  boundInfo,
+  selectedSiteId,
   pending,
   error,
   siteNameInput,
@@ -527,17 +872,17 @@ function SiteStep({
   setSiteVisibility,
   onReuse,
   onCreate,
-  onUnpublish,
-  onDelete,
-  onEditBoundary,
-  onViewCommunity,
   onOpenPicker,
   onClose,
 }: {
   endpointLabel: string;
   currentSiteName: string | null;
   suggestions: SiteSuggestion[] | null;
-  boundInfo: BoundLocationInfo | null;
+  /** The site `siteChoice` currently points at — null once the pilot starts
+   *  typing a new name (deselecting whatever was pre-picked), or once
+   *  "Choose a different site" from the overview step clears it outright.
+   *  Drives the "Current" badge below. */
+  selectedSiteId: string | null;
   pending: boolean;
   error: string | null;
   siteNameInput: string;
@@ -546,13 +891,6 @@ function SiteStep({
   setSiteVisibility: (v: SiteVisibility) => void;
   onReuse: (id: string, name: string, visibility: SiteVisibility) => void;
   onCreate: () => void;
-  onUnpublish: () => void;
-  onDelete: () => void;
-  onEditBoundary?: () => void;
-  /** SPRINT-007: contributors/history/endorse for this PUBLIC site — set
-   *  only when the bound site is public, since a private one has no
-   *  community info to show. */
-  onViewCommunity?: () => void;
   onOpenPicker: () => void;
   onClose: () => void;
 }) {
@@ -567,69 +905,62 @@ function SiteStep({
         )}
       </div>
 
-      {boundInfo?.site?.ownedByViewer && (
-        <div className="flex flex-wrap items-center gap-2 rounded-md bg-gray-50 px-3 py-2">
-          <span className="text-xs text-gray-500">This is your site.</span>
-          {boundInfo.site.visibility === "public" && (
-            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onUnpublish}>
-              Unpublish
-            </Button>
-          )}
-          <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onDelete}>
-            Delete
-          </Button>
-          {onEditBoundary && (
-            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onEditBoundary}>
-              Edit boundary
-            </Button>
-          )}
-          {onViewCommunity && (
-            <Button type="button" variant="outline" size="sm" disabled={pending} onClick={onViewCommunity}>
-              Contributors &amp; endorsements
-            </Button>
-          )}
-        </div>
-      )}
-
       {suggestions === null ? (
         <p className="text-sm text-gray-500">Checking for nearby sites…</p>
       ) : suggestions.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Nearby sites</p>
           <ul className="flex flex-col gap-2">
-            {suggestions.map((s) => (
-              <li key={s.id} className="flex flex-col gap-1.5 rounded-md border border-gray-200 px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-col">
-                    <span className="font-condensed font-bold text-ink">{s.name}</span>
-                    <span className="text-xs text-gray-500">
-                      {formatDistance(s.distanceM)} {formatBearing(s.bearingDeg)} · {s.kind} ·{" "}
-                      {s.visibility === "public" ? "public" : "private"}
-                    </span>
+            {suggestions.map((s) => {
+              // The site siteChoice currently points at — not necessarily
+              // what the flight is bound to right now (typing a new name
+              // deselects it), the same "Current" treatment the (now-hidden)
+              // zone step used to give its own already-bound row.
+              const isCurrent = selectedSiteId === s.id;
+              return (
+                <li
+                  key={s.id}
+                  className={cn(
+                    "flex flex-col gap-1.5 rounded-md border px-3 py-2",
+                    isCurrent ? "border-amber bg-amber/10" : "border-gray-200",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col">
+                      <span className="font-condensed font-bold text-ink">{s.name}</span>
+                      <span className="text-xs text-gray-500">
+                        {formatDistance(s.distanceM)} {formatBearing(s.bearingDeg)} · {s.kind} ·{" "}
+                        {s.visibility === "public" ? "public" : "private"}
+                      </span>
+                    </div>
+                    {isCurrent ? (
+                      <span className="font-condensed text-sm font-bold tracking-wide text-amber">Current</span>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => onReuse(s.id, s.name, s.visibility)}
+                      >
+                        Use this site
+                      </Button>
+                    )}
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => onReuse(s.id, s.name, s.visibility)}
-                  >
-                    Use this site
-                  </Button>
-                </div>
-                {s.zones.length > 0 && (
-                  <ul className="ml-3 flex flex-col gap-1 border-l border-gray-200 pl-3">
-                    {s.zones.map((z) => (
-                      <li key={z.id} className="flex items-center justify-between gap-2 text-xs text-gray-500">
-                        <span>
-                          {z.name} — {formatDistance(z.distanceM)} {formatBearing(z.bearingDeg)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
+                  {s.zones.length > 0 && (
+                    <ul className="ml-3 flex flex-col gap-1 border-l border-gray-200 pl-3">
+                      {s.zones.map((z) => (
+                        <li key={z.id} className="flex items-center justify-between gap-2 text-xs text-gray-500">
+                          <span>
+                            {z.name} — {formatDistance(z.distanceM)} {formatBearing(z.bearingDeg)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
@@ -687,7 +1018,7 @@ function SiteStep({
               Cancel
             </Button>
             <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
-              {pending ? "Saving…" : "Next"}
+              {pending ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>
@@ -949,17 +1280,26 @@ function BoundaryPickerStep({
   onBack: () => void;
   onClose: () => void;
 }) {
+  // SPRINT-008: `rows.zones` is always [] when zones are disabled (the
+  // server action skips the query entirely) — deriving the copy from that
+  // already-gated data avoids threading yet another prop just for text.
+  const hasSpots = rows !== null && rows.zones.length > 0;
+
   return (
     <>
       <div className="flex flex-col gap-1">
         <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Edit a boundary</h2>
-        <p className="text-sm text-gray-500">Pick one of your sites or spots to draw or change its boundary.</p>
+        <p className="text-sm text-gray-500">
+          {hasSpots
+            ? "Pick one of your sites or spots to draw or change its boundary."
+            : "Pick one of your sites to draw or change its boundary."}
+        </p>
       </div>
 
       {rows === null ? (
         <p className="text-sm text-gray-500">Loading your sites…</p>
       ) : rows.sites.length === 0 && rows.zones.length === 0 ? (
-        <p className="text-sm text-gray-500">You don&rsquo;t own any named sites or spots yet.</p>
+        <p className="text-sm text-gray-500">You don&rsquo;t own any named sites yet.</p>
       ) : (
         <div className="flex flex-col gap-4">
           {rows.sites.length > 0 && (
