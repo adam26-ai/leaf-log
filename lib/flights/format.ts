@@ -2,6 +2,12 @@
 
 type DateInput = Date | string | null | undefined;
 
+export type UnitSystem = "metric" | "imperial";
+
+const METERS_PER_FOOT = 0.3048;
+const METERS_PER_MILE = 1609.344;
+const FPM_PER_MS = 196.850394;
+
 function toMs(d: DateInput): number | null {
   if (d == null) return null;
   const ms = d instanceof Date ? d.getTime() : Date.parse(d);
@@ -16,12 +22,19 @@ export function formatDuration(seconds: number | null): string {
   return `${m}m`;
 }
 
-export function formatAltitude(m: number | null): string {
-  return m == null ? "—" : `${m.toLocaleString()} m`;
+export function formatAltitude(m: number | null, system: UnitSystem = "metric"): string {
+  if (m == null) return "—";
+  if (system === "imperial") return `${Math.round(m / METERS_PER_FOOT).toLocaleString()} ft`;
+  return `${m.toLocaleString()} m`;
 }
 
-export function formatDistance(m: number | null): string {
+export function formatDistance(m: number | null, system: UnitSystem = "metric"): string {
   if (m == null) return "—";
+  if (system === "imperial") {
+    const feet = m / METERS_PER_FOOT;
+    if (feet < 528) return `${Math.round(feet)} ft`; // under 0.1 mi
+    return `${(m / METERS_PER_MILE).toFixed(1)} mi`;
+  }
   if (m < 1000) return `${Math.round(m)} m`;
   return `${(m / 1000).toFixed(1)} km`;
 }
@@ -34,9 +47,10 @@ export function formatBearing(deg: number): string {
   return COMPASS_POINTS[index];
 }
 
-export function formatVario(ms: number | null): string {
+export function formatVario(ms: number | null, system: UnitSystem = "metric"): string {
   if (ms == null) return "—";
   const sign = ms > 0 ? "+" : "";
+  if (system === "imperial") return `${sign}${Math.round(ms * FPM_PER_MS).toLocaleString()} ft/min`;
   return `${sign}${ms.toFixed(1)} m/s`;
 }
 

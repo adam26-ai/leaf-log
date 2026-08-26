@@ -6,7 +6,7 @@ import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { Wordmark } from "@/components/brand/wordmark";
 import { FlightHeader } from "@/components/flight/flight-header";
-import { MetricTiles } from "@/components/flight/metric-tiles";
+import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
@@ -80,7 +80,7 @@ export default async function FlightPage({
         ) : (
           <>
             <div className="mt-8">
-              <MetricTiles flight={flight} />
+              <KeyStatistics flight={flight} />
             </div>
             <div className="mt-8">
               <FlightViz

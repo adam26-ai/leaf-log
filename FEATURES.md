@@ -65,6 +65,42 @@ Track potential feature ideas for future sprints.
   model) or kept as two views for familiarity, and whether it lives on `/friends` or on each
   pilot's public profile page.
 
+## Consistent Top Navigation Across Pages
+- **Area:** Navigation / layout
+- **Description:** The shared top nav (`components/app-header.tsx` — Logbook/Feed/Upload/Profile
+  links + avatar menu) only appears on `/logbook`, `/feed`, `/friends`, `/upload`, `/settings`,
+  `/settings/devices`, and `/whats-new`. The flight detail page (`app/flights/[id]/page.tsx`) and
+  a pilot's public profile page (`app/[handle]/page.tsx`) instead render their own bare
+  Wordmark-only header with no nav links or avatar menu, so a signed-in pilot loses navigation
+  the moment they open a flight or a profile.
+- **Priority:** Medium
+- **Notes:** `AppHeader` currently requires a `profile` prop and assumes an authenticated viewer
+  (avatar menu, no anonymous-viewer case) — that's presumably why flight/profile pages, which are
+  also reachable by anonymous or other-pilot viewers, rolled their own minimal header instead.
+  Fixing this likely means an `AppHeader` variant that renders the full nav when a profile is
+  present and falls back to the bare Wordmark link when the viewer is signed out. Pre-auth flows
+  (`sign-in`, `check-email`, `stay-signed-in`, `onboarding`, `activate`) are probably fine staying
+  header-less — worth confirming scope before implementing.
+
+## 3D Flight-Marker Pole (Site Name + Altitude)
+- **Area:** Flight page / 3D replay markers
+- **Description:** Update the flight marker to look more like a reference screenshot: a vertical
+  pole rising from the terrain at the takeoff/landing point, topped with a small paraglider icon,
+  the site name running vertically along the pole (e.g. "SCOTT O'BRIEN"), and a dark label box at
+  the base showing the ground altitude (e.g. "394 ft ASL"). Today's markers are much plainer — a
+  flat colored circle pin in the 2D map (`components/flight/track-map.tsx`, green for takeoff,
+  dark for landing) and no equivalent site marker at all in the 3D replay
+  (`components/flight/flight-replay-3d.tsx`, which currently only renders the glider sphere and
+  photo pins).
+- **Priority:** Medium
+- **Notes:** The pole/label style is inherently a 3D element (it reads as a physical object
+  standing on the terrain), so this is really a 3D-replay-only marker — the 2D map's flat pins
+  would stay as-is. Would need a deck.gl layer (matching the existing IconLayer/sphere approach
+  in `flight-replay-3d.tsx`) for the pole + glider icon, plus a text/label layer for the site name
+  and an altitude readout box; altitude display should respect whatever unit system the flight
+  page ends up using (see the in-progress key-statistics Metric/Imperial toggle). Site name text
+  would come from `takeoffSiteName`/`landingSiteName` on `Flight`.
+
 Completed ideas (see git history / PRs for detail):
 
 - Short Flight URL IDs — 4-char `[a-z0-9]` flight URLs (PR #2)

@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-26",
+    title: "Flight stats, at a glance",
+    body: "A flight's key numbers now live in one clean card — date, airtime, altitude gained, best climb and sink, distance flown, and where you launched, each with its own icon so you can scan it in a second. Prefer feet and miles over meters and kilometers? Flip the Metric/Imperial toggle right on the card — it remembers your choice next time.",
+  },
+  {
     date: "2026-08-24",
     title: "Simplifying: just sites for now",
     body: "We added \"spots\" within a site a few sprints back — a north launch, a specific LZ — plus boundaries and community editing to go with them. It turned out to be more than most flying needs day to day, so we're stepping back to just sites for now, one name per launch or landing. Nothing you've named is gone: any spot you'd already added still keeps your flight tagged to its site, we're just not showing the extra layer right now. If it turns out pilots want it back, it's a quick flip, not a rebuild.",
