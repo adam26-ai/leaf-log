@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCurrentUserId } from "@/lib/profile";
+import { getCurrentProfile } from "@/lib/profile";
 import { getFlightForViewer } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
-import { Wordmark } from "@/components/brand/wordmark";
+import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
@@ -19,7 +18,8 @@ export default async function FlightPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const viewerId = await getCurrentUserId();
+  const viewer = await getCurrentProfile();
+  const viewerId = viewer?.id ?? null;
 
   const flight = await getFlightForViewer(id, viewerId);
   if (!flight) notFound();
@@ -34,11 +34,7 @@ export default async function FlightPage({
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="border-b border-gray-200 px-6 py-4 sm:px-10">
-        <Link href={isOwner ? "/logbook" : "/"}>
-          <Wordmark className="text-xl" />
-        </Link>
-      </header>
+      <AppHeader profile={viewer} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

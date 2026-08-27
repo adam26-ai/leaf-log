@@ -68,19 +68,20 @@ Track potential feature ideas for future sprints.
 ## Consistent Top Navigation Across Pages
 - **Area:** Navigation / layout
 - **Description:** The shared top nav (`components/app-header.tsx` — Logbook/Feed/Upload/Profile
-  links + avatar menu) only appears on `/logbook`, `/feed`, `/friends`, `/upload`, `/settings`,
+  links + avatar menu) only appeared on `/logbook`, `/feed`, `/friends`, `/upload`, `/settings`,
   `/settings/devices`, and `/whats-new`. The flight detail page (`app/flights/[id]/page.tsx`) and
-  a pilot's public profile page (`app/[handle]/page.tsx`) instead render their own bare
-  Wordmark-only header with no nav links or avatar menu, so a signed-in pilot loses navigation
-  the moment they open a flight or a profile.
-- **Priority:** Medium
-- **Notes:** `AppHeader` currently requires a `profile` prop and assumes an authenticated viewer
-  (avatar menu, no anonymous-viewer case) — that's presumably why flight/profile pages, which are
-  also reachable by anonymous or other-pilot viewers, rolled their own minimal header instead.
-  Fixing this likely means an `AppHeader` variant that renders the full nav when a profile is
-  present and falls back to the bare Wordmark link when the viewer is signed out. Pre-auth flows
-  (`sign-in`, `check-email`, `stay-signed-in`, `onboarding`, `activate`) are probably fine staying
-  header-less — worth confirming scope before implementing.
+  a pilot's public profile page (`app/[handle]/page.tsx`) instead rendered their own bare
+  Wordmark-only header with no nav links or avatar menu, so a signed-in pilot lost navigation
+  the moment they opened a flight or a profile.
+- **Priority:** Medium — **shipped, 2026-08-26.**
+- **Notes:** `AppHeader` now takes `profile: Profile | null` — the full nav + avatar menu when
+  signed in, the same bare Wordmark-linking-to-`/` fallback as before when the viewer is
+  anonymous. Both pages now fetch `getCurrentProfile()` (rather than just the id) and pass it
+  straight through; the flight page's Wordmark link also picks up a small consistency
+  improvement as a side effect — a signed-in non-owner viewing someone else's public flight now
+  gets "Logbook" as the destination instead of "/", matching every other authenticated page.
+  Pre-auth/onboarding flows (`sign-in`, `check-email`, `stay-signed-in`, `onboarding`,
+  `activate`) were left header-less, matching the original scope note.
 
 ## 3D Flight-Marker Pole (Site Name + Altitude)
 - **Area:** Flight page / 3D replay markers
