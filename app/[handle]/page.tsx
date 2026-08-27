@@ -1,11 +1,10 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { listProfileFlightsForViewer, statsFrom } from "@/lib/flights/repo";
-import { getCurrentUserId } from "@/lib/profile";
+import { getCurrentProfile } from "@/lib/profile";
 import { countFriends, friendStateFor } from "@/lib/social/friends";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { Wordmark } from "@/components/brand/wordmark";
+import { AppHeader } from "@/components/app-header";
 import { Avatar } from "@/components/avatar";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
@@ -30,7 +29,8 @@ export default async function ProfilePage({
   const profile = await prisma.profile.findUnique({ where: { handle } });
   if (!profile) notFound();
 
-  const viewerId = await getCurrentUserId();
+  const viewer = await getCurrentProfile();
+  const viewerId = viewer?.id ?? null;
   const [flights, friendCount, friendState] = await Promise.all([
     listProfileFlightsForViewer(profile.id, viewerId),
     countFriends(profile.id),
@@ -40,11 +40,7 @@ export default async function ProfilePage({
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="px-6 py-5 sm:px-10">
-        <Link href="/">
-          <Wordmark className="text-xl" />
-        </Link>
-      </header>
+      <AppHeader profile={viewer} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <div className="flex items-center gap-4">
           <Avatar

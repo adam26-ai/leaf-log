@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-08-26",
+    title: "Navigation, everywhere",
+    body: "The Logbook / Feed / Upload / Profile menu now follows you onto a flight page and onto any pilot's profile — not just the pages you'd expect it on. If you were signed in, you no longer lose your way back after opening a flight from your feed.",
+  },
+  {
+    date: "2026-08-26",
     title: "Flight stats, at a glance",
     body: "A flight's key numbers now live in one clean card — date, airtime, altitude gained, best climb and sink, distance flown, and where you launched, each with its own icon so you can scan it in a second. Prefer feet and miles over meters and kilometers? Flip the Metric/Imperial toggle right on the card — it remembers your choice next time.",
   },
