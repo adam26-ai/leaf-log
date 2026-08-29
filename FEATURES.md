@@ -427,3 +427,20 @@ Completed ideas (see git history / PRs for detail):
   Camera/Basemap/Shadow controls just added to `components/flight/flight-viz.tsx`). Other candidate
   data dimensions once the mode-switching plumbing exists: altitude, and (if the "Custom Glider
   Marker Color" or "Auto-Detect Co-Flying Friends" ideas above ship) per-pilot identity coloring.
+
+## License Rating on Pilot Profile
+- **Area:** Profile / pilot identity
+- **Description:** User profile should include license ratings. For now it will be USHPA, but
+  later we should look beyond just USHPA association to international organizations as well.
+- **Priority:** Medium
+- **Notes:** Distinct from the "USHPA Rating Progress & Flight Instructor Sign-offs" idea above —
+  that one is about auto-calculating progress *toward* a rating from flight data; this one is
+  simply displaying a pilot's *current* rating (and issuing association) on their profile, most
+  likely self-reported at first rather than derived. Worth modeling as a small join-style
+  structure from the start (e.g. `{ organization: "USHPA", rating: "P2", ... }`) rather than a
+  flat `ushpaRating` column on `Profile`, given the international-organizations extension is
+  already called out as a near-term direction — a pilot could plausibly hold ratings from more
+  than one organization (USHPA plus a national federation, for instance). If the ratings-progress
+  feature ships first, its computed rating could become the default source of truth here instead
+  of a self-reported value, with self-reporting as the fallback for organizations Leaf Log doesn't
+  calculate progress for.
