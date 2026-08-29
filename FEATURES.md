@@ -177,20 +177,19 @@ Track potential feature ideas for future sprints.
   Later it will add more. Closes a real gap: the flight page's own visibility control was just
   simplified to a read-only icon (Lock/Users/Globe) rather than an inline clickable toggle, on
   the understanding that real editing would move to a dedicated edit page — this is that page.
-- **Priority:** High — the only way to change a flight's visibility right now is a direct
-  database write; there is no owner-facing UI path at all until this ships.
-- **Notes:** The actual update logic already exists and is untouched —
-  `app/flights/[id]/visibility-action.ts`'s `setVisibility` — it just lost its UI entry point
-  when `components/flight/share-toggle.tsx` became read-only. A new edit page/route (e.g.
-  `/flights/[id]/edit`, owner-only, redirect or 404 otherwise) can reuse that action directly for
-  the visibility field, with the existing three-way private/friends/public control (the one that
-  used to live inline) moved there instead of being rebuilt from scratch. "Later it will add
-  more" — natural future fields include the flight notes/type/instructor metadata from the USHPA
-  ratings-progress idea above, so it's worth keeping this page's shape generic (a form/section
-  list) rather than something hard-coded to a single visibility control. Three e2e specs
-  (`test/e2e/happy-path.spec.ts`, `community.spec.ts`, `social.spec.ts`) currently stand in for
-  this missing page with a direct Prisma write in their setup steps — each has a comment marking
-  the spot — and should switch to driving the real edit-page UI once it exists.
+- **Priority:** High — **shipped, 2026-08-29.** `/flights/[id]/edit` (owner-only, 404 otherwise)
+  now covers visibility (the three-way control moved here from the old inline `ShareToggle`,
+  reusing `setVisibility` unchanged), a new free-text **notes** field (`Flight.notes`, migration
+  `20260829185017_add_flight_notes`, shown on the flight page in its own card when set), photo
+  upload (`PhotoUpload` reused as-is), and the flight-delete action (moved here from the bottom of
+  the flight page). A pencil icon next to the visibility/kudos icons on the flight page links here.
+- **Notes:** Remaining follow-up: the three e2e specs (`test/e2e/happy-path.spec.ts`,
+  `community.spec.ts`, `social.spec.ts`) that stand in for visibility changes with a direct Prisma
+  write in their setup steps haven't been switched to drive the real edit-page UI yet. Notes are
+  owner-only for now (never shown to other viewers, even on a public flight) — a deliberate,
+  conservative default given a note could be self-critical ("sketchy LZ, avoid"); revisit if pilots
+  want notes to be public alongside a public flight. Photo delete/management still lives on the
+  flight page's existing gallery, not duplicated here.
 
 Completed ideas (see git history / PRs for detail):
 

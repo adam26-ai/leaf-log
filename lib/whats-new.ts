@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-08-29",
+    title: "Edit a flight after the fact",
+    body: "Tap the pencil next to a flight's title to open its new edit page — change who can see it, jot down notes about the conditions or how it went, add more photos, or delete the flight, all in one place. Notes are just for you; they show up on the flight page but only when you're the one looking.",
+  },
+  {
+    date: "2026-08-29",
     title: "A bigger, smarter 3D replay",
     body: "The 3D replay is now the main event — bigger, wider, and on by default. A new set of controls sits right on the map: toggle the ground shadow, hover the camera icon to pick Follow, Chase, or Fixed, hover the basemap icon to swap styles, jump straight back to your glider, or zoom out to frame the whole route in one tap. Playback now lives in a single compact bar right on the map, with a simple speed dropdown alongside the scrubber.",
   },
