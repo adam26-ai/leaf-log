@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { prisma } from "@/lib/prisma";
 
 const LINK_FILE = "/tmp/leaf-magic-link.txt";
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
@@ -62,11 +63,10 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   await bPage.locator('input[type="file"]').setInputFiles(IGC_PATH);
   await expect(bPage).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   const flightUrl = bPage.url();
-  await bPage.getByRole("button", { name: "Friends only" }).click();
-  await expect(bPage.getByRole("button", { name: "Friends only" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  // The visibility control is read-only in the UI for now (editing moves to
+  // a future flight-edit page) — stands in for that page until it exists.
+  const flightId = flightUrl.split("/").pop()!;
+  await prisma.flight.update({ where: { id: flightId }, data: { visibility: "friends" } });
 
   await page.goto("/feed");
   await expect(page.getByText(`@${bHandle}`)).toBeVisible();
@@ -76,9 +76,10 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
 
   await page.goto(flightUrl);
   await expect(page.getByText("Airtime")).toBeVisible();
-  await page.getByRole("button", { name: "Kudos" }).click();
-  await expect(page.getByRole("button", { name: "Kudoed" })).toBeVisible();
-  await expect(page.getByText("1 kudos")).toBeVisible();
+  await page.getByRole("button", { name: "Give kudos" }).click();
+  const kudoed = page.getByRole("button", { name: "Remove kudos" });
+  await expect(kudoed).toHaveAttribute("aria-pressed", "true");
+  await expect(kudoed).toContainText("1");
 
   const anon = await browser.newContext();
   const anonPage = await anon.newPage();

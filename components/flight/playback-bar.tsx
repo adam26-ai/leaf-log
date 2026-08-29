@@ -11,9 +11,12 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
     .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
 }
 
+const SPEEDS = [4, 8, 16, 32];
+
 /**
- * Shared replay transport — play/pause, scrubber, speed. Drives the one timeline
- * that both the 2D map and the 3D replay read from (lifted into FlightViz).
+ * Shared replay transport — play/pause, scrubber, speed. Drives the 3D
+ * replay's timeline (lifted into FlightViz). A single row so it fits as a
+ * compact overlay on the map itself.
  */
 export function PlaybackBar({
   playing,
@@ -26,7 +29,6 @@ export function PlaybackBar({
   onTogglePlay,
   onScrub,
   onSpeed,
-  hint,
 }: {
   playing: boolean;
   time: number;
@@ -38,50 +40,45 @@ export function PlaybackBar({
   onTogglePlay: () => void;
   onScrub: (t: number) => void;
   onSpeed: (s: number) => void;
-  hint?: React.ReactNode;
 }) {
   return (
-    <Card className="flex flex-col gap-3 p-4">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onTogglePlay}
-          disabled={disabled}
-          className="h-9 w-16 rounded-md bg-amber font-condensed font-bold text-ink hover:bg-amber-strong disabled:opacity-50"
-        >
-          {playing ? "Pause" : "Play"}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(1, Math.round(duration))}
-          step={1}
-          value={Math.min(Math.round(time), Math.round(duration))}
-          onChange={(e) => onScrub(Number(e.target.value))}
-          disabled={disabled}
-          className="flex-1 accent-amber"
-        />
-        <span className="w-20 text-right font-mono text-sm text-gray-600">
-          {disabled ? "--:--:--" : clock(time, takeoffMs, offsetMin)}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <span>Speed</span>
-        {[4, 8, 16, 32].map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onSpeed(s)}
-            className={cn(
-              "rounded px-2 py-0.5",
-              speed === s ? "bg-ink text-paper" : "bg-gray-100 text-gray-600",
-            )}
-          >
+    <Card className="flex items-center gap-3 p-3">
+      <button
+        type="button"
+        onClick={onTogglePlay}
+        disabled={disabled}
+        className="h-9 w-16 shrink-0 rounded-md bg-amber font-condensed font-bold text-ink hover:bg-amber-strong disabled:opacity-50"
+      >
+        {playing ? "Pause" : "Play"}
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={Math.max(1, Math.round(duration))}
+        step={1}
+        value={Math.min(Math.round(time), Math.round(duration))}
+        onChange={(e) => onScrub(Number(e.target.value))}
+        disabled={disabled}
+        className="flex-1 accent-amber"
+      />
+      <span className="w-20 shrink-0 text-right font-mono text-sm text-gray-600">
+        {disabled ? "--:--:--" : clock(time, takeoffMs, offsetMin)}
+      </span>
+      <select
+        value={speed}
+        onChange={(e) => onSpeed(Number(e.target.value))}
+        disabled={disabled}
+        className={cn(
+          "h-9 shrink-0 rounded-md border border-gray-300 bg-paper px-2 font-condensed text-sm font-bold text-ink outline-none focus:border-amber disabled:opacity-50",
+        )}
+        title="Playback speed"
+      >
+        {SPEEDS.map((s) => (
+          <option key={s} value={s}>
             {s}×
-          </button>
+          </option>
         ))}
-        {hint && <span className="ml-auto text-right">{hint}</span>}
-      </div>
+      </select>
     </Card>
   );
 }

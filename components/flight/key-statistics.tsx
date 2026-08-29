@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Calendar,
   Clock,
@@ -10,7 +9,7 @@ import {
   ArrowDownRight,
   Route,
   ArrowLeftRight,
-  MapPin,
+  Triangle,
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -20,19 +19,11 @@ import {
   formatDistance,
   formatVario,
   formatLocalDate,
-  type UnitSystem,
+  formatLocalTime,
 } from "@/lib/flights/format";
-import { formatLocationLabel } from "@/lib/sites/display";
+import { useUnits } from "@/lib/flights/use-units";
 import { cn } from "@/lib/utils";
 import type { Flight } from "@prisma/client";
-
-const UNITS_KEY = "leaf-units";
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
-  return rows;
-}
 
 function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
@@ -48,44 +39,53 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
   );
 }
 
+/** Best climb and strongest sink together in one cell — two readings that
+ *  are naturally a pair, so they share a single label instead of eating two
+ *  grid cells. */
+function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 basis-1/3 flex-col gap-1 p-4">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-amber" />
+          <span className="font-condensed text-lg font-bold tabular-nums text-ink">{climb}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <ArrowDownRight className="h-4 w-4 shrink-0 text-amber" />
+          <span className="font-condensed text-lg font-bold tabular-nums text-ink">{sink}</span>
+        </div>
+      </div>
+      <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500">
+        Best climb / max sink
+      </span>
+    </div>
+  );
+}
+
 /**
  * Key-statistics card — an icon + value grid, three per row, with a
  * metric/imperial toggle. Replaces the old horizontal-scrolling tile strip.
  */
 export function KeyStatistics({ flight }: { flight: Flight }) {
-  const [units, setUnits] = useState<UnitSystem>(() => {
-    if (typeof window === "undefined") return "metric";
-    return localStorage.getItem(UNITS_KEY) === "imperial" ? "imperial" : "metric";
-  });
+  const [units, changeUnits] = useUnits();
 
-  function changeUnits(next: UnitSystem) {
-    setUnits(next);
-    try {
-      localStorage.setItem(UNITS_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  }
+  const offset = flight.localUtcOffsetMinutes;
+  const timeRange = `${formatLocalTime(flight.takeoffAt, offset)} – ${formatLocalTime(flight.landingAt, offset)}`;
 
-  const location =
-    formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
-
-  const stats: [string, LucideIcon, string][] = [
+  const row1: [string, LucideIcon, string][] = [
     [
       "Date",
       Calendar,
       formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes),
     ],
-    ["Airtime", Clock, formatDuration(flight.durationS)],
-    ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units)],
-    ["Height gained", ArrowUp, formatAltitude(flight.altGainM, units)],
-    ["Best climb", ArrowUpRight, formatVario(flight.maxClimbMs, units)],
-    ["Strongest sink", ArrowDownRight, formatVario(flight.maxSinkMs, units)],
-    ["Track distance", Route, formatDistance(flight.trackDistM, units)],
-    ["Straight line", ArrowLeftRight, formatDistance(flight.straightDistM, units)],
-    ["Location", MapPin, location],
+    ["Start – End", Clock, timeRange],
+    ["Wing", Triangle, flight.glider ?? "—"],
   ];
-  const rows = chunk(stats, 3);
+  const row2: [string, LucideIcon, string][] = [
+    ["Airtime", Clock, formatDuration(flight.durationS)],
+    ["Distance", Route, formatDistance(flight.trackDistM, units)],
+    ["Straight line", ArrowLeftRight, formatDistance(flight.straightDistM, units)],
+  ];
 
   return (
     <Card className="overflow-hidden">
@@ -110,13 +110,24 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
         </div>
       </div>
       <div className="divide-y divide-gray-100">
-        {rows.map((row, i) => (
-          <div key={i} className="flex divide-x divide-gray-100">
-            {row.map(([label, Icon, value]) => (
-              <Stat key={label} label={label} icon={Icon} value={value} />
-            ))}
-          </div>
-        ))}
+        <div className="flex divide-x divide-gray-100">
+          {row1.map(([label, Icon, value]) => (
+            <Stat key={label} label={label} icon={Icon} value={value} />
+          ))}
+        </div>
+        <div className="flex divide-x divide-gray-100">
+          {row2.map(([label, Icon, value]) => (
+            <Stat key={label} label={label} icon={Icon} value={value} />
+          ))}
+        </div>
+        <div className="flex divide-x divide-gray-100">
+          <Stat label="Max altitude" icon={Mountain} value={formatAltitude(flight.maxAltM, units)} />
+          <Stat label="Height gained" icon={ArrowUp} value={formatAltitude(flight.altGainM, units)} />
+          <ClimbSinkStat
+            climb={formatVario(flight.maxClimbMs, units)}
+            sink={formatVario(flight.maxSinkMs, units)}
+          />
+        </div>
       </div>
     </Card>
   );

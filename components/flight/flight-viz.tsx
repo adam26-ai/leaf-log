@@ -1,11 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Sun,
+  Video,
+  Navigation,
+  Hand,
+  Map as MapIcon,
+  Satellite,
+  Mountain,
+  Route,
+  Crosshair,
+  Scan,
+  type LucideIcon,
+} from "lucide-react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
-import { TrackMap } from "./track-map";
 import { Barograph } from "./barograph";
-import { FlightReplay3D, type CameraMode } from "./flight-replay-3d";
+import { FlightReplay3D, type CameraMode, type FlightReplay3DHandle } from "./flight-replay-3d";
 import { PlaybackBar } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
 import { PhotoUpload } from "./photo-upload";
@@ -13,14 +25,168 @@ import type { FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout } from "./instrument-readout";
 import { instrumentAt } from "@/lib/flights/instruments";
+import { useUnits } from "@/lib/flights/use-units";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+/** Small square icon button for the map's own control overlay — distinct
+ *  from the flat `title`-only text buttons used elsewhere in the app since
+ *  it has to read clearly floating over map imagery. */
+function MapIconButton({
+  icon: Icon,
+  active = false,
+  title,
+  onClick,
+}: {
+  icon: LucideIcon;
+  active?: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={cn(
+        "flex h-9 w-9 items-center justify-center rounded-md border shadow-sm backdrop-blur-sm transition-colors",
+        active
+          ? "border-amber bg-amber text-ink"
+          : "border-gray-300 bg-paper/90 text-gray-600 hover:text-ink",
+      )}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+}
+
+interface FlyoutOption<T extends string> {
+  id: T;
+  label: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}
+
+/** An icon button that, on hover, pops out a menu of every option (icon +
+ *  name) so one can be picked directly — clicking the main icon still cycles
+ *  (via `onClick`), which is the only path on touch, where hover never fires. */
+function IconFlyoutControl<T extends string>({
+  icon,
+  active,
+  title,
+  onClick,
+  options,
+  value,
+  onSelect,
+}: {
+  icon: LucideIcon;
+  active?: boolean;
+  title: string;
+  onClick: () => void;
+  options: FlyoutOption<T>[];
+  value: T;
+  onSelect: (id: T) => void;
+}) {
+  return (
+    <div className="group relative">
+      <MapIconButton icon={icon} active={active} title={title} onClick={onClick} />
+      <div
+        className="invisible absolute right-full top-0 mr-2 flex flex-col gap-0.5 rounded-md border border-gray-300 bg-paper p-1 opacity-0 shadow-md transition-opacity
+          group-hover:visible group-hover:opacity-100"
+      >
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            disabled={o.disabled}
+            onClick={() => onSelect(o.id)}
+            className={cn(
+              "flex items-center gap-2 whitespace-nowrap rounded px-2 py-1.5 text-left font-condensed text-sm font-bold transition-colors",
+              o.disabled
+                ? "cursor-not-allowed text-gray-300"
+                : o.id === value
+                  ? "bg-amber text-ink"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-ink",
+            )}
+          >
+            <o.icon className="h-4 w-4 shrink-0" />
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const CAMERA_MODES: FlyoutOption<CameraMode>[] = [
+  { id: "follow", label: "Follow", icon: Video },
+  { id: "chase", label: "Chase", icon: Navigation },
+  { id: "fixed", label: "Fixed", icon: Hand },
+];
+
+function CameraModeControl({
+  mode,
+  onCycle,
+  onSelect,
+}: {
+  mode: CameraMode;
+  onCycle: () => void;
+  onSelect: (mode: CameraMode) => void;
+}) {
+  const current = CAMERA_MODES.find((m) => m.id === mode) ?? CAMERA_MODES[0];
+  return (
+    <IconFlyoutControl
+      icon={current.icon}
+      active={mode !== "fixed"}
+      title={`Camera: ${current.label} (click to cycle, hover for options)`}
+      onClick={onCycle}
+      options={CAMERA_MODES}
+      value={mode}
+      onSelect={onSelect}
+    />
+  );
+}
+
+const BASEMAP_ICONS: Record<BasemapId, LucideIcon> = {
+  monochrome: MapIcon,
+  satellite: Satellite,
+  hybrid: Satellite,
+  topo: Mountain,
+  streets: Route,
+};
+
+function BasemapControl({
+  basemap,
+  onCycle,
+  onSelect,
+}: {
+  basemap: BasemapId;
+  onCycle: () => void;
+  onSelect: (id: BasemapId) => void;
+}) {
+  const options: FlyoutOption<BasemapId>[] = BASEMAPS.map((b) => ({
+    id: b.id,
+    label: b.needsKey && !hasMapTiler() ? `${b.label} (needs key)` : b.label,
+    icon: BASEMAP_ICONS[b.id],
+    disabled: b.needsKey && !hasMapTiler(),
+  }));
+  const current = BASEMAPS.find((b) => b.id === basemap);
+  return (
+    <IconFlyoutControl
+      icon={BASEMAP_ICONS[basemap]}
+      title={`Basemap: ${current?.label ?? basemap} (click to cycle, hover for options)`}
+      onClick={onCycle}
+      options={options}
+      value={basemap}
+      onSelect={onSelect}
+    />
+  );
+}
+
 /**
- * Owns the flight's shared replay timeline (time/play/speed) so one scrubber
- * drives both the 2D map and the 3D replay, plus a linked barograph cursor. The
- * selection persists until you click a map; map hover is intentionally not a
- * cursor source.
+ * Owns the flight's shared replay timeline (time/play/speed) so the scrubber
+ * drives the 3D replay and a linked barograph cursor together.
  */
 export function FlightViz({
   flightId,
@@ -40,7 +206,6 @@ export function FlightViz({
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
   const [photos, setPhotos] = useState<FlightPhoto[]>([]);
   const [error, setError] = useState(false);
-  const [mode, setMode] = useState<"2d" | "3d">("2d");
   // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
   // as a lazy initializer — the UI only renders client-side once the track loads.
   const [basemap, setBasemap] = useState<BasemapId>(() => {
@@ -64,11 +229,16 @@ export function FlightViz({
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(8);
-  // Whether a point is selected/highlighted (cursor + readout shown).
-  const [active, setActive] = useState(false);
+  // Whether a point is selected/highlighted (readout shown). Starts true —
+  // the glider is always the highlight.
+  const [active, setActive] = useState(true);
   // The photo whose lightbox is open (controlled so a map pin can open it).
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const timeRef = useRef(0);
+  const replayRef = useRef<FlightReplay3DHandle>(null);
+  // Same Metric/Imperial preference as the key-statistics card, kept live in
+  // sync across both components (see lib/flights/use-units.ts).
+  const [units] = useUnits();
 
   useEffect(() => {
     let on = true;
@@ -143,14 +313,6 @@ export function FlightViz({
     setActive(true);
     setPlaying((p) => !p);
   }
-  function clearSelection() {
-    setActive(false);
-    setPlaying(false);
-  }
-  function changeMode(m: "2d" | "3d") {
-    setMode(m);
-    if (m === "3d") setActive(true); // the glider is always the highlight in 3D
-  }
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
     try {
@@ -159,16 +321,17 @@ export function FlightViz({
       /* ignore */
     }
   }
+  function cycleBasemap() {
+    const available = BASEMAPS.filter((b) => !(b.needsKey && !hasMapTiler()));
+    const i = available.findIndex((b) => b.id === basemap);
+    changeBasemap(available[(i + 1) % available.length].id);
+  }
+  // Persisted to localStorage by the effect above whenever it changes.
+  function selectCameraMode(next: CameraMode) {
+    setCameraMode(next);
+  }
   function cycleCameraMode() {
-    setCameraMode((mode) => {
-      const next = mode === "follow" ? "chase" : mode === "chase" ? "fixed" : "follow";
-      try {
-        localStorage.setItem("leaf-camera-mode", next);
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+    selectCameraMode(cameraMode === "follow" ? "chase" : cameraMode === "chase" ? "fixed" : "follow");
   }
   function toggleShadow() {
     setShowShadow((on) => {
@@ -180,23 +343,6 @@ export function FlightViz({
       }
       return next;
     });
-  }
-
-  // Interpolate the [lon,lat] position at a given time from the replay samples.
-  function posAt(t: number): [number, number] | null {
-    const s = replay?.samples;
-    if (!s || s.length === 0) return null;
-    if (t <= s[0][3]) return [s[0][0], s[0][1]];
-    for (let i = 1; i < s.length; i++) {
-      if (s[i][3] >= t) {
-        const a = s[i - 1];
-        const b = s[i];
-        const f = (t - a[3]) / (b[3] - a[3] || 1);
-        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-      }
-    }
-    const l = s[s.length - 1];
-    return [l[0], l[1]];
   }
 
   if (error) {
@@ -214,102 +360,19 @@ export function FlightViz({
     );
   }
 
-  const cursor = active ? posAt(time) : null;
   const reading = active && replay ? instrumentAt(replay, time) : null;
   const duration = replay?.durationS ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex w-fit rounded-md border border-gray-200 p-0.5">
-            {(["2d", "3d"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => changeMode(m)}
-                className={cn(
-                  "rounded px-3 py-1 font-condensed text-sm font-bold transition-colors",
-                  mode === m ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
-                )}
-              >
-                {m === "2d" ? "2D" : "3D"}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {mode === "3d" && (
-              <>
-                <button
-                  type="button"
-                  onClick={toggleShadow}
-                  className={cn(
-                    "h-8 rounded-md border px-2 font-condensed text-sm font-bold transition-colors",
-                    showShadow
-                      ? "border-amber bg-amber text-ink"
-                      : "border-gray-300 bg-paper text-gray-600 hover:text-ink",
-                  )}
-                  title="Toggle the terrain-clamped flight shadow"
-                >
-                  Shadow
-                </button>
-                <button
-                  type="button"
-                  onClick={cycleCameraMode}
-                  className={cn(
-                    "h-8 rounded-md border px-2 font-condensed text-sm font-bold transition-colors",
-                    cameraMode !== "fixed"
-                      ? "border-amber bg-amber text-ink"
-                      : "border-gray-300 bg-paper text-gray-600 hover:text-ink",
-                  )}
-                  title="Cycle the 3D camera mode"
-                >
-                  {`Camera: ${cameraMode[0].toUpperCase()}${cameraMode.slice(1)}`}
-                </button>
-              </>
-            )}
-            <label className="flex items-center gap-2 text-sm text-gray-600">
-              <span className="font-condensed font-bold">Basemap</span>
-              <select
-                value={basemap}
-                onChange={(e) => changeBasemap(e.target.value as BasemapId)}
-                className="h-8 rounded-md border border-gray-300 bg-paper px-2 text-ink outline-none focus:border-amber"
-              >
-                {BASEMAPS.map((b) => {
-                  const locked = b.needsKey && !hasMapTiler();
-                  return (
-                    <option key={b.id} value={b.id} disabled={locked}>
-                      {b.label}
-                      {locked ? " (needs key)" : ""}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        <div className="relative">
-          {mode === "2d" ? (
-            <Card className="overflow-hidden">
-              <TrackMap
-                line={track.line}
-                bounds={track.bounds}
-                basemap={basemap}
-                cursor={cursor}
-                flightId={flightId}
-                photos={photos}
-                onClear={clearSelection}
-                onPhotoHover={scrubTo}
-                onPhotoOpen={(id, t) => {
-                  setOpenPhotoId(id);
-                  if (t != null) scrubTo(t);
-                }}
-              />
-            </Card>
-          ) : (
+        {/* The map spans 80% of the browser window, breaking out of the
+            page's centered max-w column rather than following the same
+            margins as the key-statistics card above it. */}
+        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+          <div className="relative">
             <FlightReplay3D
+              ref={replayRef}
               flightId={flightId}
               basemap={basemap}
               time={time}
@@ -323,42 +386,68 @@ export function FlightViz({
                 if (t != null) scrubTo(t);
               }}
             />
-          )}
-          {/* Live instrument panel, overlaid on the map (top-centre). */}
-          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
-            <InstrumentReadout reading={reading} />
+            {/* Live instrument panel, overlaid on the map (top-centre). */}
+            <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
+              <InstrumentReadout reading={reading} units={units} />
+            </div>
+            {/* Map controls, overlaid on the map (right-centre). */}
+            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+              <MapIconButton
+                icon={Sun}
+                active={showShadow}
+                title="Toggle the terrain-clamped flight shadow"
+                onClick={toggleShadow}
+              />
+              <CameraModeControl mode={cameraMode} onCycle={cycleCameraMode} onSelect={selectCameraMode} />
+              <BasemapControl basemap={basemap} onCycle={cycleBasemap} onSelect={changeBasemap} />
+              <MapIconButton
+                icon={Crosshair}
+                title="Center on pilot"
+                onClick={() => replayRef.current?.centerOnPilot()}
+              />
+              <MapIconButton
+                icon={Scan}
+                title="Zoom to full route"
+                onClick={() => replayRef.current?.fitToRoute()}
+              />
+            </div>
+            {/* Scrubber transport, overlaid on the map (bottom-centre). Cleared
+                enough to sit above the map's own attribution strip. */}
+            <div className="absolute inset-x-0 bottom-8 flex justify-center px-3">
+              <div className="w-full max-w-2xl">
+                <PlaybackBar
+                  playing={playing}
+                  time={time}
+                  duration={duration}
+                  speed={speed}
+                  takeoffMs={takeoffMs}
+                  offsetMin={offsetMin}
+                  disabled={!replay}
+                  onTogglePlay={togglePlay}
+                  onScrub={scrubTo}
+                  onSpeed={setSpeed}
+                />
+              </div>
+            </div>
           </div>
         </div>
-
-        <PlaybackBar
-          playing={playing}
-          time={time}
-          duration={duration}
-          speed={speed}
-          takeoffMs={takeoffMs}
-          offsetMin={offsetMin}
-          disabled={!replay}
-          onTogglePlay={togglePlay}
-          onScrub={scrubTo}
-          onSpeed={setSpeed}
-          hint={
-            mode === "3d"
-              ? "Drag to tilt & rotate · green = climb, red = sink"
-              : "Hover the profile or play to scrub · click the map to clear"
-          }
-        />
       </div>
 
-      <Card className="p-4">
-        <Barograph
-          baro={track.baro}
-          takeoffMs={takeoffMs}
-          offsetMin={offsetMin}
-          altSource={track.altSource}
-          activeTime={active ? time : null}
-          onHoverTime={onHover}
-        />
-      </Card>
+      {/* Same 80vw treatment as the map above it, so the elevation profile
+          lines up edge-to-edge with the map rather than the narrower
+          key-statistics column. */}
+      <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+        <Card className="p-4">
+          <Barograph
+            baro={track.baro}
+            takeoffMs={takeoffMs}
+            offsetMin={offsetMin}
+            altSource={track.altSource}
+            activeTime={active ? time : null}
+            onHoverTime={onHover}
+          />
+        </Card>
+      </div>
 
       {(photos.length > 0 || isOwner) && (
         <Card className="flex flex-col gap-3 p-4">
