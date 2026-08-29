@@ -38,9 +38,15 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await page.goto("/upload");
   await page.locator('input[type="file"]').setInputFiles(IGC_PATH);
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
+  const flightUrl = page.url();
 
-  // Upload photos: a JPEG and a tiled HEIC (exercises heic-convert in the route).
+  // Photo upload lives on the flight-edit page now, not inline on the flight
+  // page itself — upload a JPEG and a tiled HEIC there (exercises
+  // heic-convert in the route), then head back to see them in the gallery.
+  await page.goto(`${flightUrl}/edit`);
   await page.locator('input[type="file"]').setInputFiles([JPEG, HEIC]);
+  await expect(page.getByText(/added 2 photos/i)).toBeVisible({ timeout: 30_000 });
+  await page.goto(flightUrl);
 
   // Two thumbnails appear in the gallery, both served (decoded) successfully.
   const thumbs = page.locator('img[src*="/photos/"]');
