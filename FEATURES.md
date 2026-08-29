@@ -93,14 +93,83 @@ Track potential feature ideas for future sprints.
   dark for landing) and no equivalent site marker at all in the 3D replay
   (`components/flight/flight-replay-3d.tsx`, which currently only renders the glider sphere and
   photo pins).
-- **Priority:** Medium
-- **Notes:** The pole/label style is inherently a 3D element (it reads as a physical object
-  standing on the terrain), so this is really a 3D-replay-only marker — the 2D map's flat pins
-  would stay as-is. Would need a deck.gl layer (matching the existing IconLayer/sphere approach
-  in `flight-replay-3d.tsx`) for the pole + glider icon, plus a text/label layer for the site name
-  and an altitude readout box; altitude display should respect whatever unit system the flight
-  page ends up using (see the in-progress key-statistics Metric/Imperial toggle). Site name text
-  would come from `takeoffSiteName`/`landingSiteName` on `Flight`.
+- **Priority:** Medium — **shipped, 2026-08-29 (PR #51).**
+- **Notes:** Landed as a live glider marker rather than a static site marker (the design evolved
+  through live iteration): a composed badge + green name-plate band (pilot's display name, not
+  site name) anchored to the glider's current position on the flight path, a live
+  "`<altitude>` ASL" readout connected by a short leader line, and a paraglider-icon badge on top —
+  all baked into one canvas image drawn via a single `IconLayer` (sidesteps a `TextLayer`
+  rotation-truncation bug and a world-metres sizing problem hit along the way). Anchors to
+  whichever is higher of the flight path or queried ground so it can't end up buried in terrain.
+  The 2D map's flat pins were left unchanged, as anticipated.
+
+## USHPA Rating Progress & Flight Instructor Sign-offs
+- **Area:** Flight metadata / Social (instructor assignment) / new "Ratings Progress" page
+- **Description:** Leaf Log License progress functionality. Adds flight notes, flight type, and
+  flight-instructor metadata to each flight. A flight instructor can be assigned from your
+  accepted friends; that instructor can then add instructor notes and mark the flight against
+  various USHPA license-level criteria signoffs (e.g. precision landings). A new "Ratings
+  Progress" page shows a pilot's progress toward each available USHPA rating, combining
+  auto-calculated criteria (from logged flight data) with instructor-marked signoffs for the
+  criteria that require a witnessed skill demonstration.
+- **Priority:** High
+- **Notes:** Researched against USHPA's official Pilot Proficiency System, **SOP-12-02
+  (V.2017-3-4, last amended March 2017)** — this is the most recent published version found;
+  re-verify against USHPA's current SOP before implementation in case of a newer revision. The
+  paragliding ladder is P0 (Student/tandem) → P1 (Beginner) → P2 (Novice) → P3 (Intermediate) →
+  P4 (Advanced) → P5 (Master). P0/P1 are pre-solo, instructor-supervised territory with little
+  flight-log data to hang a progress view on, and P5/Master is a separate, much larger
+  points-based award (1,450 points across categories like airtime, flights, altitude gain,
+  cross-country miles, site/glider diversity, competition results — see SOP-12-02 §12-02.10 for
+  hang gliding / §12-02.17 for paragliding) — **P2, P3, and P4 are the practical MVP scope**;
+  P1/P5/Special Skill endorsements (Ridge Soaring, Cross Country, High Altitude Launch, etc.) are
+  real parts of the same system but a natural v2.
+
+  **Auto-calculable today or with data Leaf Log already has/plans (no instructor needed):**
+  - P2: minimum 25 logged flights.
+  - P3: minimum 30 flying days, minimum 90 total flights, minimum 20 hours solo airtime.
+  - P4: 250 flights; minimum 80 flying days; minimum 75 hours total airtime; flown at least 5
+    different sites (using the existing `Site` model for site diversity); flown at least 5
+    different canopies (using the already-parsed `Flight.glider` string, with a data-quality
+    caveat — pilots may name the same wing inconsistently across uploads).
+  - P4's tandem-hour sub-limits (≤25 of the 75 hours tandem, ≤10 of the 25 thermal hours tandem)
+    become auto-calculable once this feature's own proposed `flightType` field (solo/tandem)
+    exists — a nice example of the new metadata directly unlocking an existing auto-calc gap.
+
+  **Partially auto (needs new track analysis, not just metadata — flag as a stretch goal, treat
+  as instructor-tagged for v1):**
+  - P4 requires specific flights "in thermal lift without sustaining ridge lift" (three 1-hour
+    flights from ≥2 sites) and "in ridge lift without sustaining thermal lift" (one 1-hour
+    flight). Duration and site-count are already auto-calculable; classifying a flight's LIFT
+    TYPE from its own track shape (sustained circling vs. back-and-forth ridge traversal) is not
+    something Leaf Log currently derives, though it's plausible future work.
+  - P4's "5 sites... of which at least 3 were inland" needs a coastal/inland attribute on `Site`
+    that doesn't exist today.
+
+  **Requires instructor sign-off (witnessed maneuvers/technique — inherently subjective, not
+  verifiable from a GPS track alone, and USHPA's own rules require a human witness regardless):**
+  - Every "Demonstrated Skills and Knowledge" task at every level: forward/reverse inflations,
+    ground handling/kiting, S-turns, 180°/360° turns, asymmetric wing collapses, surge control,
+    PLF technique, simulated reserve deployment, verbal flight-plan/conditions analysis, written
+    exams, and "convince the Instructor or Observer" the pilot can fly rated sites safely.
+  - **Precision/spot landings specifically** (the example named in the request): P2 requires 5
+    landings within 25' of a target, P3 within 10', P4 three consecutive within 10' (target moved
+    between each, minimum 1 minute and 200' AGL). USHPA requires a human witness for these
+    regardless of GPS accuracy. A nice hybrid: Leaf Log could auto-detect a flight's actual
+    touchdown point and, if a landing target/zone were tagged, surface a "candidate precision
+    landing" (measured distance-to-target) for the instructor to confirm or reject — but the
+    signoff itself must stay instructor-gated, matching USHPA's rule.
+  - P2's 8-hour ground-school theory requirement isn't flight data at all and would need separate
+    manual logging (by the pilot or instructor) rather than any kind of auto-calculation.
+
+  **Shape of the build** (for future planning, not decided here): new `Flight` fields — `notes`
+  (free text), `flightType` (solo/tandem/tow), `instructorId` (a `Profile` relation, constrained
+  to accepted friends via the existing `lib/social/friends.ts` model). A new `InstructorNote`
+  model, separate from the pilot's own flight notes, editable only by the assigned instructor and
+  visible only to instructor + pilot (never public). A new rating-criterion/signoff model
+  tracking per-pilot progress per task — auto-computed criteria refreshed from flight data,
+  instructor-marked criteria stored as an explicit signoff record (which instructor, when). A new
+  page (e.g. `/ratings`) aggregating both into a per-rating-level progress view.
 
 Completed ideas (see git history / PRs for detail):
 
