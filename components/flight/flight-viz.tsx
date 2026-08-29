@@ -27,11 +27,14 @@ export function FlightViz({
   takeoffMs,
   offsetMin,
   isOwner = false,
+  pilotName,
 }: {
   flightId: string;
   takeoffMs: number;
   offsetMin: number;
   isOwner?: boolean;
+  /** Shown on the 3D glider marker's pole. */
+  pilotName?: string | null;
 }) {
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
@@ -313,6 +316,7 @@ export function FlightViz({
               cameraMode={cameraMode}
               showShadow={showShadow}
               photos={photos}
+              pilotName={pilotName}
               onPhotoHover={scrubTo}
               onPhotoOpen={(id, t) => {
                 setOpenPhotoId(id);
