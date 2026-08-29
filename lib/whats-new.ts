@@ -12,6 +12,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-29",
+    title: "A bigger, smarter 3D replay",
+    body: "The 3D replay is now the main event — bigger, wider, and on by default. A new set of controls sits right on the map: toggle the ground shadow, hover the camera icon to pick Follow, Chase, or Fixed, hover the basemap icon to swap styles, jump straight back to your glider, or zoom out to frame the whole route in one tap. Playback now lives in a single compact bar right on the map, with a simple speed dropdown alongside the scrubber.",
+  },
+  {
+    date: "2026-08-29",
+    title: "Cleaner flight stats and sharing",
+    body: "Your flight's key numbers got a refresh — start and landing time now sit right in the stats card, climb and sink read together on one line, and your wing rounds out the header row. Kudos and your flight's visibility now sit together as simple icons next to the title. Prefer feet and mph? The Metric/Imperial toggle now follows you into the 3D replay's live readout too, so everything matches.",
+  },
+  {
     date: "2026-08-26",
     title: "Navigation, everywhere",
     body: "The Logbook / Feed / Upload / Profile menu now follows you onto a flight page and onto any pilot's profile — not just the pages you'd expect it on. If you were signed in, you no longer lose your way back after opening a flight from your feed.",
