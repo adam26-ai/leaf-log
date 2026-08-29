@@ -460,11 +460,20 @@ export interface FlightStats {
   siteCount: number;
 }
 
+// A deleted site nulls takeoffSiteId but deliberately keeps takeoffSiteName
+// as a historical fallback (see deleteSite in lib/sites/associate.ts) — so a
+// flight can have a real, still-displayed location with no linked site row.
+// Falling back to the name here keeps such flights counted as a site instead
+// of silently disappearing from the tally.
+function siteKey(f: FlightListItem): string | null {
+  return f.takeoffSiteId ?? (f.takeoffSiteName ? `name:${f.takeoffSiteName}` : null);
+}
+
 export function statsFrom(flights: FlightListItem[]): FlightStats {
   const ready = flights.filter((f) => f.status === "ready");
   return {
     totalSeconds: ready.reduce((s, f) => s + (f.durationS ?? 0), 0),
     flightCount: ready.length,
-    siteCount: new Set(ready.map((f) => f.takeoffSiteId).filter(Boolean)).size,
+    siteCount: new Set(ready.map(siteKey).filter((k): k is string => k !== null)).size,
   };
 }
