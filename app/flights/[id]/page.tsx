@@ -71,17 +71,6 @@ export default async function FlightPage({
           </div>
         </div>
 
-        {isOwner && flight.notes && (
-          <Card className="mt-6">
-            <CardBody className="flex flex-col gap-1">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
-                Notes
-              </p>
-              <p className="whitespace-pre-wrap text-sm text-gray-700">{flight.notes}</p>
-            </CardBody>
-          </Card>
-        )}
-
         {flight.status === "failed" ? (
           <Card className="mt-8">
             <CardBody className="flex flex-col gap-2">
@@ -103,8 +92,8 @@ export default async function FlightPage({
                 flightId={flight.id}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}
-                isOwner={isOwner}
                 pilotName={owner?.displayName}
+                notes={isOwner ? flight.notes : null}
               />
             </div>
           </>

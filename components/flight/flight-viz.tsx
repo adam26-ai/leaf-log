@@ -20,13 +20,12 @@ import { Barograph } from "./barograph";
 import { FlightReplay3D, type CameraMode, type FlightReplay3DHandle } from "./flight-replay-3d";
 import { PlaybackBar } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
-import { PhotoUpload } from "./photo-upload";
 import type { FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout } from "./instrument-readout";
 import { instrumentAt } from "@/lib/flights/instruments";
 import { useUnits } from "@/lib/flights/use-units";
-import { Card } from "@/components/ui/card";
+import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 /** Small square icon button for the map's own control overlay — distinct
@@ -192,15 +191,16 @@ export function FlightViz({
   flightId,
   takeoffMs,
   offsetMin,
-  isOwner = false,
   pilotName,
+  notes,
 }: {
   flightId: string;
   takeoffMs: number;
   offsetMin: number;
-  isOwner?: boolean;
   /** Shown on the 3D glider marker's pole. */
   pilotName?: string | null;
+  /** Owner-only free-text notes, shown just below the altitude graph. */
+  notes?: string | null;
 }) {
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
@@ -449,17 +449,25 @@ export function FlightViz({
         </Card>
       </div>
 
-      {(photos.length > 0 || isOwner) && (
+      {notes && (
+        <Card>
+          <CardBody className="flex flex-col gap-1">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Notes
+            </p>
+            <p className="whitespace-pre-wrap text-sm text-gray-700">{notes}</p>
+          </CardBody>
+        </Card>
+      )}
+
+      {photos.length > 0 && (
         <Card className="flex flex-col gap-3 p-4">
-          {isOwner && <PhotoUpload flightId={flightId} onUploaded={loadPhotos} />}
           <PhotoGallery
             flightId={flightId}
             photos={photos}
-            isOwner={isOwner}
             openId={openPhotoId}
             onOpenChange={setOpenPhotoId}
             onSelect={scrubTo}
-            onChanged={loadPhotos}
           />
         </Card>
       )}
