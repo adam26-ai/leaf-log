@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
@@ -227,17 +227,16 @@ function varioColor(v: number): [number, number, number] {
   ];
 }
 
-export function FlightReplay3D({
-  flightId,
-  basemap = "monochrome",
-  time,
-  cameraMode = "follow",
-  showShadow = false,
-  photos = [],
-  pilotName,
-  onPhotoHover,
-  onPhotoOpen,
-}: {
+/** Imperative one-shot camera actions a parent can trigger via ref, distinct
+ *  from the continuous follow/chase driven by the cameraMode prop. */
+export interface FlightReplay3DHandle {
+  /** Snap the camera to the glider's current position, regardless of cameraMode. */
+  centerOnPilot: () => void;
+  /** Pull back to an overview framing the whole flight path. */
+  fitToRoute: () => void;
+}
+
+interface FlightReplay3DProps {
   flightId: string;
   basemap?: BasemapId;
   /** Shared replay time (s from takeoff) — drives the glider position. */
@@ -254,7 +253,23 @@ export function FlightReplay3D({
   onPhotoHover?: (tSec: number) => void;
   /** Clicking a photo pin opens it (lightbox) and moves the scrubber. */
   onPhotoOpen?: (photoId: string, tSec: number | null) => void;
-}) {
+}
+
+export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DProps>(
+  function FlightReplay3D(
+    {
+      flightId,
+      basemap = "monochrome",
+      time,
+      cameraMode = "follow",
+      showShadow = false,
+      photos = [],
+      pilotName,
+      onPhotoHover,
+      onPhotoOpen,
+    },
+    ref,
+  ) {
   // The glider marker's altitude readout honors the same persisted
   // Metric/Imperial preference as the flight page's key-statistics card
   // (read once at mount, not live-synced if changed elsewhere afterward).
@@ -444,6 +459,33 @@ export function FlightReplay3D({
       ...(chase ? { bearing: easedChaseBearing(t), pitch: CHASE_PITCH } : {}),
     });
   }
+
+  // Pull back to an overview of the whole flight path. bearing/pitch are
+  // passed INTO fitBounds itself (not applied after) — cameraForBounds
+  // computes center/zoom for bearing 0 unless told otherwise, so leaving
+  // bearing out fits the box as if north-up, then rotating afterward swings
+  // the (non-square) bounding box off-center toward one corner. Folding
+  // pitch in here too lets an animated re-fit tilt smoothly in the same
+  // motion instead of snapping pitch at the end.
+  function fitToRoute(duration = 0) {
+    const map = mapRef.current;
+    const d = dataRef.current;
+    if (!map || !d) return;
+    if (map.getCenterClampedToGround() === false) map.setCenterClampedToGround(true);
+    map.fitBounds(
+      [
+        [d.bounds[0], d.bounds[1]],
+        [d.bounds[2], d.bounds[3]],
+      ],
+      { padding: 60, duration, bearing: -20, pitch: 62 },
+    );
+  }
+
+  function centerOnPilot() {
+    centerOnGlider(timeRef.current, cameraModeRef.current === "chase");
+  }
+
+  useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600) }));
 
   function shadowGeoJson(d: ReplayData): GeoJsonData {
     return {
@@ -801,16 +843,7 @@ export function FlightReplay3D({
       map.addControl(overlay);
       overlayRef.current = overlay;
 
-      map.fitBounds(
-        [
-          [data.bounds[0], data.bounds[1]],
-          [data.bounds[2], data.bounds[3]],
-        ],
-        { padding: 60, duration: 0 },
-      );
-      // fitBounds resets the camera tilt — re-apply pitch/bearing for the 3D view.
-      map.setPitch(62);
-      map.setBearing(-20);
+      fitToRoute(0);
       renderLayers(timeRef.current);
       syncShadow();
       // Entering 3D mid-flight with follow/chase on: centre on the glider (a fresh
@@ -938,7 +971,7 @@ export function FlightReplay3D({
 
   if (error) {
     return (
-      <Card className="flex h-[460px] items-center justify-center text-gray-500">
+      <Card className="flex h-[70vh] min-h-[520px] items-center justify-center text-gray-500">
         3D replay unavailable.
       </Card>
     );
@@ -947,7 +980,7 @@ export function FlightReplay3D({
   return (
     <Card className="overflow-hidden">
       <div className="relative">
-        <div ref={containerRef} className="h-[460px] w-full" />
+        <div ref={containerRef} className="h-[70vh] min-h-[520px] w-full" />
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -963,4 +996,5 @@ export function FlightReplay3D({
       </div>
     </Card>
   );
-}
+  },
+);

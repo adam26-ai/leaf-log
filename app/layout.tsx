@@ -15,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${fontVariables} h-full antialiased`}>
-      <body className="bg-paper text-ink min-h-full flex flex-col font-sans">
+      <body className="bg-paper text-ink min-h-full flex flex-col overflow-x-hidden font-sans">
         {children}
       </body>
     </html>
