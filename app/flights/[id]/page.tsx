@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getCurrentProfile } from "@/lib/profile";
+import { prisma } from "@/lib/prisma";
 import { getFlightForViewer } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
@@ -31,6 +32,13 @@ export default async function FlightPage({
   const kudoSummary = viewerId
     ? await kudoSummaryForViewer(flight.id, viewerId)
     : null;
+  const owner =
+    isOwner && viewer
+      ? viewer
+      : await prisma.profile.findUnique({
+          where: { id: flight.ownerId },
+          select: { displayName: true },
+        });
 
   return (
     <div className="flex flex-1 flex-col">
@@ -84,6 +92,7 @@ export default async function FlightPage({
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}
                 isOwner={isOwner}
+                pilotName={owner?.displayName}
               />
             </div>
           </>
