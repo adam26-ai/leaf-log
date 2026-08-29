@@ -3,58 +3,23 @@
 import { useState, useTransition } from "react";
 import { ThumbsUp } from "lucide-react";
 import { toggleKudoAction } from "@/app/flights/[id]/kudos-action";
-import { Avatar } from "@/components/avatar";
-import { Button } from "@/components/ui/button";
-
-interface RecentKudoer {
-  id: string;
-  handle: string;
-  displayName: string;
-  avatarUpdatedAt: string | null;
-}
+import { cn } from "@/lib/utils";
 
 function kudoLabel(count: number) {
   return count === 1 ? "1 kudos" : `${count} kudos`;
 }
 
-function RecentKudoers({
-  count,
-  recent,
-}: {
-  count: number;
-  recent: RecentKudoer[];
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-3">
-      {recent.length > 0 && (
-        <div className="flex shrink-0 -space-x-2">
-          {recent.slice(0, 5).map((profile) => (
-            <Avatar
-              key={profile.id}
-              handle={profile.handle}
-              displayName={profile.displayName}
-              avatarUpdatedAt={profile.avatarUpdatedAt}
-              className="h-7 w-7 border-2 border-paper"
-            />
-          ))}
-        </div>
-      )}
-      <span className="min-w-0 truncate text-sm text-gray-600">{kudoLabel(count)}</span>
-    </div>
-  );
-}
-
+/** A small icon + count — not a card. Owners see it read-only (can't kudo
+ *  their own flight); everyone else can tap it to toggle. */
 export function KudosButton({
   flightId,
   initialCount,
   initialKudoed,
-  recent,
   canToggle,
 }: {
   flightId: string;
   initialCount: number;
   initialKudoed: boolean;
-  recent: RecentKudoer[];
   canToggle: boolean;
 }) {
   const [state, setState] = useState({
@@ -86,22 +51,39 @@ export function KudosButton({
     });
   }
 
+  const content = (
+    <>
+      <ThumbsUp className={cn("h-4 w-4", state.kudoed && "fill-amber text-amber-strong")} aria-hidden="true" />
+      <span className="tabular-nums">{state.count}</span>
+    </>
+  );
+
+  if (!canToggle) {
+    return (
+      <div
+        className="inline-flex items-center gap-1.5 text-sm text-gray-600"
+        title={kudoLabel(state.count)}
+        aria-label={kudoLabel(state.count)}
+      >
+        {content}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-paper px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <RecentKudoers count={state.count} recent={recent} />
-      {canToggle && (
-        <Button
-          type="button"
-          size="sm"
-          variant={state.kudoed ? "leaf" : "outline"}
-          disabled={pending}
-          aria-pressed={state.kudoed}
-          onClick={toggle}
-        >
-          <ThumbsUp className="h-4 w-4" aria-hidden="true" />
-          {state.kudoed ? "Kudoed" : "Kudos"}
-        </Button>
+    <button
+      type="button"
+      disabled={pending}
+      aria-pressed={state.kudoed}
+      aria-label={state.kudoed ? "Remove kudos" : "Give kudos"}
+      title={kudoLabel(state.count)}
+      onClick={toggle}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-gray-100 disabled:opacity-60",
+        state.kudoed ? "text-amber-strong" : "text-gray-600 hover:text-ink",
       )}
-    </div>
+    >
+      {content}
+    </button>
   );
 }

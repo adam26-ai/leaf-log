@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { prisma } from "@/lib/prisma";
 
 const LINK_FILE = "/tmp/leaf-magic-link.txt";
 
@@ -78,8 +79,10 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   // directly, no zone step to skip.
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
-  await page.getByRole("button", { name: "Public" }).click();
-  await expect(page.getByRole("button", { name: "Public" })).toHaveAttribute("aria-pressed", "true");
+  // The visibility control is read-only in the UI for now (editing moves to
+  // a future flight-edit page) — stands in for that page until it exists.
+  const flightId = flightUrl.split("/").pop()!;
+  await prisma.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
 
   // Pilot B: a completely separate context, viewing pilot A's public flight
   // — the label must be clickable even though this isn't B's own flight.

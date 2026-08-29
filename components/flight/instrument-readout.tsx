@@ -1,12 +1,12 @@
 import { cn } from "@/lib/utils";
 import type { InstrumentReading } from "@/lib/flights/instruments";
+import { formatAltitude, formatVario, formatSpeed, type UnitSystem } from "@/lib/flights/format";
 
-function clock(timeMs: number, offsetMin: number) {
-  const d = new Date(timeMs + offsetMin * 60_000);
-  return `${d.getUTCHours().toString().padStart(2, "0")}:${d
-    .getUTCMinutes()
-    .toString()
-    .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
+/** "1,234 ft" -> ["1,234", "ft"] — splits a formatted value on its last
+ *  space so the unit can render smaller, next to the number. */
+function splitUnit(s: string): [string, string] {
+  const i = s.lastIndexOf(" ");
+  return i === -1 ? [s, ""] : [s.slice(0, i), s.slice(i + 1)];
 }
 
 function Cell({
@@ -42,23 +42,32 @@ function Cell({
 
 /**
  * Live instrument panel for the point under the cursor / 3D replay position — a
- * sleek dark glass overlay (time / altitude / vario / speed). Renders nothing
- * until there's a selected point.
+ * sleek dark glass overlay (altitude / vario / speed). Renders nothing until
+ * there's a selected point. Units follow the same Metric/Imperial preference
+ * as the key-statistics card (lib/flights/use-units.ts).
  */
-export function InstrumentReadout({ reading }: { reading: InstrumentReading | null }) {
+export function InstrumentReadout({
+  reading,
+  units = "metric",
+}: {
+  reading: InstrumentReading | null;
+  units?: UnitSystem;
+}) {
   if (!reading) return null;
   const v = reading.varioMs;
+  const [altValue, altUnit] = splitUnit(formatAltitude(reading.altM, units));
+  const [varioValue, varioUnit] = splitUnit(formatVario(v, units));
+  const [speedValue, speedUnit] = splitUnit(formatSpeed(reading.speedKmh, units));
   return (
     <div className="inline-flex items-center gap-6 rounded-2xl bg-ink/85 px-5 py-2.5 shadow-lg backdrop-blur-sm sm:gap-8">
-      <Cell label="Time" value={clock(reading.timeMs, reading.offsetMin)} />
-      <Cell label="Altitude" value={reading.altM.toLocaleString()} unit="m" />
+      <Cell label="Altitude" value={altValue} unit={altUnit} />
       <Cell
         label="Vario"
-        value={`${v > 0 ? "+" : ""}${v.toFixed(1)}`}
-        unit="m/s"
+        value={varioValue}
+        unit={varioUnit}
         tone={v > 0.1 ? "climb" : v < -0.1 ? "sink" : undefined}
       />
-      <Cell label="Speed" value={String(reading.speedKmh)} unit="km/h" />
+      <Cell label="Speed" value={speedValue} unit={speedUnit} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { prisma } from "@/lib/prisma";
 
 const LINK_FILE = "/tmp/leaf-magic-link.txt";
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
@@ -56,13 +57,11 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await expect(page.getByText("Max altitude")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Unknown site" })).toBeVisible();
 
-  // 6. Share it publicly via the visibility control (Private → Public).
-  await page.getByRole("button", { name: "Public" }).click();
-  await expect(page.getByRole("button", { name: "Public" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-    { timeout: 10_000 },
-  );
+  // 6. Share it publicly. The visibility control is read-only in the UI for
+  // now (editing moves to a future flight-edit page), so this stands in for
+  // that page until it exists.
+  const flightId = flightUrl.split("/").pop()!;
+  await prisma.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
 
   // 7. A logged-out visitor can see the now-public flight.
   const anon = await context.browser()!.newContext();
