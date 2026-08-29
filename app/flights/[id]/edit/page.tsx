@@ -11,7 +11,7 @@ import { DeleteFlightButton } from "@/components/flight/delete-flight-button";
 import { Card } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { NotesEditor } from "./notes-editor";
-import { PhotoUploadSection } from "./photo-upload-section";
+import { PhotosSection } from "./photos-section";
 
 export default async function EditFlightPage({
   params,
@@ -63,7 +63,7 @@ export default async function EditFlightPage({
 
           <Card className="flex flex-col gap-3 p-6">
             <h2 className="font-condensed text-lg font-bold text-ink">Photos</h2>
-            <PhotoUploadSection flightId={flight.id} />
+            <PhotosSection flightId={flight.id} />
           </Card>
 
           <Card className="flex flex-col gap-3 border-red-200 p-6">

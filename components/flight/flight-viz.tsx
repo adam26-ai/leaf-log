@@ -191,14 +191,12 @@ export function FlightViz({
   flightId,
   takeoffMs,
   offsetMin,
-  isOwner = false,
   pilotName,
   notes,
 }: {
   flightId: string;
   takeoffMs: number;
   offsetMin: number;
-  isOwner?: boolean;
   /** Shown on the 3D glider marker's pole. */
   pilotName?: string | null;
   /** Owner-only free-text notes, shown just below the altitude graph. */
@@ -467,11 +465,9 @@ export function FlightViz({
           <PhotoGallery
             flightId={flightId}
             photos={photos}
-            isOwner={isOwner}
             openId={openPhotoId}
             onOpenChange={setOpenPhotoId}
             onSelect={scrubTo}
-            onChanged={loadPhotos}
           />
         </Card>
       )}
