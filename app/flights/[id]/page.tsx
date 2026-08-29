@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import { getFlightForViewer } from "@/lib/flights/repo";
@@ -10,7 +12,6 @@ import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
-import { DeleteFlightButton } from "@/components/flight/delete-flight-button";
 import { Card, CardBody } from "@/components/ui/card";
 
 export default async function FlightPage({
@@ -57,8 +58,29 @@ export default async function FlightPage({
                 canToggle={!isOwner}
               />
             )}
+            {isOwner && (
+              <Link
+                href={`/flights/${flight.id}/edit`}
+                title="Edit flight"
+                aria-label="Edit flight"
+                className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
+              >
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            )}
           </div>
         </div>
+
+        {isOwner && flight.notes && (
+          <Card className="mt-6">
+            <CardBody className="flex flex-col gap-1">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                Notes
+              </p>
+              <p className="whitespace-pre-wrap text-sm text-gray-700">{flight.notes}</p>
+            </CardBody>
+          </Card>
+        )}
 
         {flight.status === "failed" ? (
           <Card className="mt-8">
@@ -101,12 +123,6 @@ export default async function FlightPage({
               </ul>
             </CardBody>
           </Card>
-        )}
-
-        {isOwner && (
-          <div className="mt-12 flex justify-end border-t border-gray-200 pt-6">
-            <DeleteFlightButton flightId={flight.id} />
-          </div>
         )}
       </main>
     </div>

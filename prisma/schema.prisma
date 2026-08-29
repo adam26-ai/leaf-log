@@ -178,6 +178,9 @@ model Flight {
   parserVersion         String        @default("1")
   parseWarnings         Json          @default("[]")
   failureReason         String?
+  // owner's free-text notes about the flight — shown wherever the flight
+  // itself is visible, edited only from the flight-edit page
+  notes                 String?
   // header facts
   flightDate            DateTime?     @db.Date
   takeoffAt             DateTime?
