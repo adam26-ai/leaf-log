@@ -171,6 +171,27 @@ Track potential feature ideas for future sprints.
   instructor-marked criteria stored as an explicit signoff record (which instructor, when). A new
   page (e.g. `/ratings`) aggregating both into a per-rating-level progress view.
 
+## Flight Edit Page
+- **Area:** Flight page — new owner-only edit flow
+- **Description:** Flight edit page that allows ability to update flight visibility for now.
+  Later it will add more. Closes a real gap: the flight page's own visibility control was just
+  simplified to a read-only icon (Lock/Users/Globe) rather than an inline clickable toggle, on
+  the understanding that real editing would move to a dedicated edit page — this is that page.
+- **Priority:** High — the only way to change a flight's visibility right now is a direct
+  database write; there is no owner-facing UI path at all until this ships.
+- **Notes:** The actual update logic already exists and is untouched —
+  `app/flights/[id]/visibility-action.ts`'s `setVisibility` — it just lost its UI entry point
+  when `components/flight/share-toggle.tsx` became read-only. A new edit page/route (e.g.
+  `/flights/[id]/edit`, owner-only, redirect or 404 otherwise) can reuse that action directly for
+  the visibility field, with the existing three-way private/friends/public control (the one that
+  used to live inline) moved there instead of being rebuilt from scratch. "Later it will add
+  more" — natural future fields include the flight notes/type/instructor metadata from the USHPA
+  ratings-progress idea above, so it's worth keeping this page's shape generic (a form/section
+  list) rather than something hard-coded to a single visibility control. Three e2e specs
+  (`test/e2e/happy-path.spec.ts`, `community.spec.ts`, `social.spec.ts`) currently stand in for
+  this missing page with a direct Prisma write in their setup steps — each has a comment marking
+  the spot — and should switch to driving the real edit-page UI once it exists.
+
 Completed ideas (see git history / PRs for detail):
 
 - Short Flight URL IDs — 4-char `[a-z0-9]` flight URLs (PR #2)
@@ -358,3 +379,52 @@ Completed ideas (see git history / PRs for detail):
   [`docs/sprints/SPRINT-008.md`](docs/sprints/SPRINT-008.md). A future "bring zones back" sprint
   should be a small re-exposure pass (flip the gate, confirm the preserved suites still pass),
   not a reconstruction.
+
+## Auto-Detect Co-Flying Friends and Overlay Their Track
+- **Area:** Flight detail page — 3D replay / friend graph
+- **Description:** Automatically detect when a friend (per the existing friend graph) was also
+  flying at the same time and place as one of your flights, and surface their flight as an option
+  to overlay on the 3D replay — so you can turn their track on alongside your own and see how the
+  flight went together.
+- **Priority:** Medium
+- **Notes:** Detection needs both a temporal and spatial overlap check between the viewer's flight
+  and a friend's flight — not just "same takeoff site," since a shared site alone doesn't mean they
+  flew together (could be hours apart). A reasonable heuristic: the two flights' time windows
+  overlap AND their tracks pass within some distance threshold (e.g. a few hundred meters, reusing
+  `haversineM` from `lib/geo/distance.ts`) during that overlap. Only ever surface a friend's flight
+  if it's visible to the viewer under the normal privacy rules (`getFlightForViewer` /
+  friends-visibility) — never leak a friend's private flight just because it happens to overlap.
+  UI-wise this could be a new entry in the 3D replay's right-side icon rail (alongside the recently
+  added Camera/Basemap/Shadow controls in `components/flight/flight-viz.tsx`), listing detected
+  co-flying friends by name with a toggle per friend; overlaying a track can likely reuse the same
+  `PathLayer`/`IconLayer` machinery `flight-replay-3d.tsx` already uses for the viewer's own glider
+  and path, just keyed to a second flight's replay data.
+
+## Custom Glider Marker Color
+- **Area:** Profile settings / 3D replay marker
+- **Description:** Let a pilot choose the color of their own glider marker badge in the 3D replay,
+  instead of the current fixed green for everyone.
+- **Priority:** Medium
+- **Notes:** Today the badge/connector-dot color is a single hardcoded constant, `LEAF_GREEN` in
+  `components/flight/flight-replay-3d.tsx` (used for the connector dot and the badge fill). Making
+  it a per-profile setting means adding a color field to `Profile`, a picker on `/settings`, and
+  threading it into `FlightReplay3D` as a prop instead of the constant. This pairs naturally with
+  the "Auto-Detect Co-Flying Friends and Overlay Their Track" idea above — distinct marker colors
+  per pilot would make two overlaid tracks much easier to tell apart at a glance.
+
+## Flight Path Data-Coloring Modes
+- **Area:** 3D replay — flight path rendering
+- **Description:** Flight path should be a strong solid color by default, and then the user should
+  have the ability to "paint" the flight path with different data indications — for example speed,
+  sink/climb rate, and potentially others.
+- **Priority:** Medium
+- **Notes:** The plumbing for this mostly already exists — the path is currently ALWAYS colored by
+  vario via `varioColor()` in `components/flight/flight-replay-3d.tsx`, applied per-segment through
+  the `PathLayer`'s `getColor: (s) => s.color`. This feature is really about (1) making a plain
+  strong single color the default instead of the always-on vario coloring, (2) adding a "solid"
+  color mode alongside a "climb/sink" mode (the existing `varioColor` logic) and a new "speed" mode
+  (color segments by ground speed, e.g. a min/max gradient across the flight), and (3) exposing a
+  mode picker — a natural fit for the 3D replay's new right-side icon rail (alongside the
+  Camera/Basemap/Shadow controls just added to `components/flight/flight-viz.tsx`). Other candidate
+  data dimensions once the mode-switching plumbing exists: altitude, and (if the "Custom Glider
+  Marker Color" or "Auto-Detect Co-Flying Friends" ideas above ship) per-pilot identity coloring.
