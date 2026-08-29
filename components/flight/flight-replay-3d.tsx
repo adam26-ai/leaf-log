@@ -209,6 +209,11 @@ const CHASE_PITCH = 66;
 // height plus half a typical marker height puts the whole marker near the
 // visible centre instead of just its anchor point.
 const MARKER_CENTERING_TOP_PADDING_PX = 160;
+// Extra top clearance for fitToRoute's overview framing — the same
+// pitch-vs-flat-fit skew MARKER_CENTERING_TOP_PADDING_PX corrects for above,
+// just for the whole-route bounding box instead of one point. Tuned
+// empirically against this component's 62° pitch.
+const ROUTE_FIT_TOP_PADDING_PX = 260;
 const SHADOW_SOURCE_ID = "flight-ground-shadow";
 const SHADOW_LAYER_ID = "flight-ground-shadow";
 
@@ -467,6 +472,16 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // the (non-square) bounding box off-center toward one corner. Folding
   // pitch in here too lets an animated re-fit tilt smoothly in the same
   // motion instead of snapping pitch at the end.
+  //
+  // Padding is deliberately NOT uniform: fitBounds computes center/zoom as
+  // if the camera were looking straight down, then the pitch is applied on
+  // top. Under a steep pitch, that flat-computed "center" renders much
+  // closer to the TOP of frame than its flat-projection position suggests —
+  // confirmed empirically (the resulting camera params are 100%
+  // reproducible; only the on-screen position looks off, every time, at
+  // every zoom/basemap-load state — so this is a pitch/padding calibration
+  // issue, not a data-loading race). Reserving extra clearance at the top
+  // pushes the fitted content down toward the visual centre instead.
   function fitToRoute(duration = 0) {
     const map = mapRef.current;
     const d = dataRef.current;
@@ -477,7 +492,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         [d.bounds[0], d.bounds[1]],
         [d.bounds[2], d.bounds[3]],
       ],
-      { padding: 60, duration, bearing: -20, pitch: 62 },
+      {
+        padding: { top: ROUTE_FIT_TOP_PADDING_PX, bottom: 60, left: 60, right: 60 },
+        duration,
+        bearing: -20,
+        pitch: 62,
+      },
     );
   }
 
