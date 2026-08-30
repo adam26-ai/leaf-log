@@ -38,6 +38,9 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
           <Link href={`/@${profile.handle}`} className="hover:text-ink">
             Profile
           </Link>
+          <Link href="/ratings" className="hover:text-ink">
+            Ratings
+          </Link>
         </nav>
       </div>
       <AvatarMenu profile={profile} />

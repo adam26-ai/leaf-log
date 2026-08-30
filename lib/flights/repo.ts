@@ -41,6 +41,7 @@ const LIST_SELECT = {
   visibility: true,
   status: true,
   localUtcOffsetMinutes: true,
+  glider: true,
 } as const;
 
 export type FlightListItem = Pick<Flight, keyof typeof LIST_SELECT>;
@@ -465,7 +466,7 @@ export interface FlightStats {
 // flight can have a real, still-displayed location with no linked site row.
 // Falling back to the name here keeps such flights counted as a site instead
 // of silently disappearing from the tally.
-function siteKey(f: FlightListItem): string | null {
+export function siteKey(f: FlightListItem): string | null {
   return f.takeoffSiteId ?? (f.takeoffSiteName ? `name:${f.takeoffSiteName}` : null);
 }
 
