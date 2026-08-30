@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-08-29",
+    title: "Track your ratings progress",
+    body: "A new Ratings page shows how you're coming along toward USHPA's P2, P3, and P4 paragliding ratings — flight count, flying days, airtime, and the variety of sites and gliders you've flown, all worked out automatically from your logbook. Criteria that need an instructor's sign-off show up too, clearly marked as coming soon.",
+  },
+  {
+    date: "2026-08-29",
     title: "Edit a flight after the fact",
     body: "Tap the pencil next to a flight's title to open its new edit page — change who can see it, jot down notes about the conditions or how it went, add more photos, or delete the flight, all in one place. Notes are just for you; they show up on the flight page but only when you're the one looking.",
   },
