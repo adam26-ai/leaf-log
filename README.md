@@ -5,7 +5,7 @@ official companion to the **Leaf vario**. Upload an IGC file, see your flight
 come to life (track map, barograph, metrics, named site, geotagged photos), and
 share only what you choose. See [`VISION.md`](./VISION.md) and [`DESIGN.md`](./DESIGN.md).
 
-**Live:** <https://leaflog.norcalflight.com>
+**Live:** <https://log.leafvario.com>
 
 Milestone 1 was built per [`docs/sprints/SPRINT-001.md`](./docs/sprints/SPRINT-001.md).
 A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
@@ -80,7 +80,7 @@ Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
 1. Create a Railway project; add a **Postgres** plugin (provides `DATABASE_URL`).
 2. Add the web service from this repo.
 3. Set env vars: `DATABASE_URL` (from the Postgres plugin), `AUTH_SECRET`,
-   `AUTH_URL`/`NEXTAUTH_URL` (your Railway URL), `AUTH_EMAIL_FROM`,
+   `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in production), `AUTH_EMAIL_FROM`,
    `RESEND_API_KEY`, and optionally `NEXT_PUBLIC_MAPTILER_KEY`.
 4. Deploy — `prisma migrate deploy` runs automatically before each release. No
    site seeding step — sites are fully community-driven.
