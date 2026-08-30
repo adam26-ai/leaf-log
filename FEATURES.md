@@ -214,7 +214,7 @@ Completed ideas (see git history / PRs for detail):
   1-month persistent session vs. a session-only cookie; signed-in pilots are redirected from
   `/` to `/logbook` (PR #17)
 - Production deploy — Railway (Nixpacks, `prisma migrate deploy` pre-release, `/api/health`
-  check, pnpm-10 build pin in PR #15), live at <https://leaflog.norcalflight.com>
+  check, pnpm-10 build pin in PR #15), live at <https://log.leafvario.com>
 - Social foundation — friends (request/accept), friends-only flight visibility, kudos, friends
   feed, and friend search/autocomplete (SPRINT-003, PRs #21-26)
 - 3D flight-page polish — "2D"/"3D" toggle labels, a ground-shadow footprint toggle (track draped
