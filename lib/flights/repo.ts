@@ -339,8 +339,29 @@ export async function getFlightForViewer(
     visibility === "friends" &&
     viewerId !== null &&
     (await areFriends(viewerId, flight.ownerId));
+  // SPRINT-009 PR4: the flight's CURRENT instructor may open it regardless
+  // of visibility — a different guard than the general privacy predicate
+  // above, since coaching a pilot on a private flight needs to see it.
+  const isCurrentInstructor = viewerId !== null && flight.instructorId === viewerId;
+  // A PAST instructor who actually authored an InstructorNote keeps flight
+  // access too — the note itself stays readable to its own author forever
+  // (lib/ratings/authz.ts::canReadInstructorNote), "independent of
+  // flight.visibility"; that guarantee is empty if the flight page they'd
+  // read it on 404s once reassigned. Merely having once been instructorId
+  // with no note written grants nothing — only real authorship does. Only
+  // queried in the fallback path (a signed-in viewer everything else
+  // rejected), so this never costs a query on the common owner/public path.
+  let isPastNoteAuthor = false;
+  if (!isOwner && !isPublic && !isFriendVisible && !isCurrentInstructor && viewerId !== null) {
+    const authored = await prisma.instructorNote.findUnique({
+      where: { flightId_instructorId: { flightId: flight.id, instructorId: viewerId } },
+    });
+    isPastNoteAuthor = authored !== null;
+  }
 
-  if (!isOwner && !isPublic && !isFriendVisible) return null;
+  if (!isOwner && !isPublic && !isFriendVisible && !isCurrentInstructor && !isPastNoteAuthor) {
+    return null;
+  }
 
   const [resolved] = await resolveLocationFields([flight], viewerId);
   return resolved;

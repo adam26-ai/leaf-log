@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-09-02",
+    title: "Instructors can leave private notes",
+    body: "If you're the instructor named on a flight, you can now leave a private note right on that flight's page — coaching points, what to work on next time. Only you and the pilot can see it, never anyone else the flight is shared with.",
+  },
+  {
     date: "2026-09-01",
     title: "Name a flight's instructor",
     body: "A flight's edit page now has an Instructor card — name any accepted friend as the instructor of record for that flight. It's the first step toward instructor sign-offs on your Ratings page; for now it's just a tag you control, with no notification sent.",

@@ -280,6 +280,47 @@ describe("privacy invariant (app-layer repo)", () => {
     }
   });
 
+  it("SPRINT-009 PR4: grants the flight's current instructor access to an otherwise-private flight", async () => {
+    // strangerId has no friendship and no ownership — the general
+    // visibility predicate alone rejects them (see the matrix test above).
+    expect(await repo.getFlightForViewer(privateFlightId, strangerId)).toBeNull();
+
+    await prisma.flight.update({
+      where: { id: privateFlightId },
+      data: { instructorId: strangerId },
+    });
+    expect(await repo.getFlightForViewer(privateFlightId, strangerId)).not.toBeNull();
+
+    // Merely having been the assigned instructor, with no note ever
+    // written, grants nothing once reassigned away.
+    await prisma.flight.update({
+      where: { id: privateFlightId },
+      data: { instructorId: null },
+    });
+    expect(await repo.getFlightForViewer(privateFlightId, strangerId)).toBeNull();
+  });
+
+  it("SPRINT-009 PR4: a past instructor who actually authored a note keeps access, independent of visibility", async () => {
+    await prisma.flight.update({
+      where: { id: privateFlightId },
+      data: { instructorId: strangerId },
+    });
+    await prisma.instructorNote.create({
+      data: { flightId: privateFlightId, instructorId: strangerId, body: "Watch your flare." },
+    });
+
+    // Reassign away from strangerId — they're no longer the current
+    // instructor, but they DID author a note, so access must persist.
+    await prisma.flight.update({
+      where: { id: privateFlightId },
+      data: { instructorId: friendId },
+    });
+    expect(await repo.getFlightForViewer(privateFlightId, strangerId)).not.toBeNull();
+
+    await prisma.instructorNote.deleteMany({ where: { flightId: privateFlightId } });
+    await prisma.flight.update({ where: { id: privateFlightId }, data: { instructorId: null } });
+  });
+
   it("lets the owner see non-ready uploads and failures", async () => {
     expect(await repo.getFlightForViewer(uploadedFlightId, ownerId)).not.toBeNull();
     expect(await repo.getFlightForViewer(failedFlightId, ownerId)).not.toBeNull();

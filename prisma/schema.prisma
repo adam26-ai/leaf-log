@@ -89,6 +89,10 @@ model Profile {
   // SPRINT-009 PR3 — flights this pilot is currently the assigned
   // instructor of record for. See Flight.instructorId.
   instructorFlights  Flight[]      @relation("FlightInstructor")
+  // SPRINT-009 PR4 — notes this pilot has authored as an instructor.
+  // Immutable authorship, independent of Flight.instructorId — see
+  // InstructorNote.
+  instructorNotesAuthored InstructorNote[] @relation("InstructorNoteAuthor")
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
   kudos              Kudo[]
@@ -255,6 +259,7 @@ model Flight {
   // immutable author column, not this field).
   instructorId          String?
   instructor            Profile?      @relation("FlightInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  instructorNotes       InstructorNote[]
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
@@ -265,6 +270,37 @@ model Flight {
   @@index([landingSiteId])
   @@index([takeoffZoneId])
   @@index([landingZoneId])
+  @@index([instructorId])
+}
+
+// SPRINT-009 PR4 — one instructor's private note on one flight. instructorId
+// is the author, captured at write time and immutable — never re-derived
+// from Flight.instructorId. A flight can accumulate one note per DISTINCT
+// instructor who's ever been assigned to it (the unique constraint below is
+// per-instructor, so each instructor edits their own single evolving note,
+// same shape as the pilot's own Flight.notes field — not a running log of
+// many entries).
+//
+// Write/edit: only instructorId (the author), and only while that same
+// profile is STILL flight.instructorId. Once reassigned, the note freezes —
+// still readable by its author, no longer editable by anyone.
+//
+// Read: the flight's owner (always) or the note's own author (always, even
+// after reassignment) — never a different instructor, never a
+// friends/public viewer, independent of flight.visibility. Never resolved
+// through lib/flights/repo.ts's general visibility predicate.
+model InstructorNote {
+  id           String   @id @default(cuid())
+  flightId     String
+  flight       Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  instructorId String
+  instructor   Profile  @relation("InstructorNoteAuthor", fields: [instructorId], references: [id], onDelete: Cascade)
+  body         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([flightId, instructorId])
+  @@index([flightId])
   @@index([instructorId])
 }
 

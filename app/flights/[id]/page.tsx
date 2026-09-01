@@ -6,12 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { getFlightForViewer } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
+import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
+import { InstructorNoteCard } from "@/components/flight/instructor-note-card";
 import { Card, CardBody } from "@/components/ui/card";
 
 export default async function FlightPage({
@@ -40,6 +42,10 @@ export default async function FlightPage({
           where: { id: flight.ownerId },
           select: { displayName: true },
         });
+  const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
+  const instructorNotes = viewerId
+    ? await listInstructorNotesForViewer(flight.id, viewerId)
+    : [];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -98,6 +104,15 @@ export default async function FlightPage({
             </div>
           </>
         )}
+
+        <div className="mt-8">
+          <InstructorNoteCard
+            flightId={flight.id}
+            notes={instructorNotes}
+            viewerId={viewerId}
+            isViewerCurrentInstructor={isViewerCurrentInstructor}
+          />
+        </div>
 
         {isOwner && warnings.length > 0 && (
           <Card className="mt-8 border-amber/40 bg-amber/5">
