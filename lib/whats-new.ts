@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-08-31",
+    title: "Tag flight details for your ratings",
+    body: "A flight's edit page now has a Flight details card: Occupancy (solo/tandem), Flight type (like Cross Country), Launch type (Ridge Soaring, Cliff Launch, and more), and Landing (Restricted Landing Field). Tagging a tandem flight keeps it out of your solo airtime on the Ratings page. The other tags show up there too, as your own self-reported tally — a great way to track what you've flown before talking it through with an instructor.",
+  },
+  {
     date: "2026-08-29",
     title: "Track your ratings progress",
     body: "A new Ratings page shows how you're coming along toward USHPA's P2, P3, and P4 paragliding ratings — flight count, flying days, airtime, and the variety of sites and gliders you've flown, all worked out automatically from your logbook. Criteria that need an instructor's sign-off show up too, clearly marked as coming soon.",

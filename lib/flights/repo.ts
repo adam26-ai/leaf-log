@@ -42,6 +42,10 @@ const LIST_SELECT = {
   status: true,
   localUtcOffsetMinutes: true,
   glider: true,
+  occupancy: true,
+  flightTypeTags: true,
+  launchTypes: true,
+  restrictedLandingField: true,
 } as const;
 
 export type FlightListItem = Pick<Flight, keyof typeof LIST_SELECT>;

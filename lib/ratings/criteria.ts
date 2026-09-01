@@ -83,8 +83,6 @@ export const RATING_CRITERIA: RatingCriterion[] = [
     getValue: (s) => s.soloAirtimeSeconds / SECONDS_PER_HOUR,
     required: 20,
     unit: "hours",
-    reason:
-      "Approximated as total airtime until Flight.flightType (a later PR) can exclude tandem/tow flights.",
   },
   {
     id: "p3_skills_signoff",
@@ -155,7 +153,7 @@ export const RATING_CRITERIA: RatingCriterion[] = [
     required: 25,
     unit: "hours",
     reason:
-      "Needs Flight.flightType (solo/tandem/tow), added in a later PR, to separate tandem airtime from solo.",
+      "Needs a later PR to separate tandem airtime from solo (Flight.occupancy already exists, but the thermal-hour half of this rule also needs lift-shape classification, which isn't built).",
   },
   {
     id: "p4_lift_type_hours",
