@@ -84,6 +84,8 @@ describe("ratingStatsFrom (DB-backed)", () => {
           // name — the same fallback shape lib/sites/associate.ts's
           // deleteSite leaves behind (see test/sites.integration.test.ts
           // "deleting a site nulls the id ... but KEEPS the cached name").
+          // Also carries two launch-type tags, to prove a single flight can
+          // contribute to more than one skillTagCounts bucket.
           ownerId,
           visibility: "public",
           status: "ready",
@@ -94,10 +96,12 @@ describe("ratingStatsFrom (DB-backed)", () => {
           takeoffSiteId: null,
           takeoffSiteName: `Deleted Site ${suffix}`,
           glider: "Advance Iota",
+          launchTypes: ["RS", "CL"],
         },
         {
           // No flightDate, no site, no glider — must be counted as a flight
           // and airtime, but must not add a flying day, a site, or a glider.
+          // Carries a Flight-type tag and the Restricted Landing Field flag.
           ownerId,
           visibility: "public",
           status: "ready",
@@ -107,6 +111,8 @@ describe("ratingStatsFrom (DB-backed)", () => {
           takeoffAt: null,
           takeoffSiteId: null,
           glider: null,
+          flightTypeTags: ["XC"],
+          restrictedLandingField: true,
         },
         {
           // Not ready: must be excluded from every count, exactly like statsFrom.
@@ -114,6 +120,31 @@ describe("ratingStatsFrom (DB-backed)", () => {
           visibility: "public",
           status: "uploaded",
           igcSha256: `not_ready_${suffix}`,
+        },
+        {
+          // Tandem: must be excluded from solo airtime but still counted in
+          // total airtime, flight count, and flying days.
+          ownerId,
+          visibility: "public",
+          status: "ready",
+          igcSha256: `tandem_${suffix}`,
+          durationS: 2000,
+          occupancy: "tandem",
+          flightDate: new Date("2026-06-03T00:00:00.000Z"),
+          takeoffAt: new Date("2026-06-03T09:00:00.000Z"),
+        },
+        {
+          // Surface Tow (a launch-type tag, not an occupancy) — solo-equivalent,
+          // same as null occupancy — must count toward solo airtime, not just
+          // total airtime.
+          ownerId,
+          visibility: "public",
+          status: "ready",
+          igcSha256: `tow_${suffix}`,
+          durationS: 700,
+          launchTypes: ["ST"],
+          flightDate: new Date("2026-06-03T00:00:00.000Z"),
+          takeoffAt: new Date("2026-06-03T11:00:00.000Z"),
         },
       ],
     });
@@ -131,8 +162,8 @@ describe("ratingStatsFrom (DB-backed)", () => {
     const rows = await repo.listOwnFlights(ownerId);
     const stats = ratingStatsFrom(rows);
 
-    expect(stats.flightCount).toBe(4); // the "uploaded" flight is excluded
-    expect(stats.flyingDayCount).toBe(2); // 2026-06-01 (x2, deduped) + 2026-06-02
+    expect(stats.flightCount).toBe(6); // the "uploaded" flight is excluded
+    expect(stats.flyingDayCount).toBe(3); // 2026-06-01 (x2, deduped) + 2026-06-02 + 2026-06-03 (x2, deduped)
   });
 
   it("dedupes glider names by trim + lowercase, skipping null/empty", async () => {
@@ -149,25 +180,53 @@ describe("ratingStatsFrom (DB-backed)", () => {
     expect(stats.siteCount).toBe(2); // the shared real site, plus the name-only fallback for the deleted one
   });
 
-  it("aliases soloAirtimeSeconds to totalAirtimeSeconds and flags it inexact pre-PR2", async () => {
+  it("excludes tandem flights from solo airtime but keeps them in total airtime", async () => {
     const rows = await repo.listOwnFlights(ownerId);
     const stats = ratingStatsFrom(rows);
 
-    expect(stats.totalAirtimeSeconds).toBe(6800); // 3600 + 1800 + 900 + 500
-    expect(stats.soloAirtimeSeconds).toBe(stats.totalAirtimeSeconds);
-    expect(stats.soloAirtimeIsExact).toBe(false);
+    expect(stats.totalAirtimeSeconds).toBe(9500); // 3600 + 1800 + 900 + 500 + 2000 + 700
+    expect(stats.soloAirtimeSeconds).toBe(7500); // total minus the 2000s tandem flight
+    expect(stats.soloAirtimeIsExact).toBe(true);
+  });
+
+  it("tallies self-reported skill tags across flights, including a flight with two launch-type tags", async () => {
+    const rows = await repo.listOwnFlights(ownerId);
+    const stats = ratingStatsFrom(rows);
+
+    expect(stats.skillTagCounts).toEqual({
+      XC: 1,
+      CL: 1,
+      RS: 1,
+      FSL: 0,
+      TUR: 0,
+      HA: 0,
+      AWCL: 0,
+      ST: 1,
+      RLF: 1,
+    });
   });
 
   it("returns the exact RatingStats object end to end", async () => {
     const rows = await repo.listOwnFlights(ownerId);
     expect(ratingStatsFrom(rows)).toEqual({
-      flightCount: 4,
-      flyingDayCount: 2,
-      totalAirtimeSeconds: 6800,
-      soloAirtimeSeconds: 6800,
-      soloAirtimeIsExact: false,
+      flightCount: 6,
+      flyingDayCount: 3,
+      totalAirtimeSeconds: 9500,
+      soloAirtimeSeconds: 7500,
+      soloAirtimeIsExact: true,
       siteCount: 2,
       gliderCount: 2,
+      skillTagCounts: {
+        XC: 1,
+        CL: 1,
+        RS: 1,
+        FSL: 0,
+        TUR: 0,
+        HA: 0,
+        AWCL: 0,
+        ST: 1,
+        RLF: 1,
+      },
     });
   });
 });

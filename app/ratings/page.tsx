@@ -4,6 +4,7 @@ import { ratingStatsFrom } from "@/lib/ratings/stats";
 import { criteriaForLevel, type RatingLevel } from "@/lib/ratings/criteria";
 import { AppHeader } from "@/components/app-header";
 import { RatingLevelCard } from "@/components/ratings/rating-level-card";
+import { SkillTagsSummary } from "@/components/ratings/skill-tags-summary";
 
 const LEVELS: RatingLevel[] = ["P2", "P3", "P4"];
 
@@ -33,6 +34,7 @@ export default async function RatingsPage() {
               stats={stats}
             />
           ))}
+          <SkillTagsSummary stats={stats} />
         </div>
       </main>
     </div>

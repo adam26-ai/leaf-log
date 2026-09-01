@@ -1,4 +1,5 @@
 import { siteKey, type FlightListItem } from "@/lib/flights/repo";
+import { SKILL_TAG_KEYS, type SkillTagKey } from "@/lib/ratings/skill-tags";
 
 /**
  * Sibling to `statsFrom` (lib/flights/repo.ts), not an extension of it — ratings
@@ -9,13 +10,16 @@ export interface RatingStats {
   flightCount: number;
   flyingDayCount: number;
   totalAirtimeSeconds: number;
-  // PR1 has no Flight.flightType yet, so solo airtime can't be distinguished
-  // from tandem/tow — this is aliased to totalAirtimeSeconds below and
-  // flagged inexact until PR2 lands flightType and un-approximates it.
+  // Excludes tandem flights (occupancy === "tandem"); a null occupancy
+  // (every pre-existing row) counts as solo-equivalent.
   soloAirtimeSeconds: number;
   soloAirtimeIsExact: boolean;
   siteCount: number;
   gliderCount: number;
+  // Self-reported USHPA Special-Skill tags, tallied across ready flights —
+  // how many flights carry each tag. Display-only context on /ratings, never
+  // proof of a verified skill (that needs an instructor's sign-off).
+  skillTagCounts: Record<SkillTagKey, number>;
 }
 
 // Deliberately undercounts inconsistent wing naming (e.g. two rows that
@@ -31,6 +35,10 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
   const ready = flights.filter((f) => f.status === "ready");
 
   const totalAirtimeSeconds = ready.reduce((s, f) => s + (f.durationS ?? 0), 0);
+  const soloAirtimeSeconds = ready.reduce(
+    (s, f) => s + (f.occupancy === "tandem" ? 0 : (f.durationS ?? 0)),
+    0,
+  );
 
   const flyingDayCount = new Set(
     ready
@@ -46,13 +54,31 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
     ready.map(gliderKey).filter((k): k is string => k !== null),
   ).size;
 
+  const skillTagCounts = Object.fromEntries(
+    SKILL_TAG_KEYS.map((key) => [key, 0]),
+  ) as Record<SkillTagKey, number>;
+  for (const f of ready) {
+    for (const tag of f.flightTypeTags) {
+      if ((SKILL_TAG_KEYS as readonly string[]).includes(tag)) {
+        skillTagCounts[tag as SkillTagKey]++;
+      }
+    }
+    for (const tag of f.launchTypes) {
+      if ((SKILL_TAG_KEYS as readonly string[]).includes(tag)) {
+        skillTagCounts[tag as SkillTagKey]++;
+      }
+    }
+    if (f.restrictedLandingField) skillTagCounts.RLF++;
+  }
+
   return {
     flightCount: ready.length,
     flyingDayCount,
     totalAirtimeSeconds,
-    soloAirtimeSeconds: totalAirtimeSeconds,
-    soloAirtimeIsExact: false,
+    soloAirtimeSeconds,
+    soloAirtimeIsExact: true,
     siteCount,
     gliderCount,
+    skillTagCounts,
   };
 }

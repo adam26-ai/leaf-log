@@ -181,6 +181,22 @@ model Flight {
   // owner's free-text notes about the flight — shown wherever the flight
   // itself is visible, edited only from the flight-edit page
   notes                 String?
+  // solo | tandem; null = solo-equivalent (matches every pre-existing row,
+  // since ingestion never distinguished tandem flights before this). Drives
+  // exact solo-airtime for USHPA ratings (lib/ratings/stats.ts).
+  occupancy             String?
+  // Self-reported flight-character tags (currently just "XC" — cross
+  // country). Separate from launchTypes: this describes the flight as a
+  // whole, not how it launched. See lib/ratings/skill-tags.ts.
+  flightTypeTags        String[]      @default([])
+  // Self-reported USHPA Special-Skill launch tags — CL/RS/FSL/TUR/HA/AWCL/ST.
+  // Multiple may apply to one flight. Feeds the "self-reported, pending an
+  // instructor's sign-off" tallies on /ratings — never counts as verified
+  // completion on its own. See lib/ratings/skill-tags.ts.
+  launchTypes           String[]      @default([])
+  // Did this flight land in a Restricted Landing Field (a USHPA Special
+  // Skill)? Same self-reported/pending-instructor treatment as launchTypes.
+  restrictedLandingField Boolean      @default(false)
   // header facts
   flightDate            DateTime?     @db.Date
   takeoffAt             DateTime?

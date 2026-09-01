@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { NotesEditor } from "./notes-editor";
 import { PhotosSection } from "./photos-section";
+import { FlightDetailsEditor } from "./flight-details-editor";
 
 export default async function EditFlightPage({
   params,
@@ -53,6 +54,27 @@ export default async function EditFlightPage({
             <VisibilityEditor
               flightId={flight.id}
               visibility={normalizeVisibility(flight.visibility)}
+            />
+          </Card>
+
+          <Card className="flex flex-col gap-3 p-6">
+            <h2 className="font-condensed text-lg font-bold text-ink">Flight details</h2>
+            <p className="text-sm text-gray-600">
+              Tandem flights are excluded from solo airtime, and Flight type / Launch type /
+              Landing tags show up as self-reported tallies on your{" "}
+              <Link href="/ratings" className="underline hover:text-ink">
+                ratings progress
+              </Link>{" "}
+              page — an instructor&apos;s sign-off is still what counts as verified.
+            </p>
+            <FlightDetailsEditor
+              flightId={flight.id}
+              details={{
+                occupancy: flight.occupancy,
+                flightTypeTags: flight.flightTypeTags,
+                launchTypes: flight.launchTypes,
+                restrictedLandingField: flight.restrictedLandingField,
+              }}
             />
           </Card>
 

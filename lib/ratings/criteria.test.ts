@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RATING_CRITERIA, criteriaForLevel } from "./criteria";
 import type { RatingStats } from "./stats";
+import { SKILL_TAG_KEYS, type SkillTagKey } from "./skill-tags";
 
 const stats: RatingStats = {
   flightCount: 137,
@@ -10,6 +11,10 @@ const stats: RatingStats = {
   soloAirtimeIsExact: true,
   siteCount: 7,
   gliderCount: 3,
+  skillTagCounts: Object.fromEntries(SKILL_TAG_KEYS.map((k) => [k, 0])) as Record<
+    SkillTagKey,
+    number
+  >,
 };
 
 describe("RATING_CRITERIA auto getValue", () => {
