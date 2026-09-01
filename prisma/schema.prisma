@@ -86,6 +86,9 @@ model Profile {
   siteEndorsements     SiteEndorsement[]    @relation("SiteEndorsements")
   zoneEndorsements     ZoneEndorsement[]    @relation("ZoneEndorsements")
   flights            Flight[]
+  // SPRINT-009 PR3 — flights this pilot is currently the assigned
+  // instructor of record for. See Flight.instructorId.
+  instructorFlights  Flight[]      @relation("FlightInstructor")
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
   kudos              Kudo[]
@@ -243,6 +246,15 @@ model Flight {
   photos                Photo[]
   kudos                 Kudo[]
   latestForDeviceTokens DeviceToken[] @relation("DeviceTokenLastFlight")
+  // SPRINT-009 PR3 — mutable; gates FUTURE InstructorNote/RatingSignoff
+  // writes only (once those land). Assignable only by ownerId, only to a
+  // profile currently in listFriends(ownerId), re-checked server-side at
+  // write time — see lib/ratings/authz.ts::canAssignInstructor. Reassigning
+  // or clearing this does NOT delete or hide any note/signoff written while
+  // a prior instructorId was current (those are keyed to their own
+  // immutable author column, not this field).
+  instructorId          String?
+  instructor            Profile?      @relation("FlightInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
@@ -253,6 +265,7 @@ model Flight {
   @@index([landingSiteId])
   @@index([takeoffZoneId])
   @@index([landingZoneId])
+  @@index([instructorId])
 }
 
 // Heavy payloads kept off the Flight row so logbook/profile lists stay fast.

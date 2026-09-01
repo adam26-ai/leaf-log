@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-09-01",
+    title: "Name a flight's instructor",
+    body: "A flight's edit page now has an Instructor card — name any accepted friend as the instructor of record for that flight. It's the first step toward instructor sign-offs on your Ratings page; for now it's just a tag you control, with no notification sent.",
+  },
+  {
     date: "2026-08-31",
     title: "Tag flight details for your ratings",
     body: "A flight's edit page now has a Flight details card: Occupancy (solo/tandem), Flight type (like Cross Country), Launch type (Ridge Soaring, Cliff Launch, and more), and Landing (Restricted Landing Field). Tagging a tandem flight keeps it out of your solo airtime on the Ratings page. The other tags show up there too, as your own self-reported tally — a great way to track what you've flown before talking it through with an instructor.",
