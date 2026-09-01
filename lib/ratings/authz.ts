@@ -23,3 +23,36 @@ export async function canAssignInstructor(
   if (instructorId === null) return true;
   return areFriends(ownerId, instructorId);
 }
+
+/**
+ * An InstructorNote may only be written/edited by the profile that is BOTH
+ * the note's own immutable author AND currently the flight's instructor.
+ * Reassigning the flight freezes every note written under a prior
+ * instructor — the author keeps read access (see canReadInstructorNote)
+ * but loses write access, since they're no longer the current instructor.
+ * Pure/synchronous: every input is a value the caller already fetched, so
+ * this never re-reads anything itself — it's not exempt from the "re-check
+ * the live row" rule, it just doesn't own the read.
+ */
+export function canWriteInstructorNote(
+  actorId: string,
+  noteAuthorId: string,
+  flightInstructorId: string | null,
+): boolean {
+  return actorId === noteAuthorId && actorId === flightInstructorId;
+}
+
+/**
+ * An InstructorNote is readable by the flight's owner (always) or the
+ * note's own author (always, even after reassignment) — never a different
+ * instructor, never a friends/public viewer, independent of the flight's
+ * own visibility. Deliberately never resolved through
+ * lib/flights/repo.ts's general visibility predicate.
+ */
+export function canReadInstructorNote(
+  viewerId: string,
+  flightOwnerId: string,
+  noteAuthorId: string,
+): boolean {
+  return viewerId === flightOwnerId || viewerId === noteAuthorId;
+}
