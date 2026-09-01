@@ -29,3 +29,21 @@ export async function requireProfile(): Promise<Profile> {
   if (!profile) redirect("/onboarding");
   return profile;
 }
+
+/**
+ * A profile's ordinary display facts (handle/name/avatar) — the same
+ * non-sensitive shape already surfaced in feeds and search, not gated on
+ * any relationship to the viewer. Used to resolve a flight's currently- or
+ * formerly-assigned instructor, who may not be in the viewer's friend list.
+ */
+export async function getProfileById(id: string): Promise<{
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUpdatedAt: Date | null;
+} | null> {
+  return prisma.profile.findUnique({
+    where: { id },
+    select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true },
+  });
+}

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import { getCurrentProfile } from "@/lib/profile";
+import { getCurrentProfile, getProfileById } from "@/lib/profile";
 import { getFlightForViewer } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { formatLocationLabel } from "@/lib/sites/display";
+import { listFriends } from "@/lib/social/friends";
 import { AppHeader } from "@/components/app-header";
 import { VisibilityEditor } from "@/components/flight/visibility-editor";
 import { DeleteFlightButton } from "@/components/flight/delete-flight-button";
@@ -13,6 +14,7 @@ import { SectionHeading } from "@/components/ui/section-heading";
 import { NotesEditor } from "./notes-editor";
 import { PhotosSection } from "./photos-section";
 import { FlightDetailsEditor } from "./flight-details-editor";
+import { InstructorEditor, type InstructorOption } from "./instructor-editor";
 
 export default async function EditFlightPage({
   params,
@@ -31,6 +33,27 @@ export default async function EditFlightPage({
 
   const location =
     formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
+
+  const friends = await listFriends(viewer.id);
+  const instructorOptions: InstructorOption[] = friends.map((f) => ({
+    id: f.id,
+    displayName: f.displayName,
+    handle: f.handle,
+  }));
+  if (
+    flight.instructorId &&
+    !instructorOptions.some((o) => o.id === flight.instructorId)
+  ) {
+    const stale = await getProfileById(flight.instructorId);
+    if (stale) {
+      instructorOptions.push({
+        id: stale.id,
+        displayName: stale.displayName,
+        handle: stale.handle,
+        stale: true,
+      });
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -75,6 +98,19 @@ export default async function EditFlightPage({
                 launchTypes: flight.launchTypes,
                 restrictedLandingField: flight.restrictedLandingField,
               }}
+            />
+          </Card>
+
+          <Card className="flex flex-col gap-3 p-6">
+            <h2 className="font-condensed text-lg font-bold text-ink">Instructor</h2>
+            <p className="text-sm text-gray-600">
+              Name an accepted friend as this flight&apos;s instructor of record. They aren&apos;t
+              notified — this doesn&apos;t require their acceptance yet.
+            </p>
+            <InstructorEditor
+              flightId={flight.id}
+              options={instructorOptions}
+              instructorId={flight.instructorId}
             />
           </Card>
 
