@@ -13,6 +13,11 @@ export interface ReleaseNote {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: "2026-09-02",
+    title: "Ratings sign-offs are live",
+    body: "If you're the instructor named on a flight, you can now sign off USHPA P2/P3/P4 skills you witnessed — precision landings, demonstrated skills and knowledge. It shows up immediately on the pilot's Ratings page as \"Signed off by [you] on [date]\", permanently credited to you.",
+  },
+  {
+    date: "2026-09-02",
     title: "Instructors can leave private notes",
     body: "If you're the instructor named on a flight, you can now leave a private note right on that flight's page — coaching points, what to work on next time. Only you and the pilot can see it, never anyone else the flight is shared with.",
   },
