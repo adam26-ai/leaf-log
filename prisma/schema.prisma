@@ -93,6 +93,11 @@ model Profile {
   // Immutable authorship, independent of Flight.instructorId — see
   // InstructorNote.
   instructorNotesAuthored InstructorNote[] @relation("InstructorNoteAuthor")
+  // SPRINT-009 PR5 — USHPA criteria signed off ON this pilot, and signed
+  // off BY this pilot while they were someone's instructor. See
+  // RatingSignoff.
+  ratingSignoffsAsPilot  RatingSignoff[] @relation("RatingSignoffPilot")
+  ratingSignoffsAsAuthor RatingSignoff[] @relation("RatingSignoffAuthor")
   sentFriendReqs     Friendship[]  @relation("SentFriendRequests")
   receivedFriendReqs Friendship[]  @relation("ReceivedFriendRequests")
   kudos              Kudo[]
@@ -260,6 +265,7 @@ model Flight {
   instructorId          String?
   instructor            Profile?      @relation("FlightInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
   instructorNotes       InstructorNote[]
+  ratingSignoffs        RatingSignoff[]
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
@@ -302,6 +308,43 @@ model InstructorNote {
   @@unique([flightId, instructorId])
   @@index([flightId])
   @@index([instructorId])
+}
+
+// SPRINT-009 PR5 — one witnessed occurrence of one USHPA P2/P3/P4 criterion,
+// evidenced by one flight. criterionKey references a stable, append-only id
+// in lib/ratings/criteria.ts (only kind: "instructor" rows are ever
+// signable). signedByProfileId is captured at signing time and never
+// changes even if Flight.instructorId is later reassigned — the same
+// immutable-author discipline as InstructorNote.instructorId. Append-only
+// in v1: no revocation/correction field (see SPRINT-009.md Open Questions).
+//
+// pilotId denormalizes flight.ownerId at signing time so /ratings can query
+// this table directly by (pilotId, ratingLevel, criterionKey) without
+// joining Flight — the same "targeted query over sparse rows" shape
+// statsFrom's in-memory reduction covers for dense ones.
+//
+// "Met" for an instructor-kind criterion is EXISTENCE of an active signoff
+// for (pilotId, criterionKey), not a count against `required` — the
+// instructor witnessing "3 consecutive precision landings" in one sitting
+// creates ONE row that marks the whole criterion satisfied, matching how a
+// real logbook sign-off works. `required` on the criteria catalog is
+// display text for this kind, not a counter.
+model RatingSignoff {
+  id                String   @id @default(cuid())
+  flightId          String
+  flight            Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  pilotId           String
+  pilot             Profile  @relation("RatingSignoffPilot", fields: [pilotId], references: [id], onDelete: Cascade)
+  ratingLevel       String // "P2" | "P3" | "P4"
+  criterionKey      String // matches an id in lib/ratings/criteria.ts
+  signedByProfileId String // immutable — the instructor who witnessed it
+  signedBy          Profile  @relation("RatingSignoffAuthor", fields: [signedByProfileId], references: [id], onDelete: Cascade)
+  signedAt          DateTime @default(now())
+  note              String?
+
+  @@index([pilotId, ratingLevel, criterionKey])
+  @@index([flightId])
+  @@index([signedByProfileId])
 }
 
 // Heavy payloads kept off the Flight row so logbook/profile lists stay fast.

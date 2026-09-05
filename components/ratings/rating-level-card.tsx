@@ -4,12 +4,19 @@ import { AccentBar } from "@/components/ui/accent-bar";
 import { CriterionRow } from "@/components/ratings/criterion-row";
 import type { RatingCriterion, RatingLevel } from "@/lib/ratings/criteria";
 import type { RatingStats } from "@/lib/ratings/stats";
+import type { SignoffView } from "@/lib/ratings/signoffs";
 
 const LEVEL_NAMES: Record<RatingLevel, string> = {
   P2: "P2 — Novice",
   P3: "P3 — Intermediate",
   P4: "P4 — Advanced",
 };
+
+const SIGNED_DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 function formatDetail(criterion: RatingCriterion, value: number): string {
   const shown = criterion.unit === "hours" ? value.toFixed(1) : String(Math.round(value));
@@ -18,18 +25,23 @@ function formatDetail(criterion: RatingCriterion, value: number): string {
 }
 
 /**
- * One P2/P3/P4 card: an `auto` row reads its live value straight off
- * `RatingStats`; `instructor`/`future` rows always render greyed and unmet
- * in PR1 — they only start reporting real progress once PR5 wires signoffs.
+ * One P2/P3/P4 card. An `auto` row reads its live value straight off
+ * `RatingStats`. An `instructor` row is "met" the moment ANY active
+ * RatingSignoff exists for that criterion — one witnessed sign-off
+ * satisfies the whole row, not a count against `required` (see
+ * RatingSignoff's doc comment in prisma/schema.prisma). A `future` row is
+ * always greyed with its own specific reason.
  */
 export function RatingLevelCard({
   level,
   criteria,
   stats,
+  signoffs,
 }: {
   level: RatingLevel;
   criteria: RatingCriterion[];
   stats: RatingStats;
+  signoffs: SignoffView[];
 }) {
   const rows = criteria.map((criterion) => {
     if (criterion.kind === "auto") {
@@ -38,14 +50,29 @@ export function RatingLevelCard({
         criterion,
         met: value >= criterion.required,
         detail: formatDetail(criterion, value),
+        muted: false,
       };
     }
+
+    if (criterion.kind === "instructor") {
+      const signoff = signoffs.find((s) => s.criterionKey === criterion.id);
+      if (signoff) {
+        return {
+          criterion,
+          met: true,
+          detail: `Signed off by ${signoff.signedByDisplayName} on ${SIGNED_DATE_FORMAT.format(signoff.signedAt)}`,
+          muted: false,
+        };
+      }
+    }
+
     return {
       criterion,
       met: false,
       detail:
         criterion.reason ??
         (criterion.kind === "instructor" ? "Needs an instructor's sign-off." : "Not available yet."),
+      muted: true,
     };
   });
 
@@ -65,13 +92,13 @@ export function RatingLevelCard({
         </div>
         <AccentBar className="mt-2" width="2rem" />
         <div className="mt-3 divide-y divide-gray-100">
-          {rows.map(({ criterion, met, detail }) => (
+          {rows.map(({ criterion, met, detail, muted }) => (
             <CriterionRow
               key={criterion.id}
               label={criterion.label}
               detail={detail}
               met={met}
-              muted={criterion.kind !== "auto"}
+              muted={muted}
             />
           ))}
         </div>

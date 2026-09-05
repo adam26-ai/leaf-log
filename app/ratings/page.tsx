@@ -2,6 +2,7 @@ import { requireProfile } from "@/lib/profile";
 import { listOwnFlights } from "@/lib/flights/repo";
 import { ratingStatsFrom } from "@/lib/ratings/stats";
 import { criteriaForLevel, type RatingLevel } from "@/lib/ratings/criteria";
+import { activeSignoffsFor } from "@/lib/ratings/signoffs";
 import { AppHeader } from "@/components/app-header";
 import { RatingLevelCard } from "@/components/ratings/rating-level-card";
 import { SkillTagsSummary } from "@/components/ratings/skill-tags-summary";
@@ -12,6 +13,7 @@ export default async function RatingsPage() {
   const profile = await requireProfile();
   const flights = await listOwnFlights(profile.id);
   const stats = ratingStatsFrom(flights);
+  const signoffs = await activeSignoffsFor(profile.id, profile.id);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -32,6 +34,7 @@ export default async function RatingsPage() {
               level={level}
               criteria={criteriaForLevel(level)}
               stats={stats}
+              signoffs={signoffs.filter((s) => s.ratingLevel === level)}
             />
           ))}
           <SkillTagsSummary stats={stats} />

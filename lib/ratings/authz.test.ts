@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canReadInstructorNote, canWriteInstructorNote } from "./authz";
+import {
+  canReadInstructorNote,
+  canReadSignoff,
+  canWriteInstructorNote,
+  canWriteSignoff,
+} from "./authz";
 
 // canAssignInstructor is DB-backed (re-reads the live friend graph) and is
 // covered by test/instructor-authz.integration.test.ts instead.
@@ -40,5 +45,43 @@ describe("canReadInstructorNote", () => {
 
   it("rejects any other viewer, independent of the flight's own visibility", () => {
     expect(canReadInstructorNote("some_friend_or_public_viewer", "owner", "alex")).toBe(false);
+  });
+});
+
+describe("canWriteSignoff", () => {
+  it("allows the flight's current instructor", () => {
+    expect(canWriteSignoff("alex", "alex")).toBe(true);
+  });
+
+  it("rejects anyone who isn't the current instructor, including a former one", () => {
+    expect(canWriteSignoff("alex", "sam")).toBe(false);
+  });
+
+  it("rejects when there is no current instructor at all", () => {
+    expect(canWriteSignoff("alex", null)).toBe(false);
+  });
+});
+
+describe("canReadSignoff", () => {
+  it("always allows the pilot the signoff is about", () => {
+    expect(canReadSignoff("pilot", "pilot", "alex", "sam")).toBe(true);
+  });
+
+  it("always allows the original signer, even after reassignment", () => {
+    expect(canReadSignoff("alex", "pilot", "alex", "sam")).toBe(true);
+  });
+
+  it("allows whoever is CURRENTLY the flight's instructor, for continuity", () => {
+    expect(canReadSignoff("sam", "pilot", "alex", "sam")).toBe(true);
+  });
+
+  it("rejects a former instructor who neither signed it nor is the pilot", () => {
+    // "jordan" was instructor before Alex signed, is not the pilot, and is
+    // not currently assigned (sam is).
+    expect(canReadSignoff("jordan", "pilot", "alex", "sam")).toBe(false);
+  });
+
+  it("rejects any friend/public viewer, independent of the flight's own visibility", () => {
+    expect(canReadSignoff("some_friend_or_public_viewer", "pilot", "alex", "sam")).toBe(false);
   });
 });
