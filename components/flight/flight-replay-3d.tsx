@@ -1480,7 +1480,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   if (error) {
     return (
-      <Card className="flex h-[70vh] min-h-[520px] items-center justify-center text-gray-500">
+      <Card className="flex h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] items-center justify-center text-gray-500">
         3D replay unavailable.
       </Card>
     );
@@ -1489,7 +1489,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   return (
     <Card className="overflow-hidden">
       <div className="relative">
-        <div ref={containerRef} className="h-[70vh] min-h-[520px] w-full" />
+        <div
+          ref={containerRef}
+          className="h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] w-full"
+        />
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img

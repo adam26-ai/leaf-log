@@ -12,7 +12,6 @@ import {
   Triangle,
   type LucideIcon,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import {
   formatDuration,
   formatAltitude,
@@ -25,7 +24,7 @@ import type { Flight } from "@prisma/client";
 
 function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 bg-paper px-3 py-2.5">
+    <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
       <div className="flex min-w-0 items-center gap-1.5">
         <Icon className="h-3.5 w-3.5 shrink-0 text-amber" />
         <span
@@ -47,7 +46,7 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
  *  grid cells. */
 function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 bg-paper px-3 py-2.5">
+    <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
       <div className="flex items-center gap-2.5">
         <div className="flex items-center gap-1.5">
           <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-amber" />
@@ -82,8 +81,7 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
   ];
 
   return (
-    <Card className="overflow-hidden">
-      <div className="grid grid-cols-2 gap-px bg-gray-100 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_3rem]">
+    <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_3rem]">
         {statistics.map(([label, Icon, value]) => (
           <Stat key={label} label={label} icon={Icon} value={value} />
         ))}
@@ -92,8 +90,7 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
           sink={formatVario(flight.maxSinkMs, units)}
         />
         <UnitToggle />
-      </div>
-    </Card>
+    </div>
   );
 }
 
@@ -108,8 +105,10 @@ function UnitToggle() {
       title={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
       onClick={() => changeUnits(metric ? "imperial" : "metric")}
       className={cn(
-        "flex min-h-[49px] items-center justify-center bg-paper transition-colors",
-        metric ? "bg-amber text-ink" : "text-gray-600 hover:bg-gray-50 hover:text-ink",
+        "flex h-9 w-10 self-center justify-self-end rounded-md border shadow-sm transition-colors",
+        metric
+          ? "border-amber bg-amber text-ink"
+          : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
       )}
     >
       <Ruler className="h-4 w-4" aria-hidden="true" />

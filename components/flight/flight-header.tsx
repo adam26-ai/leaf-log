@@ -17,7 +17,7 @@ function FlightArrow({
   const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
   const label = direction === "previous" ? "Previous log" : "Next log";
   const className =
-    "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors";
+    "flex h-9 w-9 shrink-0 items-center justify-center rounded-md border shadow-sm transition-colors";
 
   if (!flightId) {
     return (
@@ -26,7 +26,7 @@ function FlightArrow({
         disabled
         aria-label={`${label} unavailable`}
         title={`${label} unavailable`}
-        className={`${className} cursor-not-allowed text-gray-300`}
+        className={`${className} cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300`}
       >
         <Icon className="h-5 w-5" aria-hidden="true" />
       </button>
@@ -38,7 +38,7 @@ function FlightArrow({
       href={`/flights/${flightId}`}
       aria-label={label}
       title={label}
-      className={`${className} text-gray-600 hover:bg-gray-100 hover:text-ink`}
+      className={`${className} border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink`}
     >
       <Icon className="h-5 w-5" aria-hidden="true" />
     </Link>
@@ -78,7 +78,7 @@ export function FlightHeader({
     <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center justify-start gap-1">
         <FlightArrow flightId={previousFlightId} direction="previous" />
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-base font-bold text-ink">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-lg font-bold text-ink">
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <CalendarDays className="h-4 w-4 text-amber-strong" aria-hidden="true" />
             {date}
@@ -103,7 +103,7 @@ export function FlightHeader({
             zoneId={flight.takeoffZoneId}
             isOwner={isOwner}
             zonesEnabled={zonesOn}
-            className="font-condensed text-4xl font-bold tracking-tight text-ink"
+            className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
           {showLanding && (
             <>
@@ -119,7 +119,7 @@ export function FlightHeader({
                 zoneId={flight.landingZoneId}
                 isOwner={isOwner}
                 zonesEnabled={zonesOn}
-                className="font-condensed text-lg font-bold text-gray-500"
+                className="font-condensed text-base font-bold text-gray-500"
               />
             </>
           )}

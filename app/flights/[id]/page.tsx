@@ -65,36 +65,38 @@ export default async function FlightPage({
     <div className="flex flex-1 flex-col">
       <AppHeader profile={viewer} />
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-4 sm:py-5">
-        <FlightHeader
-          flight={flight}
-          isOwner={isOwner}
-          previousFlightId={previousFlightId}
-          nextFlightId={nextFlightId}
-          actions={
-            <div className="flex shrink-0 items-center gap-3">
-              {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
-              {kudoSummary && (
-                <KudosButton
-                  flightId={flight.id}
-                  initialCount={kudoSummary.count}
-                  initialKudoed={kudoSummary.hasKudoed}
-                  canToggle={!isOwner}
-                />
-              )}
-              {isOwner && (
-                <Link
-                  href={`/flights/${flight.id}/edit`}
-                  title="Edit flight"
-                  aria-label="Edit flight"
-                  className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
-                >
-                  <Pencil className="h-4 w-4" aria-hidden="true" />
-                </Link>
-              )}
-            </div>
-          }
-        />
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 pt-3">
+        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+          <FlightHeader
+            flight={flight}
+            isOwner={isOwner}
+            previousFlightId={previousFlightId}
+            nextFlightId={nextFlightId}
+            actions={
+              <div className="flex shrink-0 items-center gap-3">
+                {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
+                {kudoSummary && (
+                  <KudosButton
+                    flightId={flight.id}
+                    initialCount={kudoSummary.count}
+                    initialKudoed={kudoSummary.hasKudoed}
+                    canToggle={!isOwner}
+                  />
+                )}
+                {isOwner && (
+                  <Link
+                    href={`/flights/${flight.id}/edit`}
+                    title="Edit flight"
+                    aria-label="Edit flight"
+                    className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            }
+          />
+        </div>
 
         {flight.status === "failed" ? (
           <Card className="mt-8">
@@ -109,10 +111,10 @@ export default async function FlightPage({
           </Card>
         ) : (
           <>
-            <div className="relative left-1/2 mt-3 w-[80vw] -translate-x-1/2">
+            <div className="relative left-1/2 mt-2 w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} />
             </div>
-            <div className="mt-3">
+            <div className="mt-2">
               <FlightViz
                 flightId={flight.id}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
@@ -124,14 +126,16 @@ export default async function FlightPage({
           </>
         )}
 
-        <div className="mt-8">
-          <InstructorNoteCard
-            flightId={flight.id}
-            notes={instructorNotes}
-            viewerId={viewerId}
-            isViewerCurrentInstructor={isViewerCurrentInstructor}
-          />
-        </div>
+        {(instructorNotes.length > 0 || isViewerCurrentInstructor) && (
+          <div className="mt-8">
+            <InstructorNoteCard
+              flightId={flight.id}
+              notes={instructorNotes}
+              viewerId={viewerId}
+              isViewerCurrentInstructor={isViewerCurrentInstructor}
+            />
+          </div>
+        )}
 
         {isOwner && warnings.length > 0 && (
           <Card className="mt-8 border-amber/40 bg-amber/5">

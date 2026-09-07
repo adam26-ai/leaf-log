@@ -63,7 +63,7 @@ export function Barograph({
   // so memoize it — otherwise Recharts re-renders on every playback frame.
   const chart = useMemo(
     () => (
-      <ResponsiveContainer width="100%" height="100%" minHeight={180}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={135}>
         <AreaChart
           data={data}
           margin={{
@@ -126,7 +126,7 @@ export function Barograph({
       : null;
 
   return (
-    <div className="relative h-[220px] w-full">
+    <div className="relative h-[165px] w-full">
       {chart}
       {frac != null && (
         <div

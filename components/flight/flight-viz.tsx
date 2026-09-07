@@ -578,7 +578,7 @@ export function FlightViz({
 
         {/* Same 80vw treatment and padding as the timeline above it. */}
         <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
-          <Card className="p-4">
+          <Card className="px-4 py-2">
             <Barograph
               baro={track.baro}
               takeoffMs={takeoffMs}
