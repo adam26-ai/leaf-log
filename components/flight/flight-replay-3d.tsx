@@ -310,6 +310,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const offsetRef = useRef(0);
   const anchoredRef = useRef(false);
   const anchorTimerRef = useRef<number | null>(null);
+  const styleRefreshTimerRef = useRef<number | null>(null);
   const groundElevationCacheRef = useRef(new Map<number, number>());
   const shadowSampleCountRef = useRef(-1);
   const photosRef = useRef(photos);
@@ -389,12 +390,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   /**
    * Queried terrain elevation at a point, or null if not reliably known yet.
-   * queryTerrainElevation returns 0 (not null) before the DEM tile at THIS
-   * point is cached — the glider moves into fresh, not-yet-loaded tile
-   * territory as the replay progresses, not just once at load — and can hand
-   * back other transient garbage near a tile boundary, so reject anything
-   * outside a plausible real-world elevation too (the same sanity clamp the
-   * takeoff-anchor snap elsewhere in this file already uses).
+   * queryTerrainElevation can return 0 (not null) before the DEM is ready, so
+   * accept zero only once the source reports loaded (real sea-level terrain is
+   * valid). Reject elevations outside a plausible real-world range too.
    */
   function groundElevationAt(lon: number, lat: number): number | null {
     const map = mapRef.current;
@@ -405,7 +403,16 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     } catch {
       ground = null;
     }
-    if (ground == null || !Number.isFinite(ground) || ground === 0 || ground < -500 || ground > 9000) {
+    const terrainIsLoaded = map.getSource("dem")
+      ? map.isSourceLoaded("dem")
+      : false;
+    if (
+      ground == null ||
+      !Number.isFinite(ground) ||
+      (ground === 0 && !terrainIsLoaded) ||
+      ground < -500 ||
+      ground > 9000
+    ) {
       return null;
     }
     return ground;
@@ -639,18 +646,20 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       trackDisplayRef.current === "full"
         ? d.samples.length
         : Math.max(2, locateSample(d.samples, timeRef.current).i + 1);
-    if (source && shadowSampleCountRef.current === sampleCount) return;
-    const geojson = shadowGeoJson(d, timeRef.current);
-    if (source) {
-      source.setData(geojson);
-    } else {
+    if (!source) {
       map.addSource(SHADOW_SOURCE_ID, {
         type: "geojson",
-        data: geojson,
+        data: shadowGeoJson(d, timeRef.current),
       });
+      shadowSampleCountRef.current = sampleCount;
+    } else if (shadowSampleCountRef.current !== sampleCount) {
+      source.setData(shadowGeoJson(d, timeRef.current));
+      shadowSampleCountRef.current = sampleCount;
     }
-    shadowSampleCountRef.current = sampleCount;
 
+    // A style diff can preserve our source while dropping its layer. Always
+    // check the layer separately so the ground line is restored after a map
+    // view change even when its underlying GeoJSON is already current.
     if (!map.getLayer(SHADOW_LAYER_ID)) {
       const firstSymbol = map
         .getStyle()
@@ -1371,6 +1380,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
     return () => {
       if (anchorTimerRef.current) window.clearInterval(anchorTimerRef.current);
+      if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
       overlayRef.current = null;
       mapRef.current = null;
       if (trackedZoomAnimationRef.current != null) {
@@ -1398,8 +1408,35 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       setupTerrain(map);
       syncShadow();
       renderLayers(timeRef.current);
+      // style.load fires before the replacement DEM tiles are ready. Poll for
+      // that terrain and rebuild the shadow until it can be projected onto the
+      // new surface. Polling also works while an orbiting camera prevents idle.
+      let attempts = 0;
+      if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
+      const refreshForTerrain = () => {
+        if (mapRef.current !== map || !map.isStyleLoaded()) return;
+        removeShadow(map);
+        syncShadow();
+        renderLayers(timeRef.current);
+        map.triggerRepaint();
+        const d = dataRef.current;
+        const pos = d ? positionAt(timeRef.current) : null;
+        const terrainReady = pos ? groundElevationAt(pos[0], pos[1]) != null : true;
+        if (terrainReady || attempts++ >= 40) {
+          if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
+          styleRefreshTimerRef.current = null;
+        }
+      };
+      styleRefreshTimerRef.current = window.setInterval(refreshForTerrain, 250);
+      refreshForTerrain();
     };
     const swap = () => {
+      if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
+      styleRefreshTimerRef.current = null;
+      // MapLibre may preserve custom sources during a style diff while removing
+      // their layers. Remove both pieces first so syncShadow recreates a complete
+      // terrain-draped line for the incoming map view.
+      removeShadow(map);
       map.setStyle(styleFor(basemap));
       map.once("style.load", reAdd);
     };
