@@ -1,6 +1,8 @@
 import { AccentBar } from "@/components/ui/accent-bar";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
+import { CalendarDays, Clock } from "lucide-react";
+import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import type { Flight } from "@prisma/client";
 
 export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boolean }) {
@@ -14,10 +16,15 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
   // prop so NameSiteDialog's step machine can be gated too, not just the
   // data it renders.
   const zonesOn = zonesEnabled();
+  const date = formatLocalDate(
+    flight.takeoffAt ?? flight.flightDate,
+    flight.localUtcOffsetMinutes,
+  );
+  const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
           <SiteNameControl
             as="h1"
@@ -50,8 +57,18 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
             </>
           )}
         </div>
-        <AccentBar width="3rem" />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <CalendarDays className="h-3.5 w-3.5 text-amber-strong" aria-hidden="true" />
+            {date}
+          </span>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Clock className="h-3.5 w-3.5 text-amber-strong" aria-hidden="true" />
+            {timeRange}
+          </span>
+        </div>
       </div>
+      <AccentBar width="3rem" />
     </div>
   );
 }

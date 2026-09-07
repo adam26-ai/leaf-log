@@ -9,7 +9,7 @@ import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
-import { KeyStatistics } from "@/components/flight/key-statistics";
+import { KeyStatistics, UnitToggle } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
@@ -51,10 +51,11 @@ export default async function FlightPage({
     <div className="flex flex-1 flex-col">
       <AppHeader profile={viewer} />
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-4 sm:py-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <FlightHeader flight={flight} isOwner={isOwner} />
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
+            {flight.status !== "failed" && <UnitToggle />}
             {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
             {kudoSummary && (
               <KudosButton
@@ -90,10 +91,10 @@ export default async function FlightPage({
           </Card>
         ) : (
           <>
-            <div className="mt-8">
+            <div className="relative left-1/2 mt-3 w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} />
             </div>
-            <div className="mt-8">
+            <div className="mt-3">
               <FlightViz
                 flightId={flight.id}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
