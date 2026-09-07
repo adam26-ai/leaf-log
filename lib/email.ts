@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { writeFileSync } from "node:fs";
+import { DEV_MAGIC_LINK_FILE } from "./dev-magic-link";
 
 /**
  * Send a magic sign-in link. In production (RESEND_API_KEY set) it goes via
@@ -26,7 +27,7 @@ export async function sendMagicLink(to: string, url: string): Promise<void> {
 
   // Dev fallback — no external email.
   try {
-    writeFileSync("/tmp/leaf-magic-link.txt", url);
+    writeFileSync(DEV_MAGIC_LINK_FILE, url);
   } catch {
     /* ignore */
   }

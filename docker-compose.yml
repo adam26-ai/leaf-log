@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: leaf-log-db
     ports:
-      - "5437:5432"
+      - "127.0.0.1:5437:5432"
     environment:
       POSTGRES_USER: leaflog
       POSTGRES_PASSWORD: leaflog
