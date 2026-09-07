@@ -11,6 +11,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import type { UnitSystem } from "@/lib/flights/format";
+import { buildAltitudeScale } from "@/lib/flights/altitude-scale";
 
 const FEET_PER_METER = 3.280839895;
 
@@ -58,6 +59,10 @@ export function Barograph({
   const altitudeUnit = units === "imperial" ? "ft" : "m";
   const tMin = data[0]?.t ?? 0;
   const tMax = data[data.length - 1]?.t ?? 1;
+  const altitudeScale = useMemo(
+    () => buildAltitudeScale(data.map(({ alt }) => alt), units),
+    [data, units],
+  );
 
   // The chart doesn't depend on activeTime (the cursor is a lightweight overlay),
   // so memoize it — otherwise Recharts re-renders on every playback frame.
@@ -93,6 +98,8 @@ export function Barograph({
             minTickGap={48}
           />
           <YAxis
+            domain={altitudeScale.domain}
+            ticks={altitudeScale.ticks}
             tick={{ fontSize: 12, fill: "#7a7a7a" }}
             width={Y_AXIS_WIDTH}
             tickFormatter={(v) => `${Math.round(Number(v)).toLocaleString()}${altitudeUnit}`}
@@ -117,7 +124,7 @@ export function Barograph({
       </ResponsiveContainer>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, takeoffMs, offsetMin, altSource, altitudeUnit],
+    [data, takeoffMs, offsetMin, altSource, altitudeUnit, altitudeScale],
   );
 
   const frac =
