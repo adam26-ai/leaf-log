@@ -11,6 +11,7 @@ import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-pat
 import { Card } from "@/components/ui/card";
 import { headingAt, locateSample, type Sample } from "@/lib/igc/interpolate";
 import { formatAltitude, type UnitSystem } from "@/lib/flights/format";
+import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import { varioReplayColor } from "./replay-palette";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
@@ -156,6 +157,7 @@ const SHADOW_SOURCE_ID = "flight-ground-shadow";
 const SHADOW_LAYER_ID = "flight-ground-shadow";
 const CURTAIN_WINDOW_S = 18;
 const CURTAIN_VERTICAL_BANDS = 12;
+const MAX_TERRAIN_PROFILE_POINTS = 1_000;
 
 /**
  * Add a Catmull-Rom midpoint between every pair of fixes. The spline passes
@@ -248,6 +250,8 @@ interface FlightReplay3DProps {
   onPhotoHover?: (tSec: number) => void;
   /** Clicking a photo pin opens it (lightbox) and moves the scrubber. */
   onPhotoOpen?: (photoId: string, tSec: number | null) => void;
+  /** Reports sampled DEM heights along the route for the altitude profile. */
+  onTerrainProfile?: (profile: TerrainProfilePoint[]) => void;
   /** Switch the parent camera mode when a manual gesture needs a free camera. */
   onManualCameraChange?: () => void;
 }
@@ -268,6 +272,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       pilotName,
       onPhotoHover,
       onPhotoOpen,
+      onTerrainProfile,
       onManualCameraChange,
     },
     ref,
@@ -310,6 +315,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const photosRef = useRef(photos);
   const onPhotoHoverRef = useRef(onPhotoHover);
   const onPhotoOpenRef = useRef(onPhotoOpen);
+  const onTerrainProfileRef = useRef(onTerrainProfile);
+  const terrainProfilePublishedRef = useRef(false);
   const onManualCameraChangeRef = useRef(onManualCameraChange);
   const pilotNameRef = useRef(pilotName);
   const unitsRef = useRef(units);
@@ -321,6 +328,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     photosRef.current = photos;
     onPhotoHoverRef.current = onPhotoHover;
     onPhotoOpenRef.current = onPhotoOpen;
+    onTerrainProfileRef.current = onTerrainProfile;
     onManualCameraChangeRef.current = onManualCameraChange;
     pilotNameRef.current = pilotName;
     unitsRef.current = units;
@@ -340,6 +348,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       .then((d: ReplayData) => {
         if (!active) return;
         groundElevationCacheRef.current.clear();
+        terrainProfilePublishedRef.current = false;
         displayedTrackCacheRef.current = null;
         dataRef.current = d;
         trackRef.current = splineTrack(
@@ -1308,8 +1317,45 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         anchoredRef.current = true;
         renderLayers(timeRef.current);
       };
+      const publishTerrainProfile = () => {
+        if (terrainProfilePublishedRef.current || !dataRef.current) return;
+        if (!map.isSourceLoaded("dem")) return;
+
+        const samples = dataRef.current.samples;
+        if (samples.length === 0) return;
+        const stride = Math.max(
+          1,
+          Math.ceil((samples.length - 1) / Math.max(1, MAX_TERRAIN_PROFILE_POINTS - 1)),
+        );
+        const sampleIndexes: number[] = [];
+        for (let index = 0; index < samples.length; index += stride) sampleIndexes.push(index);
+        if (sampleIndexes.at(-1) !== samples.length - 1) sampleIndexes.push(samples.length - 1);
+
+        const profile: TerrainProfilePoint[] = [];
+        for (const index of sampleIndexes) {
+          const sample = samples[index];
+          let elevation: number | null = null;
+          try {
+            elevation = map.queryTerrainElevation([sample[0], sample[1]]);
+          } catch {
+            elevation = null;
+          }
+          if (elevation == null || !Number.isFinite(elevation)) continue;
+          const rawElevation = elevation / TERRAIN_EXAGGERATION;
+          if (rawElevation < -500 || rawElevation > 9_000) continue;
+          profile.push([sample[3], rawElevation]);
+        }
+
+        // Wait for another idle cycle if the DEM is not yet available along
+        // the complete route; gaps would imply false terrain ramps.
+        if (profile.length !== sampleIndexes.length) return;
+        terrainProfilePublishedRef.current = true;
+        onTerrainProfileRef.current?.(profile);
+      };
       map.on("idle", anchorToTerrain);
+      map.on("idle", publishTerrainProfile);
       anchorToTerrain();
+      publishTerrainProfile();
       // 'idle' can fire before the DEM at takeoff is queryable, so also poll for
       // a few seconds until the elevation reads (then stop).
       let tries = 0;

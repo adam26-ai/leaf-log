@@ -12,6 +12,10 @@ import {
 } from "recharts";
 import type { UnitSystem } from "@/lib/flights/format";
 import { buildAltitudeScale } from "@/lib/flights/altitude-scale";
+import {
+  terrainElevationAt,
+  type TerrainProfilePoint,
+} from "@/lib/flights/terrain-profile";
 
 const FEET_PER_METER = 3.280839895;
 
@@ -31,6 +35,7 @@ export const BAROGRAPH_PLOT_RIGHT_INSET = 12;
 
 export function Barograph({
   baro,
+  terrain,
   takeoffMs,
   offsetMin,
   altSource,
@@ -39,6 +44,7 @@ export function Barograph({
   onHoverTime,
 }: {
   baro: [number, number][];
+  terrain?: TerrainProfilePoint[];
   takeoffMs: number;
   offsetMin: number;
   altSource: "baro" | "gps";
@@ -50,17 +56,30 @@ export function Barograph({
 }) {
   const data = useMemo(
     () =>
-      baro.map(([t, alt]) => ({
-        t,
-        alt: units === "imperial" ? alt * FEET_PER_METER : alt,
-      })),
-    [baro, units],
+      baro.map(([t, alt]) => {
+        const groundM = terrainElevationAt(terrain ?? [], t);
+        return {
+          t,
+          alt: units === "imperial" ? alt * FEET_PER_METER : alt,
+          ground:
+            groundM == null
+              ? undefined
+              : units === "imperial"
+                ? groundM * FEET_PER_METER
+                : groundM,
+        };
+      }),
+    [baro, terrain, units],
   );
   const altitudeUnit = units === "imperial" ? "ft" : "m";
   const tMin = data[0]?.t ?? 0;
   const tMax = data[data.length - 1]?.t ?? 1;
   const altitudeScale = useMemo(
-    () => buildAltitudeScale(data.map(({ alt }) => alt), units),
+    () =>
+      buildAltitudeScale(
+        data.flatMap(({ alt, ground }) => (ground == null ? [alt] : [alt, ground])),
+        units,
+      ),
     [data, units],
   );
 
@@ -87,6 +106,10 @@ export function Barograph({
               <stop offset="0%" stopColor="#ffb459" stopOpacity={0.35} />
               <stop offset="100%" stopColor="#ffb459" stopOpacity={0.02} />
             </linearGradient>
+            <linearGradient id="terrainFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#71835f" stopOpacity={0.62} />
+              <stop offset="100%" stopColor="#71835f" stopOpacity={0.22} />
+            </linearGradient>
           </defs>
           <CartesianGrid stroke="#ededed" vertical={false} />
           <XAxis
@@ -106,18 +129,29 @@ export function Barograph({
           />
           <Tooltip
             labelFormatter={(t) => localClock(Number(t), takeoffMs, offsetMin)}
-            formatter={(v) => [
+            formatter={(v, name) => [
               `${Math.round(Number(v)).toLocaleString()} ${altitudeUnit}`,
-              altSource === "baro" ? "Baro alt" : "GPS alt",
+              String(name),
             ] as [string, string]}
             contentStyle={{ borderRadius: 6, borderColor: "#e0e0e0", fontSize: 13 }}
           />
           <Area
             type="monotone"
             dataKey="alt"
+            name={altSource === "baro" ? "Baro altitude" : "GPS altitude"}
             stroke="#f59e2c"
             strokeWidth={2}
             fill="url(#baroFill)"
+            isAnimationActive={false}
+          />
+          <Area
+            type="monotone"
+            dataKey="ground"
+            name="Terrain"
+            stroke="#596b49"
+            strokeWidth={1.5}
+            fill="url(#terrainFill)"
+            connectNulls
             isAnimationActive={false}
           />
         </AreaChart>

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
+import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import {
   BAROGRAPH_PLOT_LEFT_INSET,
   BAROGRAPH_PLOT_RIGHT_INSET,
@@ -253,6 +254,7 @@ export function FlightViz({
 }) {
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
+  const [terrainProfile, setTerrainProfile] = useState<TerrainProfilePoint[]>([]);
   const [photos, setPhotos] = useState<FlightPhoto[]>([]);
   const [error, setError] = useState(false);
   // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
@@ -502,6 +504,7 @@ export function FlightViz({
                 setOpenPhotoId(id);
                 if (t != null) scrubTo(t);
               }}
+              onTerrainProfile={setTerrainProfile}
             />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
@@ -569,6 +572,7 @@ export function FlightViz({
           <Card className="px-4 py-2">
             <Barograph
               baro={track.baro}
+              terrain={terrainProfile}
               takeoffMs={takeoffMs}
               offsetMin={offsetMin}
               altSource={track.altSource}
