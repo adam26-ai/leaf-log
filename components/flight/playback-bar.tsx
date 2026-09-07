@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronUp, Pause, Play, Route } from "lucide-react";
+import { ChevronUp, Pause, PencilLine, Play } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -257,7 +257,7 @@ export function PlaybackStatus({
             : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
         )}
       >
-        <Route className="h-3.5 w-3.5" aria-hidden="true" />
+        <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
       <PlaybackSpeedPicker speed={speed} disabled={disabled} onSpeed={onSpeed} />
       <span className="w-[4.75rem] text-right font-mono text-xs tabular-nums text-gray-700">

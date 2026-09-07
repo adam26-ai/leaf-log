@@ -507,8 +507,8 @@ export function FlightViz({
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
-            {/* One left-side control rail, directly below MapLibre's nav stack. */}
-            <div className="absolute left-[10px] top-[126px] flex flex-col gap-1">
+            {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
+            <div className="absolute left-[10px] top-1/2 flex -translate-y-1/2 flex-col gap-1">
               <MapIconButton
                 icon={Sun}
                 active={showShadow}
