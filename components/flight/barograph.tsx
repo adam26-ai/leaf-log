@@ -10,6 +10,9 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import type { UnitSystem } from "@/lib/flights/format";
+
+const FEET_PER_METER = 3.280839895;
 
 function localClock(tOffsetS: number, takeoffMs: number, offsetMin: number) {
   const shifted = new Date(takeoffMs + tOffsetS * 1000 + offsetMin * 60_000);
@@ -18,16 +21,19 @@ function localClock(tOffsetS: number, takeoffMs: number, offsetMin: number) {
   return `${hh}:${mm}`;
 }
 
-// Recharts plot insets (YAxis width + left margin; right margin) so the overlay
-// cursor line can be positioned over the plot area without re-rendering the chart.
-const LEFT_INSET = 48;
-const RIGHT_INSET = 12;
+// Shared by the timeline row so its rail uses exactly the same horizontal
+// span as the Recharts X-axis. The wider left inset also houses Play/Pause.
+const Y_AXIS_WIDTH = 44;
+const CHART_LEFT_MARGIN = 28;
+export const BAROGRAPH_PLOT_LEFT_INSET = Y_AXIS_WIDTH + CHART_LEFT_MARGIN;
+export const BAROGRAPH_PLOT_RIGHT_INSET = 12;
 
 export function Barograph({
   baro,
   takeoffMs,
   offsetMin,
   altSource,
+  units,
   activeTime = null,
   onHoverTime,
 }: {
@@ -35,12 +41,21 @@ export function Barograph({
   takeoffMs: number;
   offsetMin: number;
   altSource: "baro" | "gps";
+  units: UnitSystem;
   /** Linked-cursor time (s from takeoff) — draws a reference line. */
   activeTime?: number | null;
   /** Report the hovered time for linked highlighting (not called on leave). */
   onHoverTime?: (t: number) => void;
 }) {
-  const data = useMemo(() => baro.map(([t, alt]) => ({ t, alt })), [baro]);
+  const data = useMemo(
+    () =>
+      baro.map(([t, alt]) => ({
+        t,
+        alt: units === "imperial" ? alt * FEET_PER_METER : alt,
+      })),
+    [baro, units],
+  );
+  const altitudeUnit = units === "imperial" ? "ft" : "m";
   const tMin = data[0]?.t ?? 0;
   const tMax = data[data.length - 1]?.t ?? 1;
 
@@ -51,7 +66,12 @@ export function Barograph({
       <ResponsiveContainer width="100%" height="100%" minHeight={180}>
         <AreaChart
           data={data}
-          margin={{ top: 8, right: RIGHT_INSET, bottom: 4, left: 4 }}
+          margin={{
+            top: 8,
+            right: BAROGRAPH_PLOT_RIGHT_INSET,
+            bottom: 4,
+            left: CHART_LEFT_MARGIN,
+          }}
           onMouseMove={(s) => {
             const label = (s as { activeLabel?: number | string })?.activeLabel;
             if (label != null) onHoverTime?.(Number(label));
@@ -74,12 +94,15 @@ export function Barograph({
           />
           <YAxis
             tick={{ fontSize: 12, fill: "#7a7a7a" }}
-            width={44}
-            tickFormatter={(v) => `${v}m`}
+            width={Y_AXIS_WIDTH}
+            tickFormatter={(v) => `${Math.round(Number(v)).toLocaleString()}${altitudeUnit}`}
           />
           <Tooltip
             labelFormatter={(t) => localClock(Number(t), takeoffMs, offsetMin)}
-            formatter={(v) => [`${v} m`, altSource === "baro" ? "Baro alt" : "GPS alt"] as [string, string]}
+            formatter={(v) => [
+              `${Math.round(Number(v)).toLocaleString()} ${altitudeUnit}`,
+              altSource === "baro" ? "Baro alt" : "GPS alt",
+            ] as [string, string]}
             contentStyle={{ borderRadius: 6, borderColor: "#e0e0e0", fontSize: 13 }}
           />
           <Area
@@ -94,7 +117,7 @@ export function Barograph({
       </ResponsiveContainer>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, takeoffMs, offsetMin, altSource],
+    [data, takeoffMs, offsetMin, altSource, altitudeUnit],
   );
 
   const frac =
@@ -108,7 +131,9 @@ export function Barograph({
       {frac != null && (
         <div
           className="pointer-events-none absolute top-2 bottom-6 w-px border-l border-dashed border-ink"
-          style={{ left: `calc(${LEFT_INSET}px + (100% - ${LEFT_INSET + RIGHT_INSET}px) * ${frac})` }}
+          style={{
+            left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
+          }}
         />
       )}
     </div>

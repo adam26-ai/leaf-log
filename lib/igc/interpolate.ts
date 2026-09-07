@@ -14,9 +14,16 @@ export function locateSample(
   t: number,
 ): { i: number; f: number; tt: number } {
   const tt = Math.max(samples[0][3], Math.min(samples[samples.length - 1][3], t));
-  let i = 1;
-  while (i < samples.length && samples[i][3] < tt) i++;
-  if (i >= samples.length) i = samples.length - 1;
+  // Replay paths may now retain many hours of one-second fixes. Binary search
+  // keeps animation and the multi-sample curtain cheap on long flights.
+  let low = 1;
+  let high = samples.length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (samples[middle][3] < tt) low = middle + 1;
+    else high = middle;
+  }
+  const i = low;
   const a = samples[i - 1];
   const b = samples[i];
   const f = (tt - a[3]) / (b[3] - a[3] || 1);

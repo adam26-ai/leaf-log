@@ -64,7 +64,7 @@ function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
 
 /**
  * Key-statistics card — an icon + value grid, three per row, with a
- * metric/imperial toggle. Replaces the old horizontal-scrolling tile strip.
+ * metric/US units toggle. Replaces the old horizontal-scrolling tile strip.
  */
 export function KeyStatistics({ flight }: { flight: Flight }) {
   const [units, changeUnits] = useUnits();
@@ -100,11 +100,11 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
               type="button"
               onClick={() => changeUnits(u)}
               className={cn(
-                "rounded px-2.5 py-1 font-condensed text-xs font-bold capitalize transition-colors",
+                "rounded px-2.5 py-1 font-condensed text-xs font-bold transition-colors",
                 units === u ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
               )}
             >
-              {u}
+              {u === "metric" ? "Metric" : "US units"}
             </button>
           ))}
         </div>

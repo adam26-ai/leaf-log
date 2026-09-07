@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Sun,
+  Camera,
   Video,
   Navigation,
   Hand,
@@ -12,18 +13,31 @@ import {
   Route,
   Crosshair,
   Scan,
+  Ruler,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
 import type { ReplayResponse } from "@/lib/igc/replay";
-import { Barograph } from "./barograph";
-import { FlightReplay3D, type CameraMode, type FlightReplay3DHandle } from "./flight-replay-3d";
-import { PlaybackBar } from "./playback-bar";
+import {
+  BAROGRAPH_PLOT_LEFT_INSET,
+  BAROGRAPH_PLOT_RIGHT_INSET,
+  Barograph,
+} from "./barograph";
+import {
+  FlightReplay3D,
+  type CameraMode,
+  type AltitudeMode,
+  type FlightReplay3DHandle,
+  type TrackDisplayMode,
+} from "./flight-replay-3d";
+import { PlaybackStatus, PlaybackTimeline } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
 import type { FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
-import { InstrumentReadout } from "./instrument-readout";
+import { InstrumentReadout, type InstrumentRanges } from "./instrument-readout";
 import { instrumentAt } from "@/lib/flights/instruments";
+import { haversineM } from "@/lib/geo/distance";
 import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -87,32 +101,46 @@ function IconFlyoutControl<T extends string>({
   value: T;
   onSelect: (id: T) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="group relative">
-      <MapIconButton icon={icon} active={active} title={title} onClick={onClick} />
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <MapIconButton
+        icon={icon}
+        active={active}
+        title={title}
+        onClick={onClick}
+      />
       <div
-        className="invisible absolute right-full top-0 mr-2 flex flex-col gap-0.5 rounded-md border border-gray-300 bg-paper p-1 opacity-0 shadow-md transition-opacity
-          group-hover:visible group-hover:opacity-100"
+        className={cn(
+          "absolute right-full top-0 z-20 flex pr-3 transition-opacity",
+          open ? "visible opacity-100" : "invisible opacity-0",
+        )}
       >
-        {options.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            disabled={o.disabled}
-            onClick={() => onSelect(o.id)}
-            className={cn(
-              "flex items-center gap-2 whitespace-nowrap rounded px-2 py-1.5 text-left font-condensed text-sm font-bold transition-colors",
-              o.disabled
-                ? "cursor-not-allowed text-gray-300"
-                : o.id === value
-                  ? "bg-amber text-ink"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-ink",
-            )}
-          >
-            <o.icon className="h-4 w-4 shrink-0" />
-            {o.label}
-          </button>
-        ))}
+        <div className="flex flex-col gap-0.5 rounded-md border border-gray-300 bg-paper p-1 shadow-md">
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              disabled={o.disabled}
+              onClick={() => onSelect(o.id)}
+              className={cn(
+                "flex items-center gap-2 whitespace-nowrap rounded px-2 py-1.5 text-left font-condensed text-sm font-bold transition-colors",
+                o.disabled
+                  ? "cursor-not-allowed text-gray-300"
+                  : o.id === value
+                    ? "bg-amber text-ink"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-ink",
+              )}
+            >
+              <o.icon className="h-4 w-4 shrink-0" />
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -121,6 +149,7 @@ function IconFlyoutControl<T extends string>({
 const CAMERA_MODES: FlyoutOption<CameraMode>[] = [
   { id: "follow", label: "Follow", icon: Video },
   { id: "chase", label: "Chase", icon: Navigation },
+  { id: "orbit", label: "Orbit", icon: RefreshCw },
   { id: "fixed", label: "Fixed", icon: Hand },
 ];
 
@@ -136,13 +165,47 @@ function CameraModeControl({
   const current = CAMERA_MODES.find((m) => m.id === mode) ?? CAMERA_MODES[0];
   return (
     <IconFlyoutControl
-      icon={current.icon}
+      icon={Camera}
       active={mode !== "fixed"}
       title={`Camera: ${current.label} (click to cycle, hover for options)`}
       onClick={onCycle}
       options={CAMERA_MODES}
       value={mode}
       onSelect={onSelect}
+    />
+  );
+}
+
+function AltitudeModeControl({
+  mode,
+  onSelect,
+}: {
+  mode: AltitudeMode;
+  onSelect: (mode: AltitudeMode) => void;
+}) {
+  return (
+    <MapIconButton
+      icon={Ruler}
+      active={mode === "agl"}
+      title={`Altitude: ${mode === "asl" ? "MSL" : "AGL"} (click to switch)`}
+      onClick={() => onSelect(mode === "asl" ? "agl" : "asl")}
+    />
+  );
+}
+
+function TrackDisplayControl({
+  mode,
+  onSelect,
+}: {
+  mode: TrackDisplayMode;
+  onSelect: (mode: TrackDisplayMode) => void;
+}) {
+  return (
+    <MapIconButton
+      icon={Route}
+      active={mode === "full"}
+      title={mode === "full" ? "Show flight so far" : "Show full route"}
+      onClick={() => onSelect(mode === "elapsed" ? "full" : "elapsed")}
     />
   );
 }
@@ -173,7 +236,7 @@ function BasemapControl({
   const current = BASEMAPS.find((b) => b.id === basemap);
   return (
     <IconFlyoutControl
-      icon={BASEMAP_ICONS[basemap]}
+      icon={MapIcon}
       title={`Basemap: ${current?.label ?? basemap} (click to cycle, hover for options)`}
       onClick={onCycle}
       options={options}
@@ -217,12 +280,21 @@ export function FlightViz({
   const [cameraMode, setCameraMode] = useState<CameraMode>(() => {
     if (typeof window === "undefined") return "follow";
     const saved = localStorage.getItem("leaf-camera-mode");
-    if (saved === "follow" || saved === "chase" || saved === "fixed") return saved;
+    if (saved === "follow" || saved === "chase" || saved === "orbit" || saved === "fixed") return saved;
     return localStorage.getItem("leaf-camera-follow") === "false" ? "fixed" : "follow";
   });
   const [showShadow, setShowShadow] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("leaf-3d-shadow") === "true";
+    if (typeof window === "undefined") return true;
+    const saved = localStorage.getItem("leaf-3d-shadow");
+    return saved == null ? true : saved === "true";
+  });
+  const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(() => {
+    if (typeof window === "undefined") return "elapsed";
+    return localStorage.getItem("leaf-track-display") === "full" ? "full" : "elapsed";
+  });
+  const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(() => {
+    if (typeof window === "undefined") return "asl";
+    return localStorage.getItem("leaf-altitude-mode") === "agl" ? "agl" : "asl";
   });
 
   // Shared replay timeline (seconds from takeoff).
@@ -236,7 +308,7 @@ export function FlightViz({
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const timeRef = useRef(0);
   const replayRef = useRef<FlightReplay3DHandle>(null);
-  // Same Metric/Imperial preference as the key-statistics card, kept live in
+  // Same Metric/US units preference as the key-statistics card, kept live in
   // sync across both components (see lib/flights/use-units.ts).
   const [units] = useUnits();
 
@@ -331,7 +403,15 @@ export function FlightViz({
     setCameraMode(next);
   }
   function cycleCameraMode() {
-    selectCameraMode(cameraMode === "follow" ? "chase" : cameraMode === "chase" ? "fixed" : "follow");
+    selectCameraMode(
+      cameraMode === "follow"
+        ? "chase"
+        : cameraMode === "chase"
+          ? "orbit"
+          : cameraMode === "orbit"
+            ? "fixed"
+            : "follow",
+    );
   }
   function toggleShadow() {
     setShowShadow((on) => {
@@ -344,6 +424,48 @@ export function FlightViz({
       return next;
     });
   }
+  function selectTrackDisplay(next: TrackDisplayMode) {
+    setTrackDisplay(next);
+    try {
+      localStorage.setItem("leaf-track-display", next);
+    } catch {
+      /* ignore */
+    }
+  }
+  function selectAltitudeMode(next: AltitudeMode) {
+    setAltitudeMode(next);
+    try {
+      localStorage.setItem("leaf-altitude-mode", next);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const instrumentRanges = useMemo<InstrumentRanges | null>(() => {
+    if (!replay?.samples.length) return null;
+    let altMinM = Infinity;
+    let altMaxM = -Infinity;
+    let speedMinKmh = Infinity;
+    let speedMaxKmh = -Infinity;
+    replay.samples.forEach((sample, index) => {
+      altMinM = Math.min(altMinM, sample[2]);
+      altMaxM = Math.max(altMaxM, sample[2]);
+      if (index === 0) return;
+      const previous = replay.samples[index - 1];
+      const elapsed = sample[3] - previous[3];
+      if (elapsed <= 0) return;
+      const speed = (haversineM(previous[1], previous[0], sample[1], sample[0]) / elapsed) * 3.6;
+      if (!Number.isFinite(speed)) return;
+      speedMinKmh = Math.min(speedMinKmh, speed);
+      speedMaxKmh = Math.max(speedMaxKmh, speed);
+    });
+    return {
+      altMinM,
+      altMaxM,
+      speedMinKmh: Number.isFinite(speedMinKmh) ? speedMinKmh : 0,
+      speedMaxKmh: Number.isFinite(speedMaxKmh) ? speedMaxKmh : 0,
+    };
+  }, [replay]);
 
   if (error) {
     return (
@@ -365,7 +487,7 @@ export function FlightViz({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         {/* The map spans 80% of the browser window, breaking out of the
             page's centered max-w column rather than following the same
             margins as the key-statistics card above it. */}
@@ -376,10 +498,15 @@ export function FlightViz({
               flightId={flightId}
               basemap={basemap}
               time={time}
+              playing={playing}
               cameraMode={cameraMode}
               showShadow={showShadow}
+              trackDisplay={trackDisplay}
+              units={units}
+              altitudeMode={altitudeMode}
               photos={photos}
               pilotName={pilotName}
+              onManualCameraChange={() => selectCameraMode("fixed")}
               onPhotoHover={scrubTo}
               onPhotoOpen={(id, t) => {
                 setOpenPhotoId(id);
@@ -388,16 +515,18 @@ export function FlightViz({
             />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
-              <InstrumentReadout reading={reading} units={units} />
+              <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
             {/* Map controls, overlaid on the map (right-centre). */}
             <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
               <MapIconButton
                 icon={Sun}
                 active={showShadow}
-                title="Toggle the terrain-clamped flight shadow"
+                title="Toggle ground shadow and altitude trails"
                 onClick={toggleShadow}
               />
+              <TrackDisplayControl mode={trackDisplay} onSelect={selectTrackDisplay} />
+              <AltitudeModeControl mode={altitudeMode} onSelect={selectAltitudeMode} />
               <CameraModeControl mode={cameraMode} onCycle={cycleCameraMode} onSelect={selectCameraMode} />
               <BasemapControl basemap={basemap} onCycle={cycleBasemap} onSelect={changeBasemap} />
               <MapIconButton
@@ -411,42 +540,53 @@ export function FlightViz({
                 onClick={() => replayRef.current?.fitToRoute()}
               />
             </div>
-            {/* Scrubber transport, overlaid on the map (bottom-centre). Cleared
-                enough to sit above the map's own attribution strip. */}
-            <div className="absolute inset-x-0 bottom-8 flex justify-center px-3">
-              <div className="w-full max-w-2xl">
-                <PlaybackBar
-                  playing={playing}
-                  time={time}
-                  duration={duration}
-                  speed={speed}
-                  takeoffMs={takeoffMs}
-                  offsetMin={offsetMin}
-                  disabled={!replay}
-                  onTogglePlay={togglePlay}
-                  onScrub={scrubTo}
-                  onSpeed={setSpeed}
-                />
-              </div>
+            {/* Clock and speed mirror the map attribution in the lower-left. */}
+            <div className="absolute bottom-2 left-3 z-10">
+              <PlaybackStatus
+                time={time}
+                speed={speed}
+                takeoffMs={takeoffMs}
+                offsetMin={offsetMin}
+                disabled={!replay}
+                onSpeed={setSpeed}
+              />
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Same 80vw treatment as the map above it, so the elevation profile
-          lines up edge-to-edge with the map rather than the narrower
-          key-statistics column. */}
-      <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
-        <Card className="p-4">
-          <Barograph
-            baro={track.baro}
-            takeoffMs={takeoffMs}
-            offsetMin={offsetMin}
-            altSource={track.altSource}
-            activeTime={active ? time : null}
-            onHoverTime={onHover}
+        {/* The bare timeline removes vertical card padding. Its outer columns
+            include the profile card's 16px padding, keeping the rail on the
+            Recharts X-axis while putting Play on the map's left edge. */}
+        <div
+          className="relative left-1/2 grid w-[80vw] -translate-x-1/2 items-center"
+          style={{
+            gridTemplateColumns: `${BAROGRAPH_PLOT_LEFT_INSET + 16}px minmax(0, 1fr) ${BAROGRAPH_PLOT_RIGHT_INSET + 16}px`,
+          }}
+        >
+          <PlaybackTimeline
+            playing={playing}
+            time={time}
+            duration={duration}
+            disabled={!replay}
+            onTogglePlay={togglePlay}
+            onScrub={scrubTo}
           />
-        </Card>
+        </div>
+
+        {/* Same 80vw treatment and padding as the timeline above it. */}
+        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+          <Card className="p-4">
+            <Barograph
+              baro={track.baro}
+              takeoffMs={takeoffMs}
+              offsetMin={offsetMin}
+              altSource={track.altSource}
+              units={units}
+              activeTime={active ? time : null}
+              onHoverTime={onHover}
+            />
+          </Card>
+        </div>
       </div>
 
       {notes && (

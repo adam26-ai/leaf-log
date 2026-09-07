@@ -12,7 +12,7 @@ function readStored(): UnitSystem {
 }
 
 /**
- * Shared Metric/Imperial preference, persisted to localStorage and kept live
+ * Shared Metric/US units preference, persisted to localStorage and kept live
  * across every mounted instance on the page (the key-statistics card and the
  * 3D replay's instrument readout are separate client components) via a
  * same-tab custom event — the `storage` event only fires in OTHER tabs.
