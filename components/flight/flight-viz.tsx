@@ -308,7 +308,7 @@ export function FlightViz({
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
   const timeRef = useRef(0);
   const replayRef = useRef<FlightReplay3DHandle>(null);
-  // Same Metric/US units preference as the key-statistics card, kept live in
+  // Same Metric/Imperial preference as the key-statistics card, kept live in
   // sync across both components (see lib/flights/use-units.ts).
   const [units] = useUnits();
 
