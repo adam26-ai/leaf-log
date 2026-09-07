@@ -905,7 +905,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         // The outline is shaded inside this one ribbon so separate halo joins
         // cannot expose black wedges at thermals and self-crossings.
         new MultiColorPathLayer({
-          id: "track-outlined-v9",
+          id: `track-outlined-v10-${trackDisplayRef.current}`,
           data: [displayedTrack],
           getPath: (flight) =>
             flight.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
@@ -1258,7 +1258,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
-      "top-right",
+      "top-left",
     );
     const removeTrackedZoomButtons = installTrackedZoomButtons(map);
     map.on("move", () => renderLayers(timeRef.current));
@@ -1491,7 +1491,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       <div className="relative">
         <div
           ref={containerRef}
-          className="h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] w-full"
+          className="flight-replay-map h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] w-full"
         />
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element

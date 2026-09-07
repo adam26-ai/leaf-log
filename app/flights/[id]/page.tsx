@@ -116,6 +116,7 @@ export default async function FlightPage({
             </div>
             <div className="mt-2">
               <FlightViz
+                key={flight.id}
                 flightId={flight.id}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}

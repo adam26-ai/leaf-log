@@ -57,3 +57,13 @@ body {
 h1, h2, h3, h4, .font-condensed {
   font-family: var(--font-condensed);
 }
+
+/* Match MapLibre's zoom/compass stack to Leaf's 36px replay controls. */
+.flight-replay-map .maplibregl-ctrl-group {
+  border-radius: var(--radius-md);
+}
+
+.flight-replay-map .maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
+}

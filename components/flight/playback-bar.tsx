@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronUp, Pause, Play } from "lucide-react";
+import { ChevronUp, Pause, Play, Route } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -218,18 +218,47 @@ export function PlaybackStatus({
   speed,
   takeoffMs,
   offsetMin,
+  trackDisplay,
   disabled = false,
   onSpeed,
+  onTrackDisplay,
 }: {
   time: number;
   speed: number;
   takeoffMs: number;
   offsetMin: number;
+  trackDisplay: "elapsed" | "full";
   disabled?: boolean;
   onSpeed: (speed: number) => void;
+  onTrackDisplay: (mode: "elapsed" | "full") => void;
 }) {
+  const progressive = trackDisplay === "elapsed";
   return (
     <Card className="flex items-center gap-2 bg-paper/95 px-2 py-1.5 shadow-sm backdrop-blur-sm">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-pressed={progressive}
+        aria-label={
+          progressive
+            ? "Show flight so far during playback"
+            : "Keep the full route visible during playback"
+        }
+        title={
+          progressive
+            ? "Show flight so far: on (click to keep full route visible)"
+            : "Show flight so far: off (click to draw route during playback)"
+        }
+        onClick={() => onTrackDisplay(progressive ? "full" : "elapsed")}
+        className={cn(
+          "grid h-7 w-7 place-items-center rounded border p-0 transition-colors disabled:opacity-50",
+          progressive
+            ? "border-amber bg-amber text-ink"
+            : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
+        )}
+      >
+        <Route className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
       <PlaybackSpeedPicker speed={speed} disabled={disabled} onSpeed={onSpeed} />
       <span className="w-[4.75rem] text-right font-mono text-xs tabular-nums text-gray-700">
         {disabled ? "--:--:--" : clock(time, takeoffMs, offsetMin)}

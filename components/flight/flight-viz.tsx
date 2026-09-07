@@ -115,7 +115,7 @@ function IconFlyoutControl<T extends string>({
       />
       <div
         className={cn(
-          "absolute right-full top-0 z-20 flex pr-3 transition-opacity",
+          "absolute left-full top-0 z-20 flex pl-3 transition-opacity",
           open ? "visible opacity-100" : "invisible opacity-0",
         )}
       >
@@ -192,23 +192,6 @@ function AltitudeModeControl({
           : "Altitude: MSL, above sea level (click for AGL)"
       }
       onClick={() => onSelect(mode === "asl" ? "agl" : "asl")}
-    />
-  );
-}
-
-function TrackDisplayControl({
-  mode,
-  onSelect,
-}: {
-  mode: TrackDisplayMode;
-  onSelect: (mode: TrackDisplayMode) => void;
-}) {
-  return (
-    <MapIconButton
-      icon={Route}
-      active={mode === "full"}
-      title={mode === "full" ? "Show flight so far" : "Show full route"}
-      onClick={() => onSelect(mode === "elapsed" ? "full" : "elapsed")}
     />
   );
 }
@@ -295,6 +278,7 @@ export function FlightViz({
     if (typeof window === "undefined") return "elapsed";
     return localStorage.getItem("leaf-track-display") === "full" ? "full" : "elapsed";
   });
+  const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
   const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(() => {
     if (typeof window === "undefined") return "asl";
     return localStorage.getItem("leaf-altitude-mode") === "agl" ? "agl" : "asl";
@@ -386,6 +370,7 @@ export function FlightViz({
   }
   function togglePlay() {
     setActive(true);
+    if (!playing) setHasPlaybackStarted(true);
     setPlaying((p) => !p);
   }
   function changeBasemap(id: BasemapId) {
@@ -487,6 +472,8 @@ export function FlightViz({
 
   const reading = active && replay ? instrumentAt(replay, time) : null;
   const duration = replay?.durationS ?? 0;
+  const renderedTrackDisplay =
+    trackDisplay === "elapsed" && hasPlaybackStarted ? "elapsed" : "full";
 
   return (
     <div className="flex flex-col gap-6">
@@ -504,7 +491,7 @@ export function FlightViz({
               playing={playing}
               cameraMode={cameraMode}
               showShadow={showShadow}
-              trackDisplay={trackDisplay}
+              trackDisplay={renderedTrackDisplay}
               units={units}
               altitudeMode={altitudeMode}
               photos={photos}
@@ -520,15 +507,14 @@ export function FlightViz({
             <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3">
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
-            {/* Map controls, overlaid on the map (right-centre). */}
-            <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+            {/* One left-side control rail, directly below MapLibre's nav stack. */}
+            <div className="absolute left-[10px] top-[126px] flex flex-col gap-1">
               <MapIconButton
                 icon={Sun}
                 active={showShadow}
                 title="Toggle ground shadow and altitude trails"
                 onClick={toggleShadow}
               />
-              <TrackDisplayControl mode={trackDisplay} onSelect={selectTrackDisplay} />
               <AltitudeModeControl mode={altitudeMode} onSelect={selectAltitudeMode} />
               <CameraModeControl mode={cameraMode} onCycle={cycleCameraMode} onSelect={selectCameraMode} />
               <BasemapControl basemap={basemap} onCycle={cycleBasemap} onSelect={changeBasemap} />
@@ -552,6 +538,8 @@ export function FlightViz({
                 offsetMin={offsetMin}
                 disabled={!replay}
                 onSpeed={setSpeed}
+                trackDisplay={trackDisplay}
+                onTrackDisplay={selectTrackDisplay}
               />
             </div>
           </div>

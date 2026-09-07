@@ -81,7 +81,7 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_3rem]">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_2.25rem]">
         {statistics.map(([label, Icon, value]) => (
           <Stat key={label} label={label} icon={Icon} value={value} />
         ))}
@@ -105,7 +105,7 @@ function UnitToggle() {
       title={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
       onClick={() => changeUnits(metric ? "imperial" : "metric")}
       className={cn(
-        "flex h-9 w-10 self-center justify-self-end rounded-md border shadow-sm transition-colors",
+        "grid h-9 w-9 place-items-center self-center justify-self-center rounded-md border p-0 shadow-sm transition-colors",
         metric
           ? "border-amber bg-amber text-ink"
           : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
