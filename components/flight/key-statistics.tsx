@@ -8,6 +8,7 @@ import {
   ArrowDownRight,
   Route,
   ArrowLeftRight,
+  Ruler,
   Triangle,
   type LucideIcon,
 } from "lucide-react";
@@ -82,7 +83,7 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className="grid grid-cols-2 gap-px bg-gray-100 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)]">
+      <div className="grid grid-cols-2 gap-px bg-gray-100 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_3rem]">
         {statistics.map(([label, Icon, value]) => (
           <Stat key={label} label={label} icon={Icon} value={value} />
         ))}
@@ -90,28 +91,28 @@ export function KeyStatistics({ flight }: { flight: Flight }) {
           climb={formatVario(flight.maxClimbMs, units)}
           sink={formatVario(flight.maxSinkMs, units)}
         />
+        <UnitToggle />
       </div>
     </Card>
   );
 }
 
-export function UnitToggle() {
+function UnitToggle() {
   const [units, changeUnits] = useUnits();
+  const metric = units === "metric";
   return (
-    <div className="inline-flex rounded-md border border-gray-200 bg-paper p-0.5">
-      {(["metric", "imperial"] as const).map((unit) => (
-        <button
-          key={unit}
-          type="button"
-          onClick={() => changeUnits(unit)}
-          className={cn(
-            "rounded px-2.5 py-1 font-condensed text-xs font-bold transition-colors",
-            units === unit ? "bg-ink text-paper" : "text-gray-600 hover:text-ink",
-          )}
-        >
-          {unit === "metric" ? "Metric" : "Imperial"}
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      aria-pressed={metric}
+      aria-label={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
+      title={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
+      onClick={() => changeUnits(metric ? "imperial" : "metric")}
+      className={cn(
+        "flex min-h-[49px] items-center justify-center bg-paper transition-colors",
+        metric ? "bg-amber text-ink" : "text-gray-600 hover:bg-gray-50 hover:text-ink",
+      )}
+    >
+      <Ruler className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
 }

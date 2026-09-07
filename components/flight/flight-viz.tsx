@@ -13,7 +13,6 @@ import {
   Route,
   Crosshair,
   Scan,
-  Ruler,
   RefreshCw,
   type LucideIcon,
 } from "lucide-react";
@@ -185,9 +184,13 @@ function AltitudeModeControl({
 }) {
   return (
     <MapIconButton
-      icon={Ruler}
+      icon={Mountain}
       active={mode === "agl"}
-      title={`Altitude: ${mode === "asl" ? "MSL" : "AGL"} (click to switch)`}
+      title={
+        mode === "agl"
+          ? "Altitude: AGL, relative to terrain (click for MSL)"
+          : "Altitude: MSL, above sea level (click for AGL)"
+      }
       onClick={() => onSelect(mode === "asl" ? "agl" : "asl")}
     />
   );

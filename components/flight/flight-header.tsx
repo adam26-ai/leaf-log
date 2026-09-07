@@ -1,11 +1,63 @@
 import { AccentBar } from "@/components/ui/accent-bar";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
-import { CalendarDays, Clock } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import type { Flight } from "@prisma/client";
+import type { ReactNode } from "react";
 
-export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boolean }) {
+function FlightArrow({
+  flightId,
+  direction,
+}: {
+  flightId: string | null;
+  direction: "previous" | "next";
+}) {
+  const Icon = direction === "previous" ? ChevronLeft : ChevronRight;
+  const label = direction === "previous" ? "Previous log" : "Next log";
+  const className =
+    "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors";
+
+  if (!flightId) {
+    return (
+      <button
+        type="button"
+        disabled
+        aria-label={`${label} unavailable`}
+        title={`${label} unavailable`}
+        className={`${className} cursor-not-allowed text-gray-300`}
+      >
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={`/flights/${flightId}`}
+      aria-label={label}
+      title={label}
+      className={`${className} text-gray-600 hover:bg-gray-100 hover:text-ink`}
+    >
+      <Icon className="h-5 w-5" aria-hidden="true" />
+    </Link>
+  );
+}
+
+export function FlightHeader({
+  flight,
+  isOwner,
+  previousFlightId,
+  nextFlightId,
+  actions,
+}: {
+  flight: Flight;
+  isOwner: boolean;
+  previousFlightId: string | null;
+  nextFlightId: string | null;
+  actions: ReactNode;
+}) {
   const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
   // A named landing only earns its own display when it's somewhere other
   // than takeoff (e.g. not a top-landing back at launch) — otherwise it's
@@ -23,9 +75,24 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
   const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
-        <div className="flex flex-wrap items-baseline gap-x-2">
+    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <div className="flex min-w-0 items-center justify-start gap-1">
+        <FlightArrow flightId={previousFlightId} direction="previous" />
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-base font-bold text-ink">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <CalendarDays className="h-4 w-4 text-amber-strong" aria-hidden="true" />
+            {date}
+          </span>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Clock className="h-4 w-4 text-amber-strong" aria-hidden="true" />
+            {timeRange}
+          </span>
+        </div>
+        <FlightArrow flightId={nextFlightId} direction="next" />
+      </div>
+
+      <div className="flex min-w-0 flex-col items-center gap-1">
+        <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-2">
           <SiteNameControl
             as="h1"
             flightId={flight.id}
@@ -57,18 +124,10 @@ export function FlightHeader({ flight, isOwner }: { flight: Flight; isOwner: boo
             </>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <CalendarDays className="h-3.5 w-3.5 text-amber-strong" aria-hidden="true" />
-            {date}
-          </span>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <Clock className="h-3.5 w-3.5 text-amber-strong" aria-hidden="true" />
-            {timeRange}
-          </span>
-        </div>
+        <AccentBar width="3rem" />
       </div>
-      <AccentBar width="3rem" />
+
+      <div className="flex items-center justify-start sm:justify-end">{actions}</div>
     </div>
   );
 }
