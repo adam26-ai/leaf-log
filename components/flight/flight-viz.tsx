@@ -341,7 +341,8 @@ export function FlightViz({
     }
   }, [cameraMode]);
 
-  // Playback loop — advances the shared time while playing.
+  // Playback loop — advances the shared time while playing and rests on the
+  // final sample instead of wrapping back to takeoff.
   useEffect(() => {
     if (!playing || !replay) return;
     let last = performance.now();
@@ -349,8 +350,13 @@ export function FlightViz({
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
-      let t = timeRef.current + dt * speed;
-      if (t >= replay.durationS) t = 0; // loop
+      const t = timeRef.current + dt * speed;
+      if (t >= replay.durationS) {
+        timeRef.current = replay.durationS;
+        setTime(replay.durationS);
+        setPlaying(false);
+        return;
+      }
       timeRef.current = t;
       setTime(t);
       raf = requestAnimationFrame(tick);
@@ -372,8 +378,13 @@ export function FlightViz({
   }
   function togglePlay() {
     setActive(true);
-    if (!playing) setHasPlaybackStarted(true);
-    setPlaying((p) => !p);
+    if (playing) {
+      setPlaying(false);
+      return;
+    }
+    if (replay && timeRef.current >= replay.durationS) applyTime(0);
+    setHasPlaybackStarted(true);
+    setPlaying(true);
   }
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
