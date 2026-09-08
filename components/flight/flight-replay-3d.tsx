@@ -9,7 +9,8 @@ import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
 import { Card } from "@/components/ui/card";
-import { headingAt, locateSample, type Sample } from "@/lib/igc/interpolate";
+import { locateSample, type Sample } from "@/lib/igc/interpolate";
+import { altitudeAnchorY, chaseCourse } from "@/lib/flights/replay-camera";
 import { formatAltitude, type UnitSystem } from "@/lib/flights/format";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import type { XcCandidate } from "@/lib/igc/xc-types";
@@ -161,6 +162,15 @@ const SHADOW_LAYER_ID = "flight-ground-shadow";
 const CURTAIN_WINDOW_S = 18;
 const CURTAIN_VERTICAL_BANDS = 12;
 const MAX_TERRAIN_PROFILE_POINTS = 1_000;
+const altitudeRanges = new WeakMap<ReplayResponse, [number, number]>();
+function altitudeRangeFor(replay: ReplayResponse): [number, number] {
+  let range = altitudeRanges.get(replay);
+  if (!range) {
+    range = replay.samples.reduce<[number, number]>((r, p) => [Math.min(r[0], p[2]), Math.max(r[1], p[2])], [Infinity, -Infinity]);
+    altitudeRanges.set(replay, range);
+  }
+  return range;
+}
 
 /**
  * Add a Catmull-Rom midpoint between every pair of fixes. The spline passes
@@ -228,6 +238,7 @@ export interface FlightReplay3DHandle {
   /** Pull back to an overview framing the whole flight path. */
   fitToRoute: () => void;
   fitToXcRoute: () => void;
+  resetChase: () => void;
 }
 
 interface FlightReplay3DProps {
@@ -254,9 +265,7 @@ interface FlightReplay3DProps {
   photos?: FlightPhoto[];
   /** Shown on the glider marker's pole. Omit to show no name label. */
   pilotName?: string | null;
-  /** Hovering a photo pin moves the scrubber to its time-from-takeoff. */
-  onPhotoHover?: (tSec: number) => void;
-  /** Clicking a photo pin opens it (lightbox) and moves the scrubber. */
+  /** Clicking a photo pin opens its lightbox without changing playback. */
   onPhotoOpen?: (photoId: string, tSec: number | null) => void;
   /** Reports sampled DEM heights along the route for the altitude profile. */
   onTerrainProfile?: (flightId: string, profile: TerrainProfilePoint[]) => void;
@@ -282,7 +291,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       altitudeMode = "asl",
       photos = [],
       pilotName,
-      onPhotoHover,
       onPhotoOpen,
       onTerrainProfile,
       onManualCameraChange,
@@ -327,6 +335,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   }>());
   const chaseBearingRef = useRef<number | null>(null);
   const chasePitchRef = useRef(CHASE_PITCH);
+  const chaseOffsetRef = useRef(0);
+  const chaseClockRef = useRef(0);
   const orbitStateRef = useRef<{
     bearing: number;
     timestamp: number;
@@ -346,7 +356,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const groundElevationCacheRef = useRef(new Map<number, number>());
   const shadowSampleCountRef = useRef(-1);
   const photosRef = useRef(photos);
-  const onPhotoHoverRef = useRef(onPhotoHover);
   const onPhotoOpenRef = useRef(onPhotoOpen);
   const onTerrainProfileRef = useRef(onTerrainProfile);
   const terrainProfilePublishedRef = useRef(false);
@@ -361,7 +370,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     companionRef.current = companions;
     identityRef.current = { flightId, primaryFlightId };
     photosRef.current = photos;
-    onPhotoHoverRef.current = onPhotoHover;
     onPhotoOpenRef.current = onPhotoOpen;
     onTerrainProfileRef.current = onTerrainProfile;
     onManualCameraChangeRef.current = onManualCameraChange;
@@ -562,7 +570,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const map = mapRef.current;
     const d = dataRef.current;
     if (!map || !d) return map?.getBearing() ?? 0;
-    const heading = headingAt(d.samples, t);
+    const heading = chaseCourse(d.samples, t, d.gapThresholdS);
     // Chase bearing = the travel heading. In MapLibre, bearing is the compass
     // direction at the TOP of the screen, so bearing == heading puts the glider's
     // travel toward the top and the camera BEHIND it, looking forward.
@@ -576,9 +584,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       chaseBearingRef.current = heading;
       return heading;
     }
-    const next = normalizeBearing(
-      chaseBearingRef.current + angularDelta(chaseBearingRef.current, heading) * 0.2,
-    );
+    const now = performance.now();
+    const dt = Math.min(0.25, Math.max(0, (now - chaseClockRef.current) / 1000));
+    chaseClockRef.current = now;
+    const delta = angularDelta(chaseBearingRef.current, heading);
+    const next = normalizeBearing(chaseBearingRef.current + Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-dt / 2)), dt * 12));
     chaseBearingRef.current = next;
     return next;
   }
@@ -605,14 +615,26 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     map.jumpTo({
       center: [p[0], p[1]],
       elevation: markerAnchorZ(p),
-      padding: { top: MARKER_CENTERING_TOP_PADDING_PX, bottom: 0, left: 0, right: 0 },
+      padding: trackingPadding(p[2]),
       ...(zoom != null ? { zoom } : {}),
       ...(chase
-        ? { bearing: easedChaseBearing(t), pitch: chasePitchRef.current }
+        ? { bearing: easedChaseBearing(t) + chaseOffsetRef.current, pitch: chasePitchRef.current }
         : orbitBearing != null
           ? { bearing: orbitBearing }
           : {}),
     });
+  }
+
+  function trackingPadding(alt: number) {
+    const map = mapRef.current;
+    const d = dataRef.current;
+    if (!map || !d) return { top: MARKER_CENTERING_TOP_PADDING_PX, bottom: 0, left: 0, right: 0 };
+    const height = map.getContainer().clientHeight;
+    const mobile = map.getContainer().clientWidth < 640;
+    const range = altitudeRangeFor(d);
+    const badge = (mobile ? 50 : sharedBadgeHeight()) + NAME_BANNER_POINTER_PX + GLIDER_ICON_WIDTH_PX + CONNECTOR_HEIGHT_PX + ALT_LABEL_HEIGHT_PX + LABEL_GAP_PX * 2;
+    const y = altitudeAnchorY(alt, range[0], range[1], height, badge, mobile);
+    return { top: Math.max(0, y * 2 - height), bottom: Math.max(0, height - y * 2), left: 0, right: 0 };
   }
 
   // Pull back to an overview of the whole flight path. bearing/pitch are
@@ -636,6 +658,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const map = mapRef.current;
     const d = dataRef.current;
     if (!map || !d) return;
+    // Stop follow/orbit synchronously; the next replay frame must not cancel
+    // fitBounds (especially on slower machines).
+    if (duration > 0) {
+      cameraModeRef.current = "fixed";
+      onManualCameraChangeRef.current?.();
+      if (trackedZoomAnimationRef.current != null) cancelAnimationFrame(trackedZoomAnimationRef.current);
+      trackedZoomAnimationRef.current = null;
+      map.stop();
+    }
     if (map.getCenterClampedToGround() === false) map.setCenterClampedToGround(true);
     // Follow mode leaves camera padding behind; fitBounds adds its own padding.
     map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
@@ -647,6 +678,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       {
         padding: { top: Math.min(ROUTE_FIT_TOP_PADDING_PX, map.getContainer().clientHeight * 0.4), bottom: 40, left: 40, right: 40 },
         duration,
+        essential: true,
+        maxZoom: 16,
         bearing: -20,
         pitch: 62,
       },
@@ -691,7 +724,13 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     });
   }
 
-  useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600), fitToXcRoute }));
+  function resetChase() {
+    chaseOffsetRef.current = 0;
+    chaseBearingRef.current = null;
+    chaseClockRef.current = performance.now();
+    if (cameraModeRef.current === "chase") centerOnGlider(timeRef.current, true);
+  }
+  useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600), fitToXcRoute, resetChase }));
 
   function shadowGeoJson(d: ReplayData, t: number): GeoJsonData {
     return {
@@ -881,10 +920,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // Stack the connector, live altitude, vertical SVG name banner, and
     // white-on-black glider above one ground-clamped anchor.
     type LabelDatum = { text: string; position: [number, number, number] };
-    const nameText = pilotNameRef.current ? pilotNameRef.current.toUpperCase() : null;
+    const nameText = pilotNameRef.current ? displayedPilotName(pilotNameRef.current) : null;
     const colors = groupColorsRef.current;
     const identityColor = primary ? colors.groupPrimary : colors.groupCompanion;
-    const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder, sharedBadgeHeight());
+    const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder, displayedBadgeHeight());
     const anchorZ = ground != null ? Math.max(zOf(pos[2]), ground) : zOf(pos[2]);
     const anchorPos: [number, number, number] = [pos[0], pos[1], anchorZ];
     const markerScale = markerPerspectiveScale(anchorPos);
@@ -1081,6 +1120,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return badgeHeightRef.current;
   }
 
+  function displayedPilotName(name: string) {
+    return (containerRef.current?.clientWidth ?? 1000) < 640
+      ? (name.match(/[\p{L}\p{N}]+/gu) ?? []).map((part) => Array.from(part)[0]).slice(0, 3).join("").toUpperCase()
+      : name.toUpperCase();
+  }
+  function displayedBadgeHeight() {
+    return (containerRef.current?.clientWidth ?? 1000) < 640 ? 50 : sharedBadgeHeight();
+  }
+
   function companionLayers(nowMs: number): { opaqueTracks: Layer[]; translucentTracks: Layer[]; badges: Layer[] } {
     const opaqueTracks: Layer[] = [];
     const translucentTracks: Layer[] = [];
@@ -1113,7 +1161,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const ground = groundElevationAt(point[0], point[1]);
       const anchor: [number, number, number] = [point[0], point[1], Math.max((point[2] + offset) * TERRAIN_EXAGGERATION, ground ?? -Infinity)];
       const primary = flight.id === identityRef.current.primaryFlightId;
-      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder, sharedBadgeHeight())!;
+      const banner = verticalNameBanner(displayedPilotName(flight.owner.displayName), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder, displayedBadgeHeight())!;
       layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getFillColor: colorRgb(primary ? colors.groupPrimary : colors.groupCompanion), getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
@@ -1164,7 +1212,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     map.jumpTo({
       center: [p[0], p[1]],
       elevation: markerAnchorZ(p),
-      padding: { top: MARKER_CENTERING_TOP_PADDING_PX, bottom: 0, left: 0, right: 0 },
+      padding: trackingPadding(p[2]),
       bearing,
       pitch,
     });
@@ -1203,6 +1251,65 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
    * around-cursor rotation reverses bearing above the viewport midpoint,
    * which feels erratic in this steeply pitched 3D view.
    */
+  function installTouchNavigation(map: maplibregl.Map): () => void {
+    const element = map.getCanvasContainer();
+    const previousTouchAction = element.style.touchAction;
+    element.style.touchAction = "none";
+    let previous: { x: number; y: number; distance: number; angle: number; count: number } | null = null;
+    const sample = (touches: TouchList) => {
+      const a = touches[0], b = touches[1] ?? a;
+      return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2,
+        distance: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
+        angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI, count: touches.length };
+    };
+    const start = (event: TouchEvent) => {
+      if (!event.touches.length) return;
+      previous = sample(event.touches);
+      manualCameraInteractionRef.current = "rotate";
+      map.stop();
+      if (orbitStateRef.current) orbitStateRef.current.paused = true;
+    };
+    const move = (event: TouchEvent) => {
+      if (!event.touches.length || !previous) return;
+      const next = sample(event.touches), old = previous;
+      previous = next;
+      if (next.count !== old.count) return;
+      event.preventDefault();
+      const pitch = Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() - (next.y - old.y) * 0.25));
+      const bearing = map.getBearing() + (next.x - old.x) * 0.35 + (next.count > 1 ? angularDelta(old.angle, next.angle) : 0);
+      if (cameraModeRef.current === "chase") chasePitchRef.current = pitch;
+      setOrientationAroundTrackedPilot(map, bearing, pitch);
+      if (next.count > 1 && old.distance > 0 && next.distance > 0) {
+        // Use the same pilot-anchored zoom as desktop, retaining this gesture's bearing.
+        const zoom = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), map.getZoom() + Math.log2(next.distance / old.distance)));
+        map.jumpTo({ zoom });
+        setOrientationAroundTrackedPilot(map, bearing, pitch);
+      }
+    };
+    const end = (event: TouchEvent) => {
+      if (event.touches.length) { previous = sample(event.touches); return; }
+      previous = null;
+      manualCameraInteractionRef.current = null;
+      if (cameraModeRef.current === "chase") chaseOffsetRef.current = angularDelta(chaseBearingRef.current ?? map.getBearing(), map.getBearing());
+      if (orbitStateRef.current) {
+        orbitStateRef.current.paused = false;
+        orbitStateRef.current.bearing = map.getBearing();
+        orbitStateRef.current.timestamp = performance.now();
+      }
+    };
+    element.addEventListener("touchstart", start, { passive: true });
+    element.addEventListener("touchmove", move, { passive: false });
+    element.addEventListener("touchend", end);
+    element.addEventListener("touchcancel", end);
+    return () => {
+      element.style.touchAction = previousTouchAction;
+      element.removeEventListener("touchstart", start);
+      element.removeEventListener("touchmove", move);
+      element.removeEventListener("touchend", end);
+      element.removeEventListener("touchcancel", end);
+    };
+  }
+
   function installMouseNavigation(map: maplibregl.Map): () => void {
     const element = map.getCanvasContainer();
     let drag: { mode: "rotate" | "pan"; x: number; y: number } | null = null;
@@ -1264,7 +1371,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         }
       }
       if (completedDrag.mode === "rotate" && cameraModeRef.current === "chase") {
-        chaseBearingRef.current = normalizeBearing(map.getBearing());
+        chaseOffsetRef.current = angularDelta(chaseBearingRef.current ?? map.getBearing(), map.getBearing());
       }
       if (completedDrag.mode === "pan" && cameraModeRef.current !== "fixed") {
         // Panning intentionally leaves the pilot anchor. Enter Fixed without
@@ -1421,9 +1528,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       dragPan: false,
       dragRotate: false,
       scrollZoom: false,
+      touchZoomRotate: false,
+      touchPitch: false,
       attributionControl: { compact: true },
     });
     const removeMouseNavigation = installMouseNavigation(map);
+    const removeTouchNavigation = installTouchNavigation(map);
     mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: true }),
@@ -1554,6 +1664,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       }
       removeTrackedZoomButtons();
       removeMouseNavigation();
+      removeTouchNavigation();
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1599,11 +1710,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       // their layers. Remove both pieces first so syncShadow recreates a complete
       // terrain-draped line for the incoming map view.
       removeShadow(map);
-      map.setStyle(styleFor(basemap));
       map.once("style.load", reAdd);
+      map.setStyle(styleFor(basemap), { diff: false });
     };
-    if (map.isStyleLoaded()) swap();
-    else map.once("load", swap);
+    swap();
+    return () => {
+      map.off("style.load", reAdd);
+      if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
+      styleRefreshTimerRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [basemap]);
 
@@ -1617,6 +1732,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       // Clear so the first chase frame snaps straight behind the glider (to the
       // travel heading) instead of easing in from the user's manual bearing.
       chaseBearingRef.current = null;
+      chaseOffsetRef.current = 0;
+      chaseClockRef.current = performance.now();
       chasePitchRef.current = CHASE_PITCH;
     }
     if (cameraMode === "fixed" && preserveCameraOnFixedRef.current) {
@@ -1658,7 +1775,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   }, [playing]);
 
   // Orbit follows the current pilot position while rotating from wall-clock
-  // time. Its 40-second revolution therefore stays constant when playback is
+  // time. Its 60-second revolution therefore stays constant when playback is
   // paused or its speed changes. A manual left-drag pauses the automatic
   // bearing and resumes from the angle where the user releases it.
   useEffect(() => {
@@ -1676,7 +1793,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const orbitState = orbitStateRef.current;
       if (orbitState && !orbitState.paused) {
         orbitState.bearing = normalizeBearing(
-          orbitState.bearing + ((now - orbitState.timestamp) / 40_000) * 360,
+          orbitState.bearing + ((now - orbitState.timestamp) / 60_000) * 360,
         );
         orbitState.timestamp = now;
         if (!cameraTrackingSuspended(now)) {
@@ -1725,7 +1842,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   if (!hasData) {
     return (
-      <Card className="flex h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] items-center justify-center text-gray-500">
+      <Card className="flex h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] items-center justify-center text-gray-500">
         3D replay unavailable.
       </Card>
     );
@@ -1736,7 +1853,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       <div className="relative">
         <div
           ref={containerRef}
-          className="flight-replay-map h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] w-full"
+          className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element

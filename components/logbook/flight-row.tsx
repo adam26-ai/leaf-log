@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Waypoints, Triangle, TriangleRight } from "lucide-react";
-import type { XcBadge } from "@/lib/flights/xc-rankings";
+import { Monitor, ThumbsUp, Globe, Lock, Users } from "lucide-react";
+import type { FlightTrophy } from "@/lib/flights/trophies";
+import { TrophyPill } from "./trophy-pill";
 import {
   formatDuration,
-  formatDistance,
   formatAltitude,
   formatLocalDate,
   formatLocalTime,
@@ -26,9 +26,9 @@ interface FlightRowOwner {
 function UploadSource({ source }: { source: string }) {
   const automatic = source === "device_push";
   const label = automatic ? "Auto-uploaded from Leaf" : "Manually uploaded";
-  return <span title={label} role="img" aria-label={label} className="grid h-8 w-8 shrink-0 place-items-center justify-self-end">
+  return <span title={label} role="img" aria-label={label} className="grid h-6 w-6 sm:h-8 sm:w-8 shrink-0 place-items-center justify-self-end">
     {automatic
-      ? <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-8 w-8" />
+      ? <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-6 w-6 sm:h-8 sm:w-8" />
       : <Monitor aria-hidden="true" className="h-5 w-5 text-gray-500" />}
   </span>;
 }
@@ -41,7 +41,7 @@ export function FlightRow({
   highlightScore = 0,
   distanceScore = 0,
   previewAutoUpload = false,
-  xcBadges,
+  trophies,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -50,7 +50,7 @@ export function FlightRow({
   highlightScore?: number;
   distanceScore?: number;
   previewAutoUpload?: boolean;
-  xcBadges?: XcBadge[];
+  trophies?: FlightTrophy[];
 }) {
   const [units] = useUnits();
   const visibility =
@@ -59,6 +59,7 @@ export function FlightRow({
       : flight.visibility === "friends"
         ? { label: "Friends", className: "border-brand-blue bg-brand-blue/10 text-brand-blue-strong" }
         : { label: "Private", className: "border-gray-400 bg-white text-gray-600" };
+  const VisibilityIcon = flight.visibility === "public" ? Globe : flight.visibility === "friends" ? Users : Lock;
   if (compact) {
     const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.22;
     const greenAlpha = Math.min(1, Math.max(0, distanceScore)) * 0.38;
@@ -66,45 +67,17 @@ export function FlightRow({
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
     return (
-      <div className={`relative ${xcBadges !== undefined ? "min-w-[800px]" : "min-w-[748px]"}`}>
-      <Link
-        href={`/flights/${flight.id}`}
-        style={{
-          backgroundImage: blueAlpha > 0 && greenAlpha > 0
-            ? `linear-gradient(to right, ${blue}, ${green})`
-            : undefined,
-          backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green,
-        }}
-        className={`grid items-center rounded-md border border-gray-200 px-4 py-2 text-sm transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-brand-blue ${xcBadges !== undefined
-          ? "min-w-[800px] grid-cols-[9.5rem_3.25rem_4.5rem_minmax(6rem,1fr)_4rem_9rem_4.5rem_2rem] gap-3"
-          : "min-w-[748px] grid-cols-[9.5rem_3.25rem_4.5rem_minmax(8rem,1fr)_5.5rem_4.5rem_2rem] gap-5"}`}
-      >
-        <span className="whitespace-nowrap text-gray-600">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span>
-        <span className={`${xcBadges !== undefined ? "-ml-1" : "-ml-3"} whitespace-nowrap tabular-nums text-gray-600`}>{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)}</span>
-        <span title="Duration" className="whitespace-nowrap text-right tabular-nums text-gray-700">{formatDuration(flight.durationS)}</span>
-        <span title={site} className="truncate font-condensed text-base font-bold text-ink">{site}
-          {xcBadges === undefined && flight.xcStatus === "queued" && <span className="block text-xs font-normal text-gray-500">XC: Calculating…</span>}
-        </span>
-        <span title="Maximum altitude" className="whitespace-nowrap text-left tabular-nums text-gray-700">
-          {flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}
-        </span>
-        {xcBadges !== undefined && <span className="grid grid-cols-3 items-center gap-1" aria-label="Personal top 10 XC rankings">
-          {flight.xcStatus === "queued" ? <span className="col-span-3 text-xs text-gray-500" role="status">Calculating…</span> : (["open", "fai-triangle", "free-triangle"] as const).map(shape => {
-            const badge = xcBadges.find(b => b.shape === shape);
-            if (!badge) return <span key={shape} aria-hidden="true" />;
-            const Icon = badge.shape === "open" ? Waypoints : badge.shape === "fai-triangle" ? Triangle : TriangleRight;
-            const name = badge.shape === "open" ? "Open distance" : badge.shape === "fai-triangle" ? "FAI triangle" : "Free triangle";
-            const label = `${name}: #${badge.rank} in your logbook — ${formatDistance(badge.distanceM, units)}${badge.approximate ? " (best found; search may improve)" : ""}`;
-            return <span key={badge.shape} title={label} aria-label={label} className="inline-flex h-6 items-center justify-center gap-1 rounded-full border border-brand-blue/40 bg-white/75 text-xs font-semibold tabular-nums text-brand-blue-strong">
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />{badge.rank}
-            </span>;
-          })}
-        </span>}
-        <span className={`inline-flex h-6 w-[4.5rem] shrink-0 items-center justify-center justify-self-end rounded-full border text-xs font-medium ${visibility.className}`}>{visibility.label}</span>
-        <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
+      <div className="relative">
+      <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
+        className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-gray-200 px-2 py-2 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[6rem_minmax(0,1fr)_auto_1.5rem_1.5rem] sm:grid-cols-[10rem_minmax(6rem,1fr)_4rem_3.5rem_4.5rem_2rem] sm:gap-3 sm:px-4 sm:text-sm">
+        <span className="min-w-0 text-gray-600"><span className="block text-[10px] sm:text-xs">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span><span className="block whitespace-nowrap text-[10px] tabular-nums sm:text-xs">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
+        <span title={site} className="min-w-0 truncate font-condensed text-sm font-bold text-ink sm:text-base">{site}{flight.xcStatus === "queued" && <span className="block text-[10px] font-normal text-gray-500">XC: Calculating…</span>}</span>
+        <span title="Maximum altitude" className="hidden whitespace-nowrap tabular-nums text-gray-700 sm:block">{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
+        <span className="flex justify-end">{trophies && <TrophyPill trophies={trophies} />}</span>
+        <span title={visibility.label} aria-label={visibility.label} className={`hidden h-6 items-center justify-center rounded-full min-[400px]:inline-flex sm:border sm:px-2 ${visibility.className}`}><VisibilityIcon className="h-3.5 w-3.5 sm:hidden" /><span className="hidden sm:inline">{visibility.label}</span></span>
+        <span className="hidden min-[400px]:block"><UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} /></span>
       </Link>
-      {xcBadges !== undefined && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus) &&
-        <div className="absolute right-36 top-1/2 w-36 -translate-y-1/2"><CalculateXcButton flightId={flight.id} /></div>}
+      {trophies !== undefined && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus) && <div className="mt-1 flex justify-end text-xs"><CalculateXcButton flightId={flight.id} /></div>}
       </div>
     );
   }

@@ -8,7 +8,6 @@ import {
   ArrowDownRight,
   TriangleRight,
   Waypoints,
-  Ruler,
   Triangle,
   type LucideIcon,
 } from "lucide-react";
@@ -19,9 +18,8 @@ import {
   formatVario,
 } from "@/lib/flights/format";
 import { useUnits } from "@/lib/flights/use-units";
-import { cn } from "@/lib/utils";
 import type { Flight } from "@prisma/client";
-import { seekReplayToMetric, showReplayXcOverview, type ReplayMetric } from "@/lib/flights/replay-events";
+import { seekReplayToMetric, toggleReplayXcRoute, type ReplayMetric } from "@/lib/flights/replay-events";
 import { readXcScore } from "@/lib/igc/xc-types";
 import { XcPendingRefresh } from "./xc-pending-refresh";
 import { CalculateXcButton } from "./calculate-xc-button";
@@ -74,50 +72,19 @@ export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flig
   ];
 
   return (
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-[repeat(7,minmax(0,1fr))_2.25rem]">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-7">
         <XcPendingRefresh pending={flight.xcStatus === "queued"} />
         {statistics.map(([label, Icon, value, seek]) => (
           label === xcLabel && canCalculateXc && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus)
           ? <div key={label} className="self-center px-2"><CalculateXcButton flightId={flight.id} /></div> :
           <Stat key={label} label={label} icon={Icon} value={value} seek={seek}
-            onClick={label === xcLabel && xc ? showReplayXcOverview : undefined}
+            onClick={label === xcLabel && xc ? toggleReplayXcRoute : undefined}
             description={label === xcLabel ? xc
-              ? `${xc.best.name}: ${formatDistance(xc.best.distanceM, units)} credited distance, ${xc.best.points.toFixed(2)} XContest points.${xc.approximate ? " Best found within the search time limit; a longer search may improve it." : " Optimal route found."}`
+              ? `${xc.best.name}: ${formatDistance(xc.best.distanceM, units)} credited distance, ${xc.best.points.toFixed(2)} XContest points.${xc.approximate ? " Best found within the search time limit; a longer search may improve it." : " Optimal route found."} Click to show or hide the scored route.`
               : flight.xcStatus === "queued" ? "XC scoring is queued or calculating. You can replay the flight now."
               : "XC distance is unavailable. Reprocess this flight to calculate it."
               : undefined} />
         ))}
-        <UnitToggle />
     </div>
-  );
-}
-
-function UnitToggle() {
-  const [units, changeUnits] = useUnits();
-  const metric = units === "metric";
-  return (
-    <button
-      type="button"
-      aria-pressed={metric}
-      aria-label={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
-      title={`${metric ? "Metric" : "Imperial"} units (click for ${metric ? "Imperial" : "Metric"})`}
-      onClick={() => changeUnits(metric ? "imperial" : "metric")}
-      className={cn(
-        "grid h-9 w-9 place-items-center self-center justify-self-center rounded-md border p-0 shadow-sm transition-colors",
-        metric
-          ? "border-[var(--replay-active-border)] [border-width:var(--replay-button-border-width)] bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
-          : "border-[var(--replay-inactive-border)] [border-width:var(--replay-inactive-button-border-width)] bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95",
-      )}
-    >
-      <Ruler
-        className={cn(
-          "h-4 w-4",
-          metric
-            ? "[stroke-width:var(--replay-button-icon-stroke)]"
-            : "[stroke-width:var(--replay-inactive-button-icon-stroke)]",
-        )}
-        aria-hidden="true"
-      />
-    </button>
   );
 }

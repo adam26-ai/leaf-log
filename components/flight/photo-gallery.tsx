@@ -5,8 +5,8 @@ import { photoUrl, unpinnedReason, type FlightPhoto } from "./photos";
 
 /**
  * Thumbnail grid + lightbox (prev/next, keyboard). The open photo is controlled
- * via `openId` so a map-pin click can open it too. Selecting a photo also
- * scrubs the replay to its moment (via onSelect). Deleting is a separate
+ * via `openId` so a map-pin click can open it too. Viewing photos leaves
+ * replay timing alone. Deleting is a separate
  * capability (`canDelete`) from viewing — the flight page shows photos
  * read-only; deleting happens on the flight-edit page instead.
  */
@@ -16,7 +16,6 @@ export function PhotoGallery({
   canDelete = false,
   openId = null,
   onOpenChange,
-  onSelect,
   onPhotoSelect,
   onChanged,
   showHeading = true,
@@ -26,7 +25,6 @@ export function PhotoGallery({
   canDelete?: boolean;
   openId?: string | null;
   onOpenChange?: (id: string | null) => void;
-  onSelect?: (tSec: number) => void;
   onPhotoSelect?: (photo: FlightPhoto) => void;
   onChanged?: () => void;
   showHeading?: boolean;
@@ -59,7 +57,6 @@ export function PhotoGallery({
   function select(p: FlightPhoto) {
     onOpenChange?.(p.id);
     onPhotoSelect?.(p);
-    if (p.tSec != null) onSelect?.(p.tSec);
   }
 
   async function del(photoId: string) {

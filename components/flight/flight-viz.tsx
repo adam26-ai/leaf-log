@@ -37,16 +37,15 @@ import {
 } from "./flight-replay-3d";
 import { PlaybackStatus, PlaybackTimeline } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
-import type { FlightPhoto } from "./photos";
+import { photoUrl, type FlightPhoto } from "./photos";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout, type InstrumentRanges } from "./instrument-readout";
-import { instrumentAt } from "@/lib/flights/instruments";
-import { haversineM } from "@/lib/geo/distance";
+import { instrumentAt, smoothedSpeedKmh } from "@/lib/flights/instruments";
 import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ReplayPaletteLab } from "./replay-palette-lab";
-import { REPLAY_SEEK_EVENT, REPLAY_XC_OVERVIEW_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
+import { REPLAY_SEEK_EVENT, REPLAY_XC_TOGGLE_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
 
 /** Small square icon button for the map's own control overlay — distinct
  *  from the flat `title`-only text buttons used elsewhere in the app since
@@ -117,9 +116,11 @@ function IconFlyoutControl<T extends string>({
   const [open, setOpen] = useState(false);
   return (
     <div
-      className="relative"
+      className={cn("relative", open ? "z-30" : "z-20")}
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}
+      onFocus={() => setOpen(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
     >
       <MapIconButton
         icon={icon}
@@ -139,7 +140,7 @@ function IconFlyoutControl<T extends string>({
               key={o.id}
               type="button"
               disabled={o.disabled}
-              onClick={() => onSelect(o.id)}
+              onClick={(event) => { event.stopPropagation(); onSelect(o.id); setOpen(false); }}
               className={cn(
                 "flex items-center gap-2 whitespace-nowrap rounded px-2 py-1.5 text-left font-condensed text-sm font-bold transition-colors",
                 o.disabled
@@ -287,6 +288,7 @@ export function FlightViz({
   });
   const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(defaults.track);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
+  const [showXc, setShowXc] = useState(true);
   const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(defaults.altitude);
 
   // Shared replay timeline (seconds from takeoff).
@@ -298,6 +300,9 @@ export function FlightViz({
   const [active, setActive] = useState(true);
   // The photo whose lightbox is open (controlled so a map pin can open it).
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
+  const [encounterPhoto, setEncounterPhoto] = useState<FlightPhoto | null>(null);
+  const photoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const encounteredTimeRef = useRef(0);
   const [photoDropActive, setPhotoDropActive] = useState(false);
   const [photoUploadState, setPhotoUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const timeRef = useRef(0);
@@ -341,17 +346,28 @@ export function FlightViz({
     requestAnimationFrame(() => replayRef.current?.centerOnPilot());
   }, [choosePilot]);
   const selectPhoto = useCallback((photo: FlightPhoto) => {
-    const flight = group.flights.find((f) => f.id === photo.flightId);
-    if (!flight) return;
     setOpenPhotoId(photo.id);
-    setPlaying(false);
-    selectPilot(flight.owner, flight.id);
-    if (photo.tSec != null) {
-      const t = (flight.takeoffMs - takeoffMs) / 1000 + photo.tSec;
-      timeRef.current = t;
-      setTime(t);
-    }
-  }, [group.flights, selectPilot, takeoffMs]);
+    setEncounterPhoto(null);
+  }, []);
+
+  useEffect(() => {
+    const previous = encounteredTimeRef.current;
+    encounteredTimeRef.current = time;
+    if (!playing || time <= previous || openPhotoId) return;
+    const crossed = photos.filter((p) => {
+      const flight = group.flights.find((f) => f.id === p.flightId);
+      if (!flight || p.tSec == null) return false;
+      const at = (flight.takeoffMs - takeoffMs) / 1000 + p.tSec;
+      return at > previous && at <= time;
+    });
+    if (!crossed.length) return;
+    // A wall-clock preview continues alongside playback, even at high speed.
+    const frame = requestAnimationFrame(() => setEncounterPhoto(crossed[0]));
+    if (photoTimerRef.current) clearTimeout(photoTimerRef.current);
+    photoTimerRef.current = setTimeout(() => setEncounterPhoto(null), 4000);
+    return () => cancelAnimationFrame(frame);
+  }, [time, playing, photos, group.flights, takeoffMs, openPhotoId]);
+  useEffect(() => () => { if (photoTimerRef.current) clearTimeout(photoTimerRef.current); }, []);
 
   const uploadDroppedPhotos = useCallback(async (allFiles: File[]) => {
     const files = allFiles.filter(
@@ -401,11 +417,13 @@ export function FlightViz({
   }, [playing, speed, replay, endS]);
 
   const applyTime = useCallback((t: number) => {
+    encounteredTimeRef.current = t;
     timeRef.current = t;
     setTime(t);
     setActive(true);
   }, []);
   function scrubTo(t: number) {
+    setHasPlaybackStarted(true);
     applyTime(t);
   }
   const togglePlay = useCallback(() => {
@@ -450,12 +468,12 @@ export function FlightViz({
       applyTime(replay.samples[selected][3]);
       requestAnimationFrame(() => replayRef.current?.centerOnPilot());
     }
-    const showXcOverview = () => { selectPilot(primaryPilot, flightId); setPlaying(false); requestAnimationFrame(() => replayRef.current?.fitToXcRoute()); };
+    const toggleXcRoute = () => setShowXc((shown) => !shown);
     window.addEventListener(REPLAY_SEEK_EVENT, seekToMetric);
-    window.addEventListener(REPLAY_XC_OVERVIEW_EVENT, showXcOverview);
+    window.addEventListener(REPLAY_XC_TOGGLE_EVENT, toggleXcRoute);
     return () => {
       window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
-      window.removeEventListener(REPLAY_XC_OVERVIEW_EVENT, showXcOverview);
+      window.removeEventListener(REPLAY_XC_TOGGLE_EVENT, toggleXcRoute);
     };
   }, [applyTime, replay, primaryPilot, flightId, selectPilot]);
   function changeBasemap(id: BasemapId) {
@@ -467,6 +485,7 @@ export function FlightViz({
     changeBasemap(available[(i + 1) % available.length].id);
   }
   function selectCameraMode(next: CameraMode) {
+    if (next === "chase") replayRef.current?.resetChase();
     setCameraMode(next);
   }
   function cycleCameraMode() {
@@ -511,7 +530,7 @@ export function FlightViz({
       const previous = selectedReplay.samples[index - 1];
       const elapsed = sample[3] - previous[3];
       if (elapsed <= 0) return;
-      const speed = (haversineM(previous[1], previous[0], sample[1], sample[0]) / elapsed) * 3.6;
+      const speed = smoothedSpeedKmh(selectedReplay, sample[3]);
       if (!Number.isFinite(speed)) return;
       speedMinKmh = Math.min(speedMinKmh, speed);
       speedMaxKmh = Math.max(speedMaxKmh, speed);
@@ -553,7 +572,7 @@ export function FlightViz({
         {/* The map spans 80% of the browser window, breaking out of the
             page's centered max-w column rather than following the same
             margins as the key-statistics card above it. */}
-        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+        <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <div
             className="relative"
             onDragEnter={(event) => {
@@ -580,7 +599,7 @@ export function FlightViz({
             }}
           >
             <FlightReplay3D
-              xcRoute={readXcScore(selected.xcScore)?.best}
+              xcRoute={showXc ? readXcScore(selected.xcScore)?.best : undefined}
               ref={replayRef}
               flightId={selected.id}
               primaryFlightId={flightId}
@@ -623,7 +642,7 @@ export function FlightViz({
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
-            <div className="absolute left-[10px] top-1/2 flex -translate-y-1/2 flex-col gap-1">
+            <div className="absolute left-[10px] top-[136px] z-20 flex flex-col gap-1 sm:top-1/2 sm:-translate-y-1/2">
               <MapIconButton
                 icon={Sun}
                 active={showShadow}
@@ -644,6 +663,10 @@ export function FlightViz({
                 onClick={() => replayRef.current?.fitToRoute()}
               />
             </div>
+            {encounterPhoto && !openPhotoId && <button type="button" aria-label={`Open ${encounterPhoto.originalFilename ?? "encountered photo"}`} onClick={() => selectPhoto(encounterPhoto)} className="absolute bottom-14 right-2 z-20 max-w-[40%] overflow-hidden rounded-lg border-2 bg-black shadow-lg" style={{ borderColor: encounterPhoto.isPrimary ? "var(--replay-group-primary)" : "var(--replay-group-companion)" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={photoUrl(encounterPhoto.flightId ?? flightId, encounterPhoto.id, "display")} alt={encounterPhoto.originalFilename ?? "Flight photo"} className="max-h-48 object-contain" />
+            </button>}
             {/* Clock and speed mirror the map attribution in the lower-left. */}
             <div className="absolute bottom-2 left-3 z-10">
               <PlaybackStatus
@@ -676,7 +699,7 @@ export function FlightViz({
             include the profile card's 16px padding, keeping the rail on the
             Recharts X-axis while putting Play on the map's left edge. */}
         <div
-          className="relative left-1/2 grid w-[80vw] -translate-x-1/2 items-center"
+          className="relative left-1/2 grid w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2 items-center"
           style={{
             gridTemplateColumns: `${BAROGRAPH_PLOT_LEFT_INSET + 16}px minmax(0, 1fr) ${BAROGRAPH_PLOT_RIGHT_INSET + 16}px`,
           }}
@@ -698,7 +721,7 @@ export function FlightViz({
           <span>{new Date(takeoffMs + time * 1000 + offsetMin * 60_000).toISOString().slice(0, 10)} · UTC{offsetMin < 0 ? "−" : "+"}{Math.abs(offsetMin / 60)}</span>
         </div>
         {/* Same 80vw treatment and padding as the timeline above it. */}
-        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+        <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <Card className="px-4 py-2">
             <Barograph
               baro={baro}

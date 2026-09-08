@@ -25,7 +25,7 @@ export function MapDefaultsFields({ units, defaults, onChange }: { units: string
     {control(Mountain, value.altitude === "agl" ? "Pilot altitude: AGL — above ground" : "Pilot altitude: MSL — mean sea level", value.altitude === "agl", () => setValue({...value, altitude: value.altitude === "agl" ? "asl" : "agl"}))}
     {control(Camera, `Camera: ${value.camera[0].toUpperCase()}${value.camera.slice(1)}`, value.camera !== "fixed", () => setValue({...value, camera: CAMERA_MODES[(CAMERA_MODES.indexOf(value.camera) + 1) % CAMERA_MODES.length]}))}
     {control(MapIcon, `Map: ${BASEMAPS.find(b => b.id === value.basemap)?.label}`, false, () => setValue({...value, basemap: maps[(maps.findIndex(b => b.id === value.basemap) + 1) % maps.length].id}))}
-    {control(PencilLine, value.track === "elapsed" ? "Draw flight so far during playback" : "Show full route", value.track === "elapsed", () => setValue({...value, track: value.track === "elapsed" ? "full" : "elapsed"}))}
+    {control(PencilLine, value.track === "elapsed" ? "Draw flight during playback" : "Always show full route", value.track === "elapsed", () => setValue({...value, track: value.track === "elapsed" ? "full" : "elapsed"}))}
     <label className="flex items-center gap-3"><select aria-label="Default playback speed" value={value.speed} onChange={e => { setValue({...value, speed: Number(e.target.value)}); onChange?.(); }} className="h-9 rounded-md border border-gray-300 bg-gray-100 px-2 text-sm text-ink shadow-sm">
       {PLAYBACK_SPEEDS.map(speed => <option key={speed} value={speed}>{speed}×</option>)}
     </select><span className="text-sm text-ink">Playback speed</span></label>

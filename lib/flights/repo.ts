@@ -460,6 +460,16 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
   return resolveLocationFields(rows, ownerId);
 }
 
+/** Only the launch altitude scalar is needed for personal gain trophies. */
+export async function ownLaunchAltitudes(ownerId: string): Promise<Record<string, number>> {
+  const rows = await prisma.$queryRaw<{ flightId: string; altitude: unknown }[]>`
+    SELECT d."flightId", d.track #> '{baro,0,1}' AS altitude
+    FROM "FlightData" d JOIN "Flight" f ON f.id = d."flightId"
+    WHERE f."ownerId" = ${ownerId} AND f.status = 'ready'
+  `;
+  return Object.fromEntries(rows.flatMap(row => typeof row.altitude === "number" && Number.isFinite(row.altitude) ? [[row.flightId, row.altitude]] : []));
+}
+
 /**
  * Owner-scoped flight summaries for references stored outside the flight
  * model (e.g. a device token's "last flight"). Routed through the same
