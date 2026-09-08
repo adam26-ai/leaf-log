@@ -182,6 +182,9 @@ model Flight {
   owner                 Profile       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   visibility            String        @default("private") // private | friends | public
   source                String        @default("web_upload") // web_upload | device_push
+  xcStatus              String        @default("unscored") // unscored | queued | ready | failed
+  xcQueuedAt            DateTime?
+  xcError               String?
   status                String        @default("uploaded") // uploaded | processing | ready | failed
   igcSha256             String
   parserVersion         String        @default("1")
@@ -268,6 +271,7 @@ model Flight {
   updatedAt             DateTime      @updatedAt
 
   @@unique([ownerId, igcSha256])
+  @@index([xcStatus, xcQueuedAt])
   @@index([ownerId, flightDate])
   @@index([ownerId, status, flightDate])
   @@index([takeoffSiteId])

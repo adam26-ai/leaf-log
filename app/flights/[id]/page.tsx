@@ -117,7 +117,7 @@ export default async function FlightPage({
         ) : (
           <>
             <div className="relative left-1/2 mt-2 w-[80vw] -translate-x-1/2">
-              <KeyStatistics flight={flight} />
+              <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
             <div className="mt-2">
               <FlightViz

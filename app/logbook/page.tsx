@@ -10,6 +10,7 @@ import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { listHighlights } from "@/lib/flights/list-highlights";
 import { xcRankings } from "@/lib/flights/xc-rankings";
+import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
@@ -24,6 +25,7 @@ export default async function LogbookPage() {
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
+      <XcPendingRefresh pending={flights.some(f => f.xcStatus === "queued")} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <div className="flex items-center gap-4">
           <Avatar

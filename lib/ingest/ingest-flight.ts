@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
-import { scoreXc } from "@/lib/igc/xc";
 import { findLocation } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
@@ -96,11 +95,6 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
     : [null, null];
 
   const track = metrics ? buildTrackArtifact(parsed.fixes, metrics) : null;
-  const xcScore = metrics ? await scoreXc(parsed.fixes, metrics).catch((error) => {
-    console.error("XC scoring failed", error);
-    parsed.warnings.push("XC scoring unavailable; reprocess this flight to retry.");
-    return null;
-  }) : null;
   const status: "ready" | "failed" = metrics ? "ready" : "failed";
   const flightDateMs = parsed.headers.dateMs ?? metrics?.takeoffAtMs ?? 0;
 
@@ -140,7 +134,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         altSource: metrics?.altSource ?? null,
         trackDistM: metrics?.trackDistM ?? null,
         straightDistM: metrics?.straightDistM ?? null,
-        xcScore: xcScore ? (xcScore as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        xcStatus: metrics ? "queued" : "unscored",
+        xcQueuedAt: metrics ? new Date() : null,
         takeoffLat: metrics?.takeoff.lat ?? null,
         takeoffLon: metrics?.takeoff.lon ?? null,
         landingLat: metrics?.landing.lat ?? null,

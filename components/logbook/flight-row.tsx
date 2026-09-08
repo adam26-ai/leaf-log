@@ -15,6 +15,7 @@ import type { FlightListItem } from "@/lib/flights/repo";
 import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 import { useUnits } from "@/lib/flights/use-units";
+import { CalculateXcButton } from "@/components/flight/calculate-xc-button";
 
 interface FlightRowOwner {
   handle: string;
@@ -65,6 +66,7 @@ export function FlightRow({
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
     return (
+      <div className={`relative ${xcBadges !== undefined ? "min-w-[800px]" : "min-w-[748px]"}`}>
       <Link
         href={`/flights/${flight.id}`}
         style={{
@@ -80,12 +82,14 @@ export function FlightRow({
         <span className="whitespace-nowrap text-gray-600">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span>
         <span className={`${xcBadges !== undefined ? "-ml-1" : "-ml-3"} whitespace-nowrap tabular-nums text-gray-600`}>{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)}</span>
         <span title="Duration" className="whitespace-nowrap text-right tabular-nums text-gray-700">{formatDuration(flight.durationS)}</span>
-        <span title={site} className="truncate font-condensed text-base font-bold text-ink">{site}</span>
+        <span title={site} className="truncate font-condensed text-base font-bold text-ink">{site}
+          {xcBadges === undefined && flight.xcStatus === "queued" && <span className="block text-xs font-normal text-gray-500">XC: Calculating…</span>}
+        </span>
         <span title="Maximum altitude" className="whitespace-nowrap text-left tabular-nums text-gray-700">
           {flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}
         </span>
         {xcBadges !== undefined && <span className="grid grid-cols-3 items-center gap-1" aria-label="Personal top 10 XC rankings">
-          {(["open", "fai-triangle", "free-triangle"] as const).map(shape => {
+          {flight.xcStatus === "queued" ? <span className="col-span-3 text-xs text-gray-500" role="status">Calculating…</span> : (["open", "fai-triangle", "free-triangle"] as const).map(shape => {
             const badge = xcBadges.find(b => b.shape === shape);
             if (!badge) return <span key={shape} aria-hidden="true" />;
             const Icon = badge.shape === "open" ? Waypoints : badge.shape === "fai-triangle" ? Triangle : TriangleRight;
@@ -99,6 +103,9 @@ export function FlightRow({
         <span className={`inline-flex h-6 w-[4.5rem] shrink-0 items-center justify-center justify-self-end rounded-full border text-xs font-medium ${visibility.className}`}>{visibility.label}</span>
         <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
       </Link>
+      {xcBadges !== undefined && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus) &&
+        <div className="absolute right-36 top-1/2 w-36 -translate-y-1/2"><CalculateXcButton flightId={flight.id} /></div>}
+      </div>
     );
   }
   return (

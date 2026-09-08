@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ThumbsUp } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { listHighlights } from "@/lib/flights/list-highlights";
+import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 import { requireProfile } from "@/lib/profile";
 import { listFeedForViewer } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
@@ -34,6 +35,7 @@ export default async function FeedPage({
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
+      <XcPendingRefresh pending={feed.rows.some(f => f.xcStatus === "queued")} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Feed</SectionHeading>
 
