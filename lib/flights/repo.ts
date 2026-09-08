@@ -40,6 +40,7 @@ const LIST_SELECT = {
   maxAltM: true,
   altGainM: true,
   straightDistM: true,
+  xcScore: true,
   visibility: true,
   status: true,
   localUtcOffsetMinutes: true,

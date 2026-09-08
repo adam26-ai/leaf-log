@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
+import { listHighlights } from "@/lib/flights/list-highlights";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
@@ -16,21 +17,7 @@ export default async function LogbookPage() {
     countFriends(profile.id),
   ]);
   const stats = statsFrom(flights);
-  const readyFlights = flights.filter((flight) => flight.status === "ready");
-  const maxDuration = readyFlights.reduce((max, flight) => Math.max(max, flight.durationS ?? 0), 0);
-  const maxGain = readyFlights.reduce((max, flight) => Math.max(max, flight.altGainM ?? 0), 0);
-  const maxDistance = readyFlights.reduce((max, flight) => Math.max(max, flight.straightDistM ?? 0), 0);
-  const distanceScore = (flight: (typeof flights)[number]) =>
-    flight.status === "ready" && maxDistance > 0
-      ? Math.max(0, flight.straightDistM ?? 0) / maxDistance
-      : 0;
-  const highlightScore = (flight: (typeof flights)[number]) => {
-    if (flight.status !== "ready") return 0;
-    const dimensions = Number(maxDuration > 0) + Number(maxGain > 0);
-    if (!dimensions) return 0;
-    return ((maxDuration ? Math.max(0, flight.durationS ?? 0) / maxDuration : 0)
-      + (maxGain ? Math.max(0, flight.altGainM ?? 0) / maxGain : 0)) / dimensions;
-  };
+  const { highlightScore, distanceScore } = listHighlights(flights);
 
   return (
     <div className="flex flex-1 flex-col">

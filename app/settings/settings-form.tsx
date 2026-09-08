@@ -1,15 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useRef, useState } from "react";
+import { Card } from "@/components/ui/card";
+import { AvatarUploader } from "./avatar-uploader";
 import {
   FLIGHT_VISIBILITIES,
   normalizeVisibility,
   type FlightVisibility,
 } from "@/lib/flights/visibility";
-import { updateProfile, type SettingsState } from "./actions";
+import { updateProfile } from "./actions";
 
-const initial: SettingsState = {};
+import { MapDefaultsFields } from "./map-defaults-fields";
+
 
 const VISIBILITY_COPY: Record<FlightVisibility, { label: string; hint: string }> = {
   private: {
@@ -33,18 +35,81 @@ export function SettingsForm({
   bio,
   defaultVisibility,
   defaultUnits,
+  mapDefaults,
+  avatarUpdatedAt,
 }: {
   handle: string;
   displayName: string;
   bio: string;
   defaultVisibility: string;
   defaultUnits: string;
+  mapDefaults: unknown;
+  avatarUpdatedAt: Date | string | null;
 }) {
-  const [state, formAction, pending] = useActionState(updateProfile, initial);
+  const formRef = useRef<HTMLFormElement>(null);
+  const latestRevision = useRef(0);
+  const submittedRevision = useRef(0);
+  const [revision, setRevision] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("Changes save automatically");
+  const [error, setError] = useState(false);
+  function changed() {
+    latestRevision.current += 1;
+    setRevision(latestRevision.current);
+    setStatus("Unsaved changes…");
+    setError(false);
+  }
+
+  // Debounce typing and serialize writes so an older request cannot overwrite
+  // newer edits. Any edits during a request are saved in the next pass.
+  useEffect(() => {
+    if (saving || revision <= submittedRevision.current) return;
+    const timer = window.setTimeout(async () => {
+      const form = formRef.current;
+      if (!form) return;
+      const invalid = Array.from(form.elements).find(el =>
+        el instanceof HTMLInputElement && !el.validity.valid) as HTMLInputElement | undefined;
+      if (invalid) {
+        setStatus(`${invalid.name === "handle" ? "Handle" : "Display name"}: ${invalid.validationMessage}`);
+        setError(true);
+        return;
+      }
+      submittedRevision.current = revision;
+      setSaving(true);
+      setStatus("Saving…");
+      try {
+        const result = await updateProfile({}, new FormData(form));
+        if (latestRevision.current === revision) {
+          setStatus(result.error ?? "Saved");
+          setError(Boolean(result.error));
+        }
+      } catch {
+        if (latestRevision.current === revision) {
+          setStatus("Couldn't save. Please retry.");
+          setError(true);
+        }
+      } finally {
+        setSaving(false);
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [revision, saving]);
+
+  const saveStatus = <div role="status" aria-live="polite" className={`text-xs ${error ? "text-red-600" : "text-gray-500"}`}>
+    {status}{error && <button type="button" onClick={changed} className="ml-2 underline">Retry</button>}
+  </div>;
   const normalizedDefaultVisibility = normalizeVisibility(defaultVisibility);
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <form ref={formRef} onSubmit={e => { e.preventDefault(); changed(); }} onChange={e => {
+      const target = e.target;
+      if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) && target.name) changed();
+    }} className="flex flex-col gap-6">
+      <Card className="flex flex-col gap-5 p-6">
+        <div className="flex flex-col gap-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">Profile</h2>
+          <AvatarUploader handle={handle} displayName={displayName} avatarUpdatedAt={avatarUpdatedAt} />
+        </div>
       <label className="flex flex-col gap-1.5">
         <span className="font-condensed text-sm font-bold tracking-wide text-ink">
           Handle
@@ -91,15 +156,11 @@ export function SettingsForm({
         />
       </label>
 
-      <label className="flex flex-col gap-1.5">
-        <span className="font-condensed text-sm font-bold tracking-wide text-ink">Default units</span>
-        <select name="default_units" defaultValue={defaultUnits}
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40">
-          <option value="metric">Metric (m, km/h, m/s)</option>
-          <option value="imperial">Imperial (ft, mph, ft/min)</option>
-        </select>
-        <span className="text-xs text-gray-500">Flight views start with these units on every device. You can still switch units while viewing a flight.</span>
-      </label>
+      {saveStatus}
+      </Card>
+      <Card className="flex flex-col gap-5 p-6">
+      <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
+      <MapDefaultsFields units={defaultUnits} defaults={mapDefaults} onChange={changed} />
 
       <fieldset className="flex flex-col gap-2">
         <legend className="font-condensed text-sm font-bold tracking-wide text-ink">
@@ -133,14 +194,8 @@ export function SettingsForm({
           ))}
         </div>
       </fieldset>
-
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save changes"}
-        </Button>
-        {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
-        {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-      </div>
+      {saveStatus}
+      </Card>
     </form>
   );
 }

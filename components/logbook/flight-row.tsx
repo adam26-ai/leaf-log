@@ -42,8 +42,8 @@ export function FlightRow({
         ? { label: "Friends", className: "bg-brand-blue/15 text-brand-blue-strong" }
         : { label: "Private", className: "bg-gray-100 text-gray-500" };
   if (compact) {
-    const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.16;
-    const greenAlpha = Math.min(1, Math.max(0, distanceScore)) * 0.26;
+    const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.22;
+    const greenAlpha = Math.min(1, Math.max(0, distanceScore)) * 0.38;
     const blue = `rgb(0 153 255 / ${blueAlpha})`;
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";

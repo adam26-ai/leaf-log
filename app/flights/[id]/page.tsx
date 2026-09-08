@@ -121,6 +121,7 @@ export default async function FlightPage({
             </div>
             <div className="mt-2">
               <FlightViz
+                xcScore={flight.xcScore}
                 key={flight.id}
                 flightId={flight.id}
                 canAddPhotos={isOwner}

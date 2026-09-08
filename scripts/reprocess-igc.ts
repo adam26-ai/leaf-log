@@ -4,6 +4,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { parseIgc } from "../lib/igc/parse";
 import { deriveMetrics } from "../lib/igc/derive";
 import { buildTrackArtifact } from "../lib/igc/track-artifact";
+import { scoreXc } from "../lib/igc/xc";
 import { PARSER_VERSION } from "../lib/ingest/ingest-flight";
 
 const prisma = new PrismaClient();
@@ -23,12 +24,14 @@ async function reprocess(flightId: string) {
   const parsed = parseIgc(new Uint8Array(flight.data.rawIgc));
   const metrics = deriveMetrics(parsed);
   const track = metrics ? buildTrackArtifact(parsed.fixes, metrics) : null;
+  const xcScore = metrics ? await scoreXc(parsed.fixes, metrics) : null;
 
   await prisma.$transaction([
     prisma.flight.update({
       where: { id: flightId },
       data: {
         parserVersion: PARSER_VERSION,
+        xcScore: xcScore ? (xcScore as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
         parseWarnings: parsed.warnings,
         status: metrics ? "ready" : "failed",
         failureReason: metrics ? null : "No usable GPS fixes in file",

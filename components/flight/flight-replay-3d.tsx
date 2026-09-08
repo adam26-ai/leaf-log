@@ -12,6 +12,8 @@ import { Card } from "@/components/ui/card";
 import { headingAt, locateSample, type Sample } from "@/lib/igc/interpolate";
 import { formatAltitude, type UnitSystem } from "@/lib/flights/format";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
+import type { XcCandidate } from "@/lib/igc/xc-types";
+import { syncXcMapRoute, XC_SOURCE } from "./xc-map-route";
 import { varioReplayColor } from "./replay-palette";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
@@ -224,9 +226,11 @@ export interface FlightReplay3DHandle {
   centerOnPilot: () => void;
   /** Pull back to an overview framing the whole flight path. */
   fitToRoute: () => void;
+  fitToXcRoute: () => void;
 }
 
 interface FlightReplay3DProps {
+  xcRoute?: XcCandidate | null;
   flightId: string;
   basemap?: BasemapId;
   /** Shared replay time (s from takeoff) — drives the glider position. */
@@ -260,6 +264,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   function FlightReplay3D(
     {
       flightId,
+      xcRoute,
       basemap = "monochrome",
       time,
       playing = false,
@@ -279,6 +284,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const xcRouteRef = useRef(xcRoute);
+  useEffect(() => {
+    xcRouteRef.current = xcRoute;
+    if (mapRef.current) syncXcMapRoute(mapRef.current, xcRoute);
+  }, [xcRoute]);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const dataRef = useRef<ReplayData | null>(null);
   const trackRef = useRef<TimedTrackDatum | null>(null);
@@ -602,7 +612,41 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     centerOnGlider(timeRef.current, cameraModeRef.current === "chase");
   }
 
-  useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600) }));
+  function fitToXcRoute() {
+    const map = mapRef.current;
+    const route = xcRouteRef.current;
+    if (!map || !route) return;
+    const points = route.shape === "open"
+      ? [route.start, ...route.vertices, route.finish]
+      : route.vertices;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const point of points) {
+      if (point && Number.isFinite(point.lon) && Number.isFinite(point.lat)) {
+        bounds.extend([point.lon, point.lat]);
+      }
+    }
+    if (bounds.isEmpty()) return;
+
+    // Keep the overview steady even when playback or an orbit was active.
+    cameraModeRef.current = "fixed";
+    onManualCameraChangeRef.current?.();
+    if (trackedZoomAnimationRef.current != null) {
+      cancelAnimationFrame(trackedZoomAnimationRef.current);
+      trackedZoomAnimationRef.current = null;
+    }
+    map.stop();
+    preserveCameraOnFixedRef.current = false;
+    map.setCenterClampedToGround(true);
+    map.fitBounds(bounds, {
+      padding: { top: 65, bottom: 65, left: 65, right: 65 },
+      bearing: 0,
+      pitch: 0,
+      maxZoom: 17,
+      duration: 0,
+    });
+  }
+
+  useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600), fitToXcRoute }));
 
   function shadowGeoJson(d: ReplayData, t: number): GeoJsonData {
     const samples =
@@ -634,6 +678,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const map = mapRef.current;
     const d = dataRef.current;
     if (!map || !map.isStyleLoaded()) return;
+    if (!map.getSource(XC_SOURCE) || !map.getLayer("xc-route-line")) {
+      syncXcMapRoute(map, xcRouteRef.current);
+    }
     if (!showShadowRef.current || !d || d.samples.length < 2) {
       removeShadow(map);
       return;
@@ -1261,6 +1308,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // Build the map once we have data.
   useEffect(() => {
     if (!containerRef.current || !data) return;
+    anchoredRef.current = false;
+    terrainProfilePublishedRef.current = false;
+    shadowSampleCountRef.current = -1;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleFor(basemapRef.current),
@@ -1280,6 +1330,13 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
     const removeTrackedZoomButtons = installTrackedZoomButtons(map);
     map.on("move", () => renderLayers(timeRef.current));
+    // Adding terrain/overlay sources makes isStyleLoaded() temporarily false.
+    // Initial load and anchoring can both hit that window, especially when
+    // paging between cached flights. Retry once the map finishes those updates;
+    // syncShadow is idempotent and also restores missing XC layers.
+    map.on("idle", () => {
+      if (mapRef.current === map) syncShadow();
+    });
 
     map.on("load", () => {
       setupTerrain(map);

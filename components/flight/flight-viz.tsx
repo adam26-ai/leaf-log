@@ -1,4 +1,6 @@
 "use client";
+import { useMapDefaults } from "@/components/map-defaults-provider";
+import { readXcScore } from "@/lib/igc/xc-types";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -43,7 +45,7 @@ import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ReplayPaletteLab } from "./replay-palette-lab";
-import { REPLAY_SEEK_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
+import { REPLAY_SEEK_EVENT, REPLAY_XC_OVERVIEW_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
 
 /** Small square icon button for the map's own control overlay — distinct
  *  from the flat `title`-only text buttons used elsewhere in the app since
@@ -248,6 +250,7 @@ function BasemapControl({
  * drives the 3D replay and a linked barograph cursor together.
  */
 export function FlightViz({
+  xcScore,
   flightId,
   canAddPhotos = false,
   takeoffMs,
@@ -256,6 +259,7 @@ export function FlightViz({
   notes,
 }: {
   flightId: string;
+  xcScore?: unknown;
   canAddPhotos?: boolean;
   takeoffMs: number;
   offsetMin: number;
@@ -264,44 +268,30 @@ export function FlightViz({
   /** Owner-only free-text notes, shown just below the altitude graph. */
   notes?: string | null;
 }) {
+  const defaults = useMapDefaults();
   const [track, setTrack] = useState<TrackArtifact | null>(null);
   const [replay, setReplay] = useState<ReplayResponse | null>(null);
   const [terrainProfile, setTerrainProfile] = useState<TerrainProfilePoint[]>([]);
   const [photos, setPhotos] = useState<FlightPhoto[]>([]);
   const [error, setError] = useState(false);
-  // Restore the saved basemap (ignore key-only ones when no MapTiler key). Safe
-  // as a lazy initializer — the UI only renders client-side once the track loads.
   const [basemap, setBasemap] = useState<BasemapId>(() => {
-    if (typeof window === "undefined") return "monochrome";
-    const saved = localStorage.getItem("leaf-basemap") as BasemapId | null;
-    const def = saved && BASEMAPS.find((b) => b.id === saved);
-    return def && !(def.needsKey && !hasMapTiler()) ? def.id : "monochrome";
+    const style = BASEMAPS.find(b => b.id === defaults.basemap);
+    return style?.needsKey && !hasMapTiler() ? "monochrome" : defaults.basemap;
   });
-  const [cameraMode, setCameraMode] = useState<CameraMode>(() => {
-    if (typeof window === "undefined") return "follow";
-    const saved = localStorage.getItem("leaf-camera-mode");
-    if (saved === "follow" || saved === "chase" || saved === "orbit" || saved === "fixed") return saved;
-    return localStorage.getItem("leaf-camera-follow") === "false" ? "fixed" : "follow";
-  });
+  const [cameraMode, setCameraMode] = useState<CameraMode>(defaults.camera);
   const [showShadow, setShowShadow] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     const saved = localStorage.getItem("leaf-3d-shadow");
     return saved == null ? true : saved === "true";
   });
-  const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(() => {
-    if (typeof window === "undefined") return "elapsed";
-    return localStorage.getItem("leaf-track-display") === "full" ? "full" : "elapsed";
-  });
+  const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(defaults.track);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
-  const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(() => {
-    if (typeof window === "undefined") return "asl";
-    return localStorage.getItem("leaf-altitude-mode") === "agl" ? "agl" : "asl";
-  });
+  const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(defaults.altitude);
 
   // Shared replay timeline (seconds from takeoff).
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(8);
+  const [speed, setSpeed] = useState(defaults.speed);
   // Whether a point is selected/highlighted (readout shown). Starts true —
   // the glider is always the highlight.
   const [active, setActive] = useState(true);
@@ -369,13 +359,6 @@ export function FlightViz({
     }
   }, [canAddPhotos, flightId, loadPhotos]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("leaf-camera-mode", cameraMode);
-    } catch {
-      /* ignore */
-    }
-  }, [cameraMode]);
 
   // Playback loop — advances the shared time while playing and rests on the
   // final sample instead of wrapping back to takeoff.
@@ -451,23 +434,22 @@ export function FlightViz({
       applyTime(replay.samples[selected][3]);
       requestAnimationFrame(() => replayRef.current?.centerOnPilot());
     }
+    const showXcOverview = () => replayRef.current?.fitToXcRoute();
     window.addEventListener(REPLAY_SEEK_EVENT, seekToMetric);
-    return () => window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
+    window.addEventListener(REPLAY_XC_OVERVIEW_EVENT, showXcOverview);
+    return () => {
+      window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
+      window.removeEventListener(REPLAY_XC_OVERVIEW_EVENT, showXcOverview);
+    };
   }, [applyTime, cameraMode, replay]);
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
-    try {
-      localStorage.setItem("leaf-basemap", id);
-    } catch {
-      /* ignore */
-    }
   }
   function cycleBasemap() {
     const available = BASEMAPS.filter((b) => !(b.needsKey && !hasMapTiler()));
     const i = available.findIndex((b) => b.id === basemap);
     changeBasemap(available[(i + 1) % available.length].id);
   }
-  // Persisted to localStorage by the effect above whenever it changes.
   function selectCameraMode(next: CameraMode) {
     setCameraMode(next);
   }
@@ -495,19 +477,9 @@ export function FlightViz({
   }
   function selectTrackDisplay(next: TrackDisplayMode) {
     setTrackDisplay(next);
-    try {
-      localStorage.setItem("leaf-track-display", next);
-    } catch {
-      /* ignore */
-    }
   }
   function selectAltitudeMode(next: AltitudeMode) {
     setAltitudeMode(next);
-    try {
-      localStorage.setItem("leaf-altitude-mode", next);
-    } catch {
-      /* ignore */
-    }
   }
 
   const instrumentRanges = useMemo<InstrumentRanges | null>(() => {
@@ -592,6 +564,7 @@ export function FlightViz({
             }}
           >
             <FlightReplay3D
+              xcRoute={readXcScore(xcScore)?.best}
               ref={replayRef}
               flightId={flightId}
               basemap={basemap}

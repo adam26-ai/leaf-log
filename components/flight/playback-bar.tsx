@@ -13,7 +13,7 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
     .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
 }
 
-const SPEEDS = [1, 4, 8, 16, 32, 64, 128];
+import { PLAYBACK_SPEEDS as SPEEDS } from "@/lib/flights/map-defaults";
 
 function PlaybackSpeedPicker({
   speed,

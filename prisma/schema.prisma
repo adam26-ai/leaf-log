@@ -66,6 +66,7 @@ model Profile {
   // Default visibility applied to newly ingested flights (private | friends | public).
   defaultVisibility  String        @default("private")
   defaultUnits       String        @default("metric")
+  mapDefaults        Json?
   // Set whenever the avatar is (re)uploaded; null = no avatar. Doubles as a
   // cache-busting key for the public avatar serve route.
   avatarUpdatedAt    DateTime?
@@ -223,6 +224,7 @@ model Flight {
   altSource             String?
   trackDistM            Int?
   straightDistM         Int?
+  xcScore               Json?
   takeoffLat            Float?
   takeoffLon            Float?
   landingLat            Float?

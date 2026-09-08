@@ -1,0 +1,1 @@
+ALTER TABLE "Flight" ADD COLUMN "xcScore" JSONB;
