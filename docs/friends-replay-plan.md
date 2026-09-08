@@ -196,6 +196,8 @@ Visual refinement: the pilot card defaults to a 70%-opaque white background with
 
 Sizing correction: all name badges now share the longest loaded name's height for the current replay session, preserving that height when a pilot is hidden. This removes the shorter-name/smaller-badge effect. Pilot banner/glider icons and photo pins use a screen-space icon layer that cancels the perspective divide at each anchor. Pilot badges retain matching dimensions, and photo icon frames remain 30 CSS pixels wide when the camera moves or zooms. Browser zoom/selection checks after a fresh renderer load, TypeScript, lint, and focused tests passed.
 
+Overlap refinement: both selected and unselected tracks now share one outlined-ribbon shader with depth writes enabled, so the fill and border overlap together at crossings. Companion fill/outline colors remain adjustable in Palette Lab. Render order is tracks and altitude trails, then photo pins with depth occlusion disabled, then all companion badges, then the selected pilot's badge. This keeps camera icons clear of flight paths while letting badges cover them.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.

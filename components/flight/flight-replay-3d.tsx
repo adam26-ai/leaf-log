@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, SolidPolygonLayer, TextLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
@@ -21,6 +21,7 @@ import type { LoadedReplayFlight } from "./use-group-replay";
 import type { Layer } from "@deck.gl/core";
 import { GROUP_REPLAY_COLORS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
+import { OutlinedPathLayer } from "./outlined-path-layer";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -986,9 +987,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       }),
     );
 
+    const companion = companionLayers(nowMs);
     overlay.setProps({
       layers: [
-        ...companionLayers(nowMs),
+        ...companion.tracks,
         // The outline is shaded inside this one ribbon so separate halo joins
         // cannot expose black wedges at thermals and self-crossings.
         new MultiColorPathLayer({
@@ -1015,12 +1017,14 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
             getColor: d,
           },
         }),
-        // Photo pins (camera icons) at their position on the track.
+        ...curtainLayers,
+        // Photo pins clear every track/curtain but remain below all badges.
         new ScreenSpaceIconLayer<PhotoIcon>({
           id: "photo-pins",
           data: photoIcons,
           pickable: true,
           billboard: true,
+          parameters: { depthCompare: "always", depthWriteEnabled: false },
           getIcon: (photo) => ({ url: cameraIcon(photo.primary ? colors.groupPrimary : colors.groupCompanion), width: 68, height: 68, anchorX: 34, anchorY: 34 }),
           getPosition: (d) => d.position,
           getSize: 30,
@@ -1041,8 +1045,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
             return true;
           },
         }),
-        // Fading recent altitude trails plus the live glider-to-ground cue.
-        ...curtainLayers,
+        ...companion.badges,
         // Vector glider marker, sharp name-plate, and live altitude readout.
         ...poleLayers,
       ],
@@ -1069,7 +1072,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return badgeHeightRef.current;
   }
 
-  function companionLayers(nowMs: number): Layer[] {
+  function companionLayers(nowMs: number): { tracks: Layer[]; badges: Layer[] } {
+    const tracks: Layer[] = [];
     const layers: Layer[] = [];
     const all = companionRef.current;
     const selectedId = identityRef.current.flightId;
@@ -1084,11 +1088,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         data: paths,
         getPath: (p: MultiColorPathDatum) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
         widthUnits: "pixels" as const, billboard: true,
-        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: false },
+        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: true },
         updateTriggers: { getPath: offset },
       };
-      layers.push(new PathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-outline-' + flight.id, getColor: colorRgb(colors.groupTrackOutline), getWidth: 4.75 }));
-      layers.push(new PathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-track-' + flight.id, getColor: colorRgb(colors.groupTrack), getWidth: 2.5 }));
+      tracks.push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
+        getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline), getWidth: 4.75, widthMinPixels: 4.75 }));
       const pilotFlights = all.filter((f) => f.owner.id === flight.owner.id);
       if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
       const state = replayStateAt(flight.replay, local);
@@ -1112,7 +1116,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: colorRgb(colors.groupBadgeText), background: true, getBackgroundColor: [...colorRgb(colors.groupBadgeIdle), 220],
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
     }
-    return layers;
+    return { tracks, badges: layers };
   }
 
   function setZoomAroundTrackedPilot(map: maplibregl.Map, zoom: number) {
