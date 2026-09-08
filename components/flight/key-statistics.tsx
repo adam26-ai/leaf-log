@@ -26,7 +26,9 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
       <div className="flex min-w-0 items-center gap-1.5">
-        <Icon className="h-3.5 w-3.5 shrink-0 text-amber" />
+        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+          <Icon className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
+        </span>
         <span
           className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink"
           title={value}
@@ -49,13 +51,17 @@ function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
     <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
       <div className="flex items-center gap-2.5">
         <div className="flex items-center gap-1.5">
-          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-amber" />
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+            <ArrowUpRight className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
+          </span>
           <span className="whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">
             {climb}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <ArrowDownRight className="h-3.5 w-3.5 shrink-0 text-amber" />
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+            <ArrowDownRight className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
+          </span>
           <span className="whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">
             {sink}
           </span>
@@ -107,11 +113,19 @@ function UnitToggle() {
       className={cn(
         "grid h-9 w-9 place-items-center self-center justify-self-center rounded-md border p-0 shadow-sm transition-colors",
         metric
-          ? "border-amber bg-amber text-ink"
-          : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
+          ? "border-[var(--replay-active-border)] [border-width:var(--replay-button-border-width)] bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
+          : "border-[var(--replay-inactive-border)] [border-width:var(--replay-inactive-button-border-width)] bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95",
       )}
     >
-      <Ruler className="h-4 w-4" aria-hidden="true" />
+      <Ruler
+        className={cn(
+          "h-4 w-4",
+          metric
+            ? "[stroke-width:var(--replay-button-icon-stroke)]"
+            : "[stroke-width:var(--replay-inactive-button-icon-stroke)]",
+        )}
+        aria-hidden="true"
+      />
     </button>
   );
 }

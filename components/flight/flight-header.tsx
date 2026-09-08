@@ -80,11 +80,11 @@ export function FlightHeader({
         <FlightArrow flightId={previousFlightId} direction="previous" />
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-lg font-bold text-ink">
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <CalendarDays className="h-4 w-4 text-amber-strong" aria-hidden="true" />
+            <CalendarDays className="h-4 w-4 text-[var(--replay-accent-strong)]" aria-hidden="true" />
             {date}
           </span>
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <Clock className="h-4 w-4 text-amber-strong" aria-hidden="true" />
+            <Clock className="h-4 w-4 text-[var(--replay-accent-strong)]" aria-hidden="true" />
             {timeRange}
           </span>
         </div>
@@ -124,7 +124,7 @@ export function FlightHeader({
             </>
           )}
         </div>
-        <AccentBar width="3rem" />
+        <AccentBar width="3rem" className="h-[var(--replay-header-accent-height)] bg-[var(--replay-accent)]" />
       </div>
 
       <div className="flex items-center justify-start sm:justify-end">{actions}</div>

@@ -63,7 +63,7 @@ function PlaybackSpeedPicker({
               }}
               className={cn(
                 "block w-full px-3 py-1 text-left font-condensed text-xs font-bold hover:bg-gray-100",
-                speed === option ? "bg-amber/20 text-ink" : "text-gray-700",
+                speed === option ? "bg-[color-mix(in_srgb,var(--replay-accent)_20%,white)] text-ink" : "text-gray-700",
               )}
             >
               {option}×
@@ -157,13 +157,13 @@ function AlignedTimeSlider({
         onScrub(Math.max(0, Math.min(duration, next)));
       }}
     >
-      <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-gray-300" />
+      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full bg-gray-300" style={{ height: "var(--replay-timeline-width)" }} />
       <div
-        className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-amber"
-        style={{ width: `${fraction * 100}%` }}
+        className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-[var(--replay-timeline)]"
+        style={{ width: `${fraction * 100}%`, height: "var(--replay-timeline-width)" }}
       />
       <div
-        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber bg-paper shadow-sm"
+        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[var(--replay-timeline)] bg-[var(--replay-timeline-dot-fill)] shadow-sm"
         style={{ left: `${fraction * 100}%` }}
       />
     </div>
@@ -197,9 +197,9 @@ export function PlaybackTimeline({
         disabled={disabled}
         aria-label={label}
         title={label}
-        className="flex h-9 w-16 items-center justify-center gap-1 rounded-md bg-amber font-condensed text-sm font-bold text-ink hover:bg-amber-strong disabled:opacity-50"
+        className="flex h-9 w-16 items-center justify-center gap-1 rounded-md border [border-width:var(--replay-button-border-width)] border-[var(--replay-active-border)] bg-[var(--replay-active-bg)] font-condensed text-sm font-bold text-[var(--replay-active-fg)] hover:brightness-95 disabled:opacity-50"
       >
-        <Icon className="h-4 w-4" fill="currentColor" />
+        <Icon className="h-4 w-4 [stroke-width:var(--replay-button-icon-stroke)]" fill="currentColor" />
         {label}
       </button>
       <AlignedTimeSlider
@@ -253,11 +253,19 @@ export function PlaybackStatus({
         className={cn(
           "grid h-7 w-7 place-items-center rounded border p-0 transition-colors disabled:opacity-50",
           progressive
-            ? "border-amber bg-amber text-ink"
-            : "border-gray-300 bg-paper text-gray-600 hover:border-gray-400 hover:text-ink",
+            ? "border-[var(--replay-active-border)] [border-width:var(--replay-button-border-width)] bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
+            : "border-[var(--replay-inactive-border)] [border-width:var(--replay-inactive-button-border-width)] bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95",
         )}
       >
-        <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+        <PencilLine
+          className={cn(
+            "h-3.5 w-3.5",
+            progressive
+              ? "[stroke-width:var(--replay-button-icon-stroke)]"
+              : "[stroke-width:var(--replay-inactive-button-icon-stroke)]",
+          )}
+          aria-hidden="true"
+        />
       </button>
       <PlaybackSpeedPicker speed={speed} disabled={disabled} onSpeed={onSpeed} />
       <span className="w-[4.75rem] text-right font-mono text-xs tabular-nums text-gray-700">

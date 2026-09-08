@@ -41,6 +41,7 @@ import { haversineM } from "@/lib/geo/distance";
 import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { ReplayPaletteLab } from "./replay-palette-lab";
 
 /** Small square icon button for the map's own control overlay — distinct
  *  from the flat `title`-only text buttons used elsewhere in the app since
@@ -65,11 +66,18 @@ function MapIconButton({
       className={cn(
         "flex h-9 w-9 items-center justify-center rounded-md border shadow-sm backdrop-blur-sm transition-colors",
         active
-          ? "border-amber bg-amber text-ink"
-          : "border-gray-300 bg-paper/90 text-gray-600 hover:text-ink",
+          ? "border-[var(--replay-active-border)] [border-width:var(--replay-button-border-width)] bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
+          : "border-[var(--replay-inactive-border)] [border-width:var(--replay-inactive-button-border-width)] bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95",
       )}
     >
-      <Icon className="h-4 w-4" />
+      <Icon
+        className={cn(
+          "h-4 w-4",
+          active
+            ? "[stroke-width:var(--replay-button-icon-stroke)]"
+            : "[stroke-width:var(--replay-inactive-button-icon-stroke)]",
+        )}
+      />
     </button>
   );
 }
@@ -132,7 +140,7 @@ function IconFlyoutControl<T extends string>({
                 o.disabled
                   ? "cursor-not-allowed text-gray-300"
                   : o.id === value
-                    ? "bg-amber text-ink"
+                    ? "bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
                     : "text-gray-600 hover:bg-gray-100 hover:text-ink",
               )}
             >
@@ -490,6 +498,9 @@ export function FlightViz({
 
   return (
     <div className="flex flex-col gap-6">
+      {process.env.NODE_ENV === "development" && (
+        <ReplayPaletteLab basemap={basemap} onBasemap={changeBasemap} />
+      )}
       <div className="flex flex-col gap-2">
         {/* The map spans 80% of the browser window, breaking out of the
             page's centered max-w column rather than following the same
