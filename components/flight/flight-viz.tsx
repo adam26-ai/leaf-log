@@ -609,7 +609,6 @@ export function FlightViz({
               }} />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
             <div className="pointer-events-none absolute left-12 right-2 top-3 flex flex-col items-center gap-1 px-2 sm:right-[165px]">
-              <span className="rounded bg-paper/95 px-2 py-1 text-center text-xs font-semibold" data-testid="selected-pilot">Viewing {selected.owner.displayName} · {selectedState}</span>
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
               {selectedState !== "Flying" && <button type="button" className="pointer-events-auto rounded bg-paper/95 px-2 py-1 text-xs underline" onClick={() => applyTime(selectedOffset)}>Jump to takeoff</button>}
             </div>

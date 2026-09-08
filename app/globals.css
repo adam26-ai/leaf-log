@@ -78,6 +78,21 @@
   --replay-terrain-fill-alpha: 1;
   --replay-terrain-gradient-alpha: 0.75;
   --replay-header-accent-height: 5px;
+  --replay-group-primary: #d8ff00;
+  --replay-group-companion: #0099ff;
+  --replay-group-card-bg: #ffffff;
+  --replay-group-card-text: #141414;
+  --replay-group-card-muted: #4b5563;
+  --replay-group-card-hover: #e5e7eb;
+  --replay-group-card-alpha: 0.7;
+  --replay-group-avatar-bg: #ffffff;
+  --replay-group-avatar-text: #536779;
+  --replay-group-selection: #141414;
+  --replay-group-track: #ffffff;
+  --replay-group-track-outline: #080808;
+  --replay-group-badge-idle: #ffffff;
+  --replay-group-badge-text: #141414;
+  --replay-group-badge-border: #141414;
 }
 
 body {

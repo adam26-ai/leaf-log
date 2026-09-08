@@ -87,7 +87,7 @@ export function PhotoGallery({
             type="button"
             onClick={() => select(p)}
             className="group relative h-20 w-20 overflow-hidden rounded-md border-2 border-gray-200 bg-gray-100"
-            style={p.flightId ? { borderColor: p.isPrimary ? "#d8ff00" : "#0099ff" } : undefined}
+            style={p.flightId ? { borderColor: p.isPrimary ? "var(--replay-group-primary)" : "var(--replay-group-companion)" } : undefined}
             title={[p.ownerName, p.placementSource === "unpinned" ? `Unpinned — ${unpinnedReason(p)}` : null].filter(Boolean).join(" · ") || undefined}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}

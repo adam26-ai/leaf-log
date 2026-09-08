@@ -10,15 +10,15 @@ Three identities must remain distinct:
 - **Viewer**: the signed-in person. Their identity determines access and editing permissions, not the hero color. Mark their avatar with a small "You" label when present.
 - **Selected flight**: the single flight supplying the camera target, live instruments, highlighted route, altitude profile, and XC ground overlay.
 
-Opening your own flight makes all three coincide. Opening someone else's flight initially selects that primary flight, which stays the green entry at the top; a matching flight of your own appears underneath in blue with a "You" label. Selection does not change primary/companion identity colors or navigate to another page. The primary pilot remains named in the page header, and the instruments say "Following [pilot]" so the page subject and camera subject are explicit.
+Opening your own flight makes all three coincide. Opening someone else's flight initially selects that primary flight, which stays the green entry at the top; a matching flight of your own appears underneath in blue with a "You" label. Selection does not change primary/companion avatar colors or navigate to another page. The primary pilot remains named in the page header. The avatar selection outline and colored map badge identify the selected flight; there is no extra "Viewing" notice above the instruments.
 
 ## Display and interactions
 
 - Put the primary pilot's avatar first, then the viewer if different and present, then other pilots in a stable order. Never reorder the list as playback advances, visibility changes, or selection changes.
 - Keep the primary/companion ring green/blue; identify selection separately with a thicker outer outline, size, or selection indicator. Provide names, keyboard selection, and accessible selected state. Use initials when an avatar is missing. Climb/sink track colors continue to encode vario independently of identity colors.
 - Selecting an avatar selects its flight, sets the camera to follow, and centers on that pilot. Preserve the current UTC instant, playback speed, and playing/paused state. Later camera controls can still select chase/orbit/fixed as today.
-- Selected route: existing climb-green/sink-blue treatment and ground shadow/altitude trails, subject to the shadow toggle. Other routes: thinner neutral white/light grey, no shadows or altitude trails. Check contrast on every supported basemap before choosing the neutral shade.
-- Show pilot banners for all displayed pilots, green for the primary flight and blue for companions. Prioritize the selected label when labels overlap; identify other pilots on hover/tap rather than allowing unreadable stacks.
+- Selected route: existing climb-green/sink-blue treatment and ground shadow/altitude trails, subject to the shadow toggle. Other routes: thinner white with black outlines, no shadows or altitude trails.
+- Show pilot banners at the same text/width scale for all displayed pilots. The selected banner is green for the primary flight and blue for companions; unselected banners are opaque white. Prioritize the selected label when labels overlap; identify other pilots on hover/tap rather than allowing unreadable stacks.
 - Show only the selected flight's existing XC route/score on the ground. If its score is unavailable, clear the preceding flight's overlay. Viewing a friend does not enqueue scoring or grant edit permissions.
 - Apply elapsed/full-route mode consistently to every displayed flight. In elapsed mode, future flights have no flown trail; completed flights retain their completed trail. In full mode, future/completed routes may be visible as context, but their pilots must not appear airborne.
 - Keep the existing center-on-pilot and fit-route controls scoped to selection. Add a secondary fit-group action if needed; ordinary selection should not zoom out to every route.
@@ -34,7 +34,7 @@ Opening your own flight makes all three coincide. Opening someone else's flight 
 
 ### Other parts of the flight page
 
-- The live readout names the selected pilot and uses that flight's instrument ranges and altitude source.
+- The live readout uses the selected flight's instrument ranges and altitude source, directly at the top of the map.
 - The altitude graph follows the selected flight, drawn on the **group's time axis**, with empty regions outside that flight. Its cursor and scrubber therefore stay aligned. Defer overlaying every pilot's altitude curve unless comparison warrants the extra clutter.
 - The page title, whole-flight key statistics, notes, navigation, share/edit controls, kudos, and instructor notes remain attached to the primary flight. Label the selected replay pilot clearly so this distinction is visible.
 - Clicking a primary-flight statistic such as maximum altitude explicitly reselects the primary flight and seeks to that event. Clicking its XC statistic selects it before fitting that XC route. Current replay events need a flight identity to prevent selection confusion.
@@ -191,6 +191,8 @@ Accepted defaults:
 Implementation/review tuning: neutral-track contrast, label collisions, mobile eye-button layout, recorder-gap thresholds, and the initial group size/download budget. Use representative staggered, repeated, and long-flight fixtures to resolve these rather than requiring more up-front product questions.
 
 ## First implementation record — September 8, 2026
+
+Visual refinement: the pilot card defaults to a 70%-opaque white background with opaque avatars. Palette Lab groups its controls into collapsible sections, including Friends & pilots with light/dark card shortcuts, opacity, identity/photo accents, avatar colors, track/outline colors, and badge colors. Canvas overlays update from the same palette as the controls. Unselected badges are white and use the same perspective-adjusted font/width scale as selection; the former 80% companion scale was removed. The extra "Viewing" notice was removed. Palette compatibility/live-update tests, controller tests, lint, TypeScript, production build, and browser checks passed for this refinement.
 
 Implemented:
 

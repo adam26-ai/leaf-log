@@ -1,0 +1,40 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ReplayPaletteLab } from "./replay-palette-lab";
+import { readGroupReplayColors, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+
+beforeEach(() => {
+  vi.stubEnv("NODE_ENV", "development");
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ savedPresets: [], hiddenBuiltInIds: [] }) })));
+  localStorage.clear();
+  document.documentElement.removeAttribute("style");
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); localStorage.clear(); document.documentElement.removeAttribute("style"); });
+
+it("restores older palettes with defaults for newly added pilot colors", async () => {
+  localStorage.setItem("leaf-dev-replay-palette", JSON.stringify({ presetId: "custom", colors: { timeline: "#123456" }, sizes: { timeline: 6 } }));
+  render(<ReplayPaletteLab basemap="map" onBasemap={vi.fn()} />);
+  await waitFor(() => expect(document.documentElement.style.getPropertyValue("--replay-timeline")).toBe("#123456"));
+  expect(readGroupReplayColors().groupBadgeIdle).toBe("#ffffff");
+  expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.7");
+});
+
+it("publishes live map colors and saves card opacity without making avatars transparent", async () => {
+  const listener = vi.fn();
+  window.addEventListener(REPLAY_PALETTE_EVENT, listener);
+  try {
+    render(<ReplayPaletteLab basemap="map" onBasemap={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Palette lab" }));
+    fireEvent.click(screen.getByText("Friends & pilots"));
+    fireEvent.change(screen.getByLabelText("Unselected track color"), { target: { value: "#ff9900" } });
+    expect(readGroupReplayColors().groupTrack).toBe("#ff9900");
+    expect(listener).toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Pilot card background opacity"), { target: { value: "0.4" } });
+    expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.4");
+    expect(readGroupReplayColors().groupAvatarBg).toBe("#ffffff");
+    const saved = JSON.parse(localStorage.getItem("leaf-dev-replay-palette")!);
+    expect(saved.colors.groupTrack).toBe("#ff9900");
+    expect(saved.sizes.groupCardAlpha).toBe(0.4);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+  } finally { window.removeEventListener(REPLAY_PALETTE_EVENT, listener); }
+});

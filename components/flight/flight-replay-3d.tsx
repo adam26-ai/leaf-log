@@ -19,6 +19,7 @@ import { replayPositionAt, replayStateAt, splitReplaySamples, flightForPilot } f
 import type { ReplayResponse } from "@/lib/igc/replay";
 import type { LoadedReplayFlight } from "./use-group-replay";
 import type { Layer } from "@deck.gl/core";
+import { GROUP_REPLAY_COLORS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -28,9 +29,7 @@ const CAMERA_SVG =
   '<rect x="9.5" y="13.8" width="15" height="10.7" rx="2.2" fill="#ffffff"/>' +
   '<circle cx="17" cy="19.2" r="3.4" fill="#272727"/>' +
   '<circle cx="17" cy="19.2" r="1.6" fill="#ffffff"/></svg>';
-const cameraIcon = (primary: boolean) => `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG.replace('stroke="#ffffff"', primary ? 'stroke="#d8ff00"' : 'stroke="#0099ff"'))}`;
-const PRIMARY_CAMERA_ICON = cameraIcon(true);
-const COMPANION_CAMERA_ICON = cameraIcon(false);
+const cameraIcon = (color: string) => `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG.replace('stroke="#ffffff"', `stroke="${color}"`))}`;
 
 const LEAF_GREEN: [number, number, number] = [216, 255, 0];
 // White-on-black front view of a paraglider: a curved ram-air canopy,
@@ -60,7 +59,6 @@ const CONNECTOR_SVG =
   `<line x1="${CONNECTOR_WIDTH_PX / 2}" y1="0" x2="${CONNECTOR_WIDTH_PX / 2}" y2="${CONNECTOR_HEIGHT_PX - CONNECTOR_DOT_RADIUS_PX}" stroke="#272727" stroke-width="${CONNECTOR_STEM_WIDTH_PX}"/>` +
   `<circle cx="${CONNECTOR_WIDTH_PX / 2}" cy="${CONNECTOR_HEIGHT_PX - CONNECTOR_DOT_RADIUS_PX}" r="${CONNECTOR_DOT_RADIUS_PX}" fill="rgb(${LEAF_GREEN.join(",")})"/>` +
   `</svg>`;
-const CONNECTOR_ICON = `data:image/svg+xml,${encodeURIComponent(CONNECTOR_SVG)}`;
 
 const NAME_BANNER_WIDTH_PX = 24;
 const NAME_BANNER_FONT_PX = 14;
@@ -89,9 +87,9 @@ function escapeXml(text: string): string {
   });
 }
 
-function verticalNameBanner(name: string | null, primary = true): NameBannerIcon | null {
+function verticalNameBanner(name: string | null, fill: string, text: string, border: string): NameBannerIcon | null {
   if (!name) return null;
-  const cacheKey = `${primary}:${name}`;
+  const cacheKey = `${fill}:${text}:${border}:${name}`;
   const cached = nameBannerCache.get(cacheKey);
   if (cached) return cached;
 
@@ -100,8 +98,8 @@ function verticalNameBanner(name: string | null, primary = true): NameBannerIcon
   const height = displayHeight * NAME_BANNER_SCALE;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${NAME_BANNER_WIDTH_PX} ${displayHeight}">` +
-    `<rect x="0.5" y="0.5" width="${NAME_BANNER_WIDTH_PX - 1}" height="${displayHeight - 1}" fill="${primary ? "#d8ff00" : "#0099ff"}" stroke="#141414"/>` +
-    `<text transform="translate(${NAME_BANNER_WIDTH_PX / 2} ${displayHeight / 2}) rotate(-90)" text-anchor="middle" dominant-baseline="central" fill="#141414" font-family="Arial,Helvetica,sans-serif" font-size="${NAME_BANNER_FONT_PX}" font-weight="700">${escapeXml(name)}</text>` +
+    `<rect x="0.5" y="0.5" width="${NAME_BANNER_WIDTH_PX - 1}" height="${displayHeight - 1}" fill="${fill}" stroke="${border}"/>` +
+    `<text transform="translate(${NAME_BANNER_WIDTH_PX / 2} ${displayHeight / 2}) rotate(-90)" text-anchor="middle" dominant-baseline="central" fill="${text}" font-family="Arial,Helvetica,sans-serif" font-size="${NAME_BANNER_FONT_PX}" font-weight="700">${escapeXml(name)}</text>` +
     "</svg>";
   const icon = {
     url: `data:image/svg+xml,${encodeURIComponent(svg)}`,
@@ -110,6 +108,7 @@ function verticalNameBanner(name: string | null, primary = true): NameBannerIcon
     displayHeight,
   };
   nameBannerCache.set(cacheKey, icon);
+  if (nameBannerCache.size > 256) nameBannerCache.delete(nameBannerCache.keys().next().value!);
   return icon;
 }
 
@@ -299,6 +298,18 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const trackRef = useRef<TimedTrackDatum[]>([]);
   const companionRef = useRef(companions);
   const identityRef = useRef({ flightId, primaryFlightId });
+  const groupColorsRef = useRef(GROUP_REPLAY_COLORS);
+  useEffect(() => {
+    const updateColors = () => {
+      groupColorsRef.current = readGroupReplayColors();
+      renderLayers(timeRef.current);
+    };
+    updateColors();
+    window.addEventListener(REPLAY_PALETTE_EVENT, updateColors);
+    return () => window.removeEventListener(REPLAY_PALETTE_EVENT, updateColors);
+    // The stable event handler reads current map/data refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const preparedTracks = useRef(new WeakMap<ReplayData, TimedTrackDatum[]>());
   const terrainOffsets = useRef(new Map<string, number>());
   const timeRef = useRef(time);
@@ -852,7 +863,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // white-on-black glider above one ground-clamped anchor.
     type LabelDatum = { text: string; position: [number, number, number] };
     const nameText = pilotNameRef.current ? pilotNameRef.current.toUpperCase() : null;
-    const nameBanner = verticalNameBanner(nameText, primary);
+    const colors = groupColorsRef.current;
+    const identityColor = primary ? colors.groupPrimary : colors.groupCompanion;
+    const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder);
     const anchorZ = ground != null ? Math.max(zOf(pos[2]), ground) : zOf(pos[2]);
     const anchorPos: [number, number, number] = [pos[0], pos[1], anchorZ];
     const markerScale = markerPerspectiveScale(anchorPos);
@@ -880,7 +893,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false },
         getIcon: () => ({
-          url: primary ? CONNECTOR_ICON : `data:image/svg+xml,${encodeURIComponent(CONNECTOR_SVG.replace("rgb(216,255,0)", "#0099ff"))}`,
+          url: `data:image/svg+xml,${encodeURIComponent(CONNECTOR_SVG.replace("rgb(216,255,0)", identityColor))}`,
           width: CONNECTOR_WIDTH_PX,
           height: CONNECTOR_HEIGHT_PX,
           anchorX: CONNECTOR_WIDTH_PX / 2,
@@ -1007,11 +1020,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           data: photoIcons,
           pickable: true,
           billboard: true,
-          getIcon: (photo) => ({ url: photo.primary ? PRIMARY_CAMERA_ICON : COMPANION_CAMERA_ICON, width: 68, height: 68, anchorX: 34, anchorY: 34 }),
+          getIcon: (photo) => ({ url: cameraIcon(photo.primary ? colors.groupPrimary : colors.groupCompanion), width: 68, height: 68, anchorX: 34, anchorY: 34 }),
           getPosition: (d) => d.position,
           getSize: 30,
           sizeUnits: "pixels",
-          updateTriggers: { getPosition: offsetRef.current },
+          updateTriggers: { getPosition: offsetRef.current, getIcon: [colors.groupPrimary, colors.groupCompanion] },
           onHover: (info) => {
             const o = info.object as PhotoIcon | null;
             if (o) {
@@ -1051,18 +1064,21 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const all = companionRef.current;
     const selectedId = identityRef.current.flightId;
     const selectedOwner = all.find((f) => f.id === selectedId)?.owner.id;
+    const colors = groupColorsRef.current;
     for (const flight of all) {
       if (flight.id === selectedId) continue;
       const local = (nowMs - flight.takeoffMs) / 1000;
       const offset = offsetFor(flight);
       const paths = tracksFor(flight.replay).map((path) => displayedTrackAt(path, local)).filter((p) => p.path.length >= 2);
-      layers.push(new PathLayer<MultiColorPathDatum>({
-        id: 'companion-track-' + flight.id, data: paths,
-        getPath: (p) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
-        getColor: [225, 230, 235, 210], getWidth: 2.5, widthUnits: "pixels", billboard: true,
-        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal", depthWriteEnabled: false },
+      const pathProps = {
+        data: paths,
+        getPath: (p: MultiColorPathDatum) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
+        widthUnits: "pixels" as const, billboard: true,
+        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: false },
         updateTriggers: { getPath: offset },
-      }));
+      };
+      layers.push(new PathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-outline-' + flight.id, getColor: colorRgb(colors.groupTrackOutline), getWidth: 4.75 }));
+      layers.push(new PathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-track-' + flight.id, getColor: colorRgb(colors.groupTrack), getWidth: 2.5 }));
       const pilotFlights = all.filter((f) => f.owner.id === flight.owner.id);
       if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
       const state = replayStateAt(flight.replay, local);
@@ -1070,21 +1086,21 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const ground = groundElevationAt(point[0], point[1]);
       const anchor: [number, number, number] = [point[0], point[1], Math.max((point[2] + offset) * TERRAIN_EXAGGERATION, ground ?? -Infinity)];
       const primary = flight.id === identityRef.current.primaryFlightId;
-      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), primary)!;
-      const scale = markerPerspectiveScale(anchor) * 0.8;
+      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder)!;
+      const scale = markerPerspectiveScale(anchor);
       layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
-        getFillColor: primary ? [216, 255, 0] : [0, 153, 255], getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
+        getFillColor: colorRgb(primary ? colors.groupPrimary : colors.groupCompanion), getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
       layers.push(new IconLayer({ id: 'companion-name-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getIcon: () => ({ url: banner.url, width: banner.width, height: banner.height, anchorX: banner.width / 2, anchorY: banner.height }),
         getPixelOffset: [0, -10 * scale], getSize: banner.displayHeight * scale, sizeUnits: "pixels", billboard: true,
-        opacity: state === "Flying" ? 1 : 0.55, parameters: { depthCompare: "always", depthWriteEnabled: false } }));
+        parameters: { depthCompare: "always", depthWriteEnabled: false } }));
       if (state === "Flying") layers.push(new IconLayer({ id: 'companion-glider-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getIcon: () => ({ url: GLIDER_ICON, width: GLIDER_ICON_SOURCE_WIDTH, height: GLIDER_ICON_SOURCE_HEIGHT, anchorX: GLIDER_ICON_SOURCE_WIDTH / 2, anchorY: GLIDER_ICON_SOURCE_HEIGHT }),
         getPixelOffset: [0, -(banner.displayHeight + 14) * scale], getSize: GLIDER_ICON_WIDTH_PX * scale, sizeBasis: "width", sizeUnits: "pixels", billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
       else layers.push(new TextLayer({ id: 'companion-state-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
-        getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: [60, 60, 60], background: true, getBackgroundColor: [255, 255, 255, 220],
+        getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: colorRgb(colors.groupBadgeText), background: true, getBackgroundColor: [...colorRgb(colors.groupBadgeIdle), 220],
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
     }
     return layers;
@@ -1702,7 +1718,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
             alt={hoverPhoto.name}
             className="pointer-events-none absolute z-10 h-[120px] w-[120px] rounded object-cover shadow-lg ring-1 ring-black/20"
             style={{
-              outline: `2px solid ${hoverPhoto.primary ? "#d8ff00" : "#0099ff"}`,
+              outline: `2px solid var(${hoverPhoto.primary ? "--replay-group-primary" : "--replay-group-companion"})`,
               left: hoverPhoto.x + 16,
               top: Math.max(hoverPhoto.y - 132, 8),
             }}
