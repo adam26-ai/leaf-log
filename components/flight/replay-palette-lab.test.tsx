@@ -16,6 +16,8 @@ it("restores older palettes with defaults for newly added pilot colors", async (
   render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
   await waitFor(() => expect(document.documentElement.style.getPropertyValue("--replay-timeline")).toBe("#123456"));
   expect(readGroupReplayColors().groupBadgeIdle).toBe("#ffffff");
+  expect(readGroupReplayColors().groupTrackAlpha).toBe(1);
+  expect(readGroupReplayColors().groupTrackOutlineAlpha).toBe(1);
   expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.7");
 });
 
@@ -35,6 +37,22 @@ it("publishes live map colors and saves card opacity without making avatars tran
     const saved = JSON.parse(localStorage.getItem("leaf-dev-replay-palette")!);
     expect(saved.colors.groupTrack).toBe("#ff9900");
     expect(saved.sizes.groupCardAlpha).toBe(0.4);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+  } finally { window.removeEventListener(REPLAY_PALETTE_EVENT, listener); }
+});
+
+it("publishes independent track alpha changes after CSS updates and persists them", async () => {
+  const listener = vi.fn(() => readGroupReplayColors());
+  window.addEventListener(REPLAY_PALETTE_EVENT, listener);
+  try {
+    render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Palette lab" }));
+    fireEvent.click(screen.getByText("Friends & pilots"));
+    fireEvent.change(screen.getByLabelText("Unselected track alpha"), { target: { value: "0" } });
+    expect(listener.mock.results.at(-1)?.value).toMatchObject({ groupTrackAlpha: 0, groupTrackOutlineAlpha: 1 });
+    fireEvent.change(screen.getByLabelText("Unselected track outline alpha"), { target: { value: "0.35" } });
+    expect(listener.mock.results.at(-1)?.value).toMatchObject({ groupTrackAlpha: 0, groupTrackOutlineAlpha: 0.35 });
+    expect(JSON.parse(localStorage.getItem("leaf-dev-replay-palette")!).sizes).toMatchObject({ groupTrackAlpha: 0, groupTrackOutlineAlpha: 0.35 });
     await waitFor(() => expect(fetch).toHaveBeenCalled());
   } finally { window.removeEventListener(REPLAY_PALETTE_EVENT, listener); }
 });

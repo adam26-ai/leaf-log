@@ -2,16 +2,21 @@ import { PathLayer } from "@deck.gl/layers";
 
 const outlineUniforms = {
   name: "replayOutline",
-  fs: `layout(std140) uniform replayOutlineUniforms { vec3 color; } replayOutline;`,
-  uniformTypes: { color: "vec3<f32>" },
+  fs: `layout(std140) uniform replayOutlineUniforms {
+    vec3 color;
+    vec2 alpha;
+  } replayOutline;`,
+  uniformTypes: { color: "vec3<f32>", alpha: "vec2<f32>" },
 } as const;
 
 /** Shade fill and border on the same depth-tested ribbon, including crossings. */
-export class OutlinedPathLayer<T> extends PathLayer<T, { outlineColor?: [number, number, number] }> {
+export class OutlinedPathLayer<T> extends PathLayer<T, { outlineColor?: [number, number, number]; fillAlpha?: number; outlineAlpha?: number }> {
   static override layerName = "OutlinedPathLayer";
   static override defaultProps = {
     ...PathLayer.defaultProps,
     outlineColor: { type: "color" as const, value: [8, 8, 8] },
+    fillAlpha: { type: "number" as const, value: 1, min: 0, max: 1 },
+    outlineAlpha: { type: "number" as const, value: 1, min: 0, max: 1 },
   };
 
   override getShaders() {
@@ -31,7 +36,9 @@ export class OutlinedPathLayer<T> extends PathLayer<T, { outlineColor?: [number,
             1.0 - antialiasWidth * 1.5, 1.0, crossPath
           );
           color.rgb = mix(color.rgb, replayOutline.color, outlineMix);
-          color.a *= mix(1.0, 0.82 * outerCoverage, outlineMix);
+          color.a *= mix(replayOutline.alpha.x, replayOutline.alpha.y * 0.82 * outerCoverage, outlineMix);
+          // Fully transparent regions must not hide ribbons behind them.
+          if (color.a <= 0.0) discard;
         `,
       },
     };
@@ -39,7 +46,10 @@ export class OutlinedPathLayer<T> extends PathLayer<T, { outlineColor?: [number,
 
   override draw(options: Parameters<PathLayer<T>["draw"]>[0]) {
     this.state.model?.shaderInputs.setProps({
-      replayOutline: { color: (this.props.outlineColor ?? [8, 8, 8]).map((channel) => channel / 255) },
+      replayOutline: {
+        color: (this.props.outlineColor ?? [8, 8, 8]).map((channel) => channel / 255),
+        alpha: [this.props.fillAlpha ?? 1, this.props.outlineAlpha ?? 1],
+      },
     });
     super.draw(options);
   }

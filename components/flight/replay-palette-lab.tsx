@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Palette, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { cn } from "@/lib/utils";
-import { GROUP_REPLAY_COLORS, GROUP_COLOR_CSS, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+import { GROUP_REPLAY_COLORS, GROUP_COLOR_CSS, GROUP_REPLAY_ALPHAS, GROUP_ALPHA_CSS, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 
 type PaletteKey =
   | keyof typeof GROUP_REPLAY_COLORS
@@ -30,6 +30,7 @@ type PaletteKey =
 type ReplayPalette = Record<PaletteKey, string>;
 
 type SizeKey =
+  | keyof typeof GROUP_REPLAY_ALPHAS
   | "groupCardAlpha"
   | "buttonBorder"
   | "buttonIcon"
@@ -55,6 +56,7 @@ interface SavedPreset {
 const STORAGE_KEY = "leaf-dev-replay-palette";
 
 const DEFAULT_SIZES: ReplaySizes = {
+  ...GROUP_REPLAY_ALPHAS,
   groupCardAlpha: 0.7,
   buttonBorder: 1.5,
   buttonIcon: 2,
@@ -185,8 +187,8 @@ const COLOR_FIELDS: {
   { key: "groupAvatarBg", label: "Avatar background" },
   { key: "groupAvatarText", label: "Avatar initials" },
   { key: "groupSelection", label: "Avatar selection ring" },
-  { key: "groupTrack", label: "Unselected track" },
-  { key: "groupTrackOutline", label: "Unselected track outline" },
+  { key: "groupTrack", label: "Unselected track", sizeKey: "groupTrackAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+  { key: "groupTrackOutline", label: "Unselected track outline", sizeKey: "groupTrackOutlineAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
   { key: "groupBadgeIdle", label: "Unselected badge fill" },
   { key: "groupBadgeText", label: "Pilot badge text" },
   { key: "groupBadgeBorder", label: "Pilot badge border" },
@@ -232,6 +234,7 @@ const CSS_NAMES: Record<PaletteKey, string> = {
 };
 
 const SIZE_CSS_NAMES: Record<SizeKey, string> = {
+  ...GROUP_ALPHA_CSS,
   groupCardAlpha: "--replay-group-card-alpha",
   buttonBorder: "--replay-button-border-width",
   buttonIcon: "--replay-button-icon-stroke",
@@ -257,11 +260,12 @@ function applySizes(sizes: ReplaySizes) {
   for (const [key, value] of Object.entries(sizes) as [SizeKey, number][]) {
     document.documentElement.style.setProperty(
       SIZE_CSS_NAMES[key],
-      key === "terrainFillAlpha" || key === "terrainGradientAlpha" || key === "groupCardAlpha"
+      key.endsWith("Alpha")
         ? String(value)
         : `${value}px`,
     );
   }
+  window.dispatchEvent(new Event(REPLAY_PALETTE_EVENT));
 }
 
 export function ReplayPaletteLab({

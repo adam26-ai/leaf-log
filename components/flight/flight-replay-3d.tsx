@@ -19,7 +19,7 @@ import { replayPositionAt, replayStateAt, splitReplaySamples, flightForPilot } f
 import type { ReplayResponse } from "@/lib/igc/replay";
 import type { LoadedReplayFlight } from "./use-group-replay";
 import type { Layer } from "@deck.gl/core";
-import { GROUP_REPLAY_COLORS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+import { GROUP_REPLAY_COLORS, GROUP_REPLAY_ALPHAS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
 import { OutlinedPathLayer } from "./outlined-path-layer";
 
@@ -302,7 +302,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const companionRef = useRef(companions);
   const badgeHeightRef = useRef(115);
   const identityRef = useRef({ flightId, primaryFlightId });
-  const groupColorsRef = useRef(GROUP_REPLAY_COLORS);
+  const groupColorsRef = useRef({ ...GROUP_REPLAY_COLORS, ...GROUP_REPLAY_ALPHAS });
   useEffect(() => {
     const updateColors = () => {
       groupColorsRef.current = readGroupReplayColors();
@@ -1098,7 +1098,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         updateTriggers: { getPath: offset },
       };
       tracks.push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
-        getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline), getWidth: 4.75, widthMinPixels: 4.75 }));
+        getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline),
+        fillAlpha: colors.groupTrackAlpha, outlineAlpha: colors.groupTrackOutlineAlpha,
+        getWidth: 4.75, widthMinPixels: 4.75 }));
       const pilotFlights = all.filter((f) => f.owner.id === flight.owner.id);
       if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
       const state = replayStateAt(flight.replay, local);

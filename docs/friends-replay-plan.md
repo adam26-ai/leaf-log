@@ -204,6 +204,8 @@ Takeoff controls: each pilot has a permanent takeoff shortcut below their eye bu
 
 Compact pilot list: avatars are 28 pixels instead of 36, with controls in one horizontal row ordered avatar, takeoff, visibility. The 150-pixel-wide card gives names the full width below the controls, wrapping up to two lines. Takeoff and visibility retain 40-pixel hit targets.
 
+Track opacity: Palette Lab provides independent alpha controls for unselected track fill and outline (0–1, default 1), saved with presets and applied live while paused. Both remain in the same depth-tested ribbon shader; fully transparent fragments are discarded so they do not occlude tracks behind them.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.
