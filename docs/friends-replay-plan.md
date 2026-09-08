@@ -198,6 +198,8 @@ Sizing correction: all name badges now share the longest loaded name's height fo
 
 Overlap refinement: both selected and unselected tracks now share one outlined-ribbon shader with depth writes enabled, so the fill and border overlap together at crossings. Companion fill/outline colors remain adjustable in Palette Lab. Render order is tracks and altitude trails, then photo pins with depth occlusion disabled, then all companion badges, then the selected pilot's badge. This keeps camera icons clear of flight paths while letting badges cover them.
 
+Badge shape refinement: all pilot name badges have an 8-pixel bottom-center pointer with a continuous outline. The pointer inherits the selected or unselected fill, adds space below the name, and preserves matching badge sizes and the existing anchor position.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.

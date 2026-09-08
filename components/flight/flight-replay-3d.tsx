@@ -65,6 +65,7 @@ const CONNECTOR_SVG =
 const NAME_BANNER_WIDTH_PX = 24;
 const NAME_BANNER_FONT_PX = 14;
 const NAME_BANNER_SCALE = 4;
+const NAME_BANNER_POINTER_PX = 8;
 const LABEL_GAP_PX = 4;
 
 interface NameBannerIcon {
@@ -89,9 +90,10 @@ function escapeXml(text: string): string {
   });
 }
 
-function verticalNameBanner(name: string | null, fill: string, text: string, border: string, displayHeight: number): NameBannerIcon | null {
+function verticalNameBanner(name: string | null, fill: string, text: string, border: string, bodyHeight: number): NameBannerIcon | null {
   if (!name) return null;
-  const cacheKey = `${fill}:${text}:${border}:${displayHeight}:${name}`;
+  const displayHeight = bodyHeight + NAME_BANNER_POINTER_PX;
+  const cacheKey = `pointer:${fill}:${text}:${border}:${displayHeight}:${name}`;
   const cached = nameBannerCache.get(cacheKey);
   if (cached) return cached;
 
@@ -99,8 +101,8 @@ function verticalNameBanner(name: string | null, fill: string, text: string, bor
   const height = displayHeight * NAME_BANNER_SCALE;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${NAME_BANNER_WIDTH_PX} ${displayHeight}">` +
-    `<rect x="0.5" y="0.5" width="${NAME_BANNER_WIDTH_PX - 1}" height="${displayHeight - 1}" fill="${fill}" stroke="${border}"/>` +
-    `<text transform="translate(${NAME_BANNER_WIDTH_PX / 2} ${displayHeight / 2}) rotate(-90)" text-anchor="middle" dominant-baseline="central" fill="${text}" font-family="Arial,Helvetica,sans-serif" font-size="${NAME_BANNER_FONT_PX}" font-weight="700">${escapeXml(name)}</text>` +
+    `<path d="M0.5 0.5 H${NAME_BANNER_WIDTH_PX - 0.5} V${bodyHeight - 0.5} H${NAME_BANNER_WIDTH_PX / 2 + 6} L${NAME_BANNER_WIDTH_PX / 2} ${displayHeight - 0.5} L${NAME_BANNER_WIDTH_PX / 2 - 6} ${bodyHeight - 0.5} H0.5 Z" fill="${fill}" stroke="${border}" stroke-linejoin="round"/>` +
+    `<text transform="translate(${NAME_BANNER_WIDTH_PX / 2} ${bodyHeight / 2}) rotate(-90)" text-anchor="middle" dominant-baseline="central" fill="${text}" font-family="Arial,Helvetica,sans-serif" font-size="${NAME_BANNER_FONT_PX}" font-weight="700">${escapeXml(name)}</text>` +
     "</svg>";
   const icon = {
     url: `data:image/svg+xml,${encodeURIComponent(svg)}`,
