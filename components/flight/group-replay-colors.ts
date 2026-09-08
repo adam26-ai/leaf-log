@@ -7,15 +7,14 @@ export const GROUP_REPLAY_COLORS = {
   groupCardHover: "#e5e7eb",
   groupAvatarBg: "#ffffff",
   groupAvatarText: "#536779",
-  groupSelection: "#141414",
   groupTrack: "#ffffff",
-  groupTrackOutline: "#080808",
+  groupTrackOutline: "#000000",
   groupBadgeIdle: "#ffffff",
   groupBadgeText: "#141414",
   groupBadgeBorder: "#141414",
 };
 export type GroupReplayColors = typeof GROUP_REPLAY_COLORS;
-export const GROUP_REPLAY_ALPHAS = { groupTrackAlpha: 1, groupTrackOutlineAlpha: 1 };
+export const GROUP_REPLAY_ALPHAS = { groupTrackAlpha: 0.3, groupTrackOutlineAlpha: 1 };
 export const GROUP_ALPHA_CSS = {
   groupTrackAlpha: "--replay-group-track-alpha",
   groupTrackOutlineAlpha: "--replay-group-track-outline-alpha",

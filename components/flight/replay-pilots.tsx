@@ -16,14 +16,17 @@ export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onTogg
   return <div className="absolute right-2 top-[95px] z-20 flex max-h-[calc(100%-145px)] w-[150px] flex-col gap-2 overflow-y-auto rounded-lg p-2 text-[var(--replay-group-card-text)] shadow-md sm:top-3 sm:max-h-[calc(100%-70px)]" style={{ background: "color-mix(in srgb, var(--replay-group-card-bg) calc(var(--replay-group-card-alpha) * 100%), transparent)" }} aria-label="Pilots in this replay">
     {group.pilots.map((pilot) => {
       const shown = group.isVisible(pilot.id), selected = group.selected?.owner.id === pilot.id;
+      const pilotColor = pilot.id === primaryOwnerId ? "var(--replay-group-primary)" : "var(--replay-group-companion)";
       const flights = group.candidates.filter((f) => f.owner.id === pilot.id);
       const loading = shown && !group.flights.some((f) => f.owner.id === pilot.id);
       const failed = flights.some((f) => group.failures.includes(f.id));
       return <div key={pilot.id} className="flex min-w-0 flex-col items-center gap-1">
         <div className="flex w-full items-center justify-between gap-1">
           <button type="button" onClick={() => onSelect(pilot)} aria-label={`Follow ${pilot.displayName}`} aria-pressed={selected}
-            className={`shrink-0 rounded-full p-1 ${selected ? "bg-[var(--replay-group-selection)] outline-2 outline-offset-1 outline-[var(--replay-group-selection)]" : ""}`} title={`${pilot.displayName}${pilot.id === primaryOwnerId ? " · Primary flight" : ""}`}>
-            <span className={`block rounded-full border-[3px] ${shown ? "" : "opacity-40"}`} style={{ borderColor: pilot.id === primaryOwnerId ? "var(--replay-group-primary)" : "var(--replay-group-companion)" }}>
+            className={`shrink-0 rounded-full p-1 ${selected ? "outline-2 outline-offset-1" : ""}`}
+            style={selected ? { backgroundColor: pilotColor, outlineColor: pilotColor } : undefined}
+            title={`${pilot.displayName}${pilot.id === primaryOwnerId ? " · Primary flight" : ""}`}>
+            <span className={`block rounded-full border-[3px] ${shown ? "" : "opacity-40"}`} style={{ borderColor: pilotColor }}>
               <Avatar {...pilot} className="h-7 w-7 bg-[var(--replay-group-avatar-bg)] text-xs text-[var(--replay-group-avatar-text)]" />
             </span>
           </button>

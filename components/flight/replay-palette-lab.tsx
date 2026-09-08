@@ -57,7 +57,7 @@ const STORAGE_KEY = "leaf-dev-replay-palette";
 
 const DEFAULT_SIZES: ReplaySizes = {
   ...GROUP_REPLAY_ALPHAS,
-  groupCardAlpha: 0.7,
+  groupCardAlpha: 0.55,
   buttonBorder: 1.5,
   buttonIcon: 2,
   inactiveButtonBorder: 1,
@@ -186,7 +186,6 @@ const COLOR_FIELDS: {
   { key: "groupCardHover", label: "Pilot card hover" },
   { key: "groupAvatarBg", label: "Avatar background" },
   { key: "groupAvatarText", label: "Avatar initials" },
-  { key: "groupSelection", label: "Avatar selection ring" },
   { key: "groupTrack", label: "Unselected track", sizeKey: "groupTrackAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
   { key: "groupTrackOutline", label: "Unselected track outline", sizeKey: "groupTrackOutlineAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
   { key: "groupBadgeIdle", label: "Unselected badge fill" },
@@ -251,7 +250,9 @@ const SIZE_CSS_NAMES: Record<SizeKey, string> = {
 
 function applyPalette(colors: ReplayPalette) {
   for (const [key, value] of Object.entries(colors) as [PaletteKey, string][]) {
-    document.documentElement.style.setProperty(CSS_NAMES[key], value);
+    // Older presets can contain retired tokens, such as the standalone avatar
+    // selection color. Rings now inherit each pilot's identity color.
+    if (CSS_NAMES[key]) document.documentElement.style.setProperty(CSS_NAMES[key], value);
   }
   window.dispatchEvent(new Event(REPLAY_PALETTE_EVENT));
 }

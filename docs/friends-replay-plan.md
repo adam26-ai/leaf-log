@@ -208,6 +208,8 @@ Track opacity: Palette Lab provides independent alpha controls for unselected tr
 
 Transparency correction: companion ribbons with either alpha below 1 render after opaque tracks and altitude trails with depth testing enabled and depth writes disabled. Their alpha now blends over underlying tracks, including the selected route, rather than masking those routes out of the depth buffer. Fully opaque companion tracks retain depth writes and their existing crossing behavior. Photo pins and pilot badges still render above both passes. Multiple translucent crossings blend in submission order; exact sorting of intersecting translucent segments is not implemented.
 
+Accepted palette: the user's saved Cool Blue 3 values are now the site defaults, including 0.55 pilot-card opacity, white companion tracks at 0.3 alpha, and black outlines at 1 alpha. Avatar selection rings inherit the avatar outline's primary-green or companion-blue color. The independent selection-ring palette control is retired; older saved palettes remain readable.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.

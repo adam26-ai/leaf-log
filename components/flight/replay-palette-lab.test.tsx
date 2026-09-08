@@ -16,9 +16,9 @@ it("restores older palettes with defaults for newly added pilot colors", async (
   render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
   await waitFor(() => expect(document.documentElement.style.getPropertyValue("--replay-timeline")).toBe("#123456"));
   expect(readGroupReplayColors().groupBadgeIdle).toBe("#ffffff");
-  expect(readGroupReplayColors().groupTrackAlpha).toBe(1);
+  expect(readGroupReplayColors().groupTrackAlpha).toBe(0.3);
   expect(readGroupReplayColors().groupTrackOutlineAlpha).toBe(1);
-  expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.7");
+  expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.55");
 });
 
 it("publishes live map colors and saves card opacity without making avatars transparent", async () => {
