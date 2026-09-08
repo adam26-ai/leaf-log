@@ -38,6 +38,8 @@ const LIST_SELECT = {
   landingZoneId: true,
   durationS: true,
   maxAltM: true,
+  altGainM: true,
+  straightDistM: true,
   visibility: true,
   status: true,
   localUtcOffsetMinutes: true,

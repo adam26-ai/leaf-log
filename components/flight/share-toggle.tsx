@@ -25,6 +25,7 @@ export function ShareToggle({ flightId, visibility }: { flightId: string; visibi
   const next = FLIGHT_VISIBILITIES[(FLIGHT_VISIBILITIES.indexOf(current) + 1) % FLIGHT_VISIBILITIES.length];
   const title = `${LABELS[current]} (click for ${next})`;
 
+
   function cycle() {
     if (pending) return;
     const previous = current;

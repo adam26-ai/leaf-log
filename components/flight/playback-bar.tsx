@@ -79,7 +79,7 @@ function PlaybackSpeedPicker({
         title="Playback speed"
         aria-label={`Playback speed: ${speed}×`}
         onClick={() => setOpen((current) => !current)}
-        className="flex h-7 min-w-[3.5rem] items-center justify-between gap-1 rounded border border-gray-300 bg-paper px-1.5 font-condensed text-xs font-bold text-ink outline-none hover:border-gray-400 focus:border-amber disabled:opacity-50"
+        className="flex h-7 min-w-[3.5rem] items-center justify-between gap-1 rounded border border-gray-300 bg-paper px-1.5 font-condensed text-xs font-bold text-ink outline-none hover:border-gray-400 focus:border-brand-blue disabled:opacity-50"
       >
         <span>{speed}×</span>
         <ChevronUp className="h-3 w-3" aria-hidden="true" />

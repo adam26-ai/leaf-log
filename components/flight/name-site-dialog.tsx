@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import {
   nameSite,
   suggestLocationsForFlight,
@@ -111,16 +112,18 @@ export function SiteNameControl({
             {content}
           </button>
         </As>
-        {communityOpen && (
-          <LocationCommunityDialog
-            level={zoneId && zonesEnabled ? "zone" : "site"}
-            id={zoneId && zonesEnabled ? zoneId : siteId}
-            name={zoneId && zonesEnabled ? (zoneName ?? "this spot") : (siteName ?? "this site")}
-            endpoint={endpoint}
-            onClose={() => setCommunityOpen(false)}
-            onRenamed={(newName) => (zoneId && zonesEnabled ? setZoneName(newName) : setSiteName(newName))}
-          />
-        )}
+        {communityOpen && typeof document !== "undefined" &&
+          createPortal(
+            <LocationCommunityDialog
+              level={zoneId && zonesEnabled ? "zone" : "site"}
+              id={zoneId && zonesEnabled ? zoneId : siteId}
+              name={zoneId && zonesEnabled ? (zoneName ?? "this spot") : (siteName ?? "this site")}
+              endpoint={endpoint}
+              onClose={() => setCommunityOpen(false)}
+              onRenamed={(newName) => (zoneId && zonesEnabled ? setZoneName(newName) : setSiteName(newName))}
+            />,
+            document.body,
+          )}
       </>
     );
   }
@@ -140,8 +143,8 @@ export function SiteNameControl({
           {content}
         </button>
       </As>
-      {open && (
-        <NameSiteDialog
+      {open && typeof document !== "undefined" &&
+        createPortal(<NameSiteDialog
           flightId={flightId}
           endpoint={endpoint}
           currentSiteName={siteName}
@@ -163,8 +166,7 @@ export function SiteNameControl({
             setZoneName(null); // the site binding survives — falls back to it
             setOpen(false);
           }}
-        />
-      )}
+        />, document.body)}
     </>
   );
 }
@@ -172,6 +174,11 @@ export function SiteNameControl({
 const ENDPOINT_LABEL: Record<SiteEndpoint, string> = {
   takeoff: "takeoff",
   landing: "landing",
+};
+
+const SITE_TYPE_LABEL: Record<SiteEndpoint, string> = {
+  takeoff: "Flying site",
+  landing: "Landing site",
 };
 
 type Step = "site-overview" | "site-edit" | "site" | "zone" | "boundary-picker" | "boundary-editor" | "community";
@@ -401,7 +408,7 @@ function NameSiteDialog({
         setSiteChoiceLabel(trimmed);
         setBoundInfo((prev) => (prev?.site ? { ...prev, site: { ...prev.site, name: trimmed } } : prev));
         onCommunityRenamed(trimmed, "site");
-        setStep("site-overview");
+        onClose();
       } else {
         setError(result.error);
       }
@@ -538,7 +545,7 @@ function NameSiteDialog({
       >
         {step === "site-overview" && (
           <SiteOverviewStep
-            endpointLabel={ENDPOINT_LABEL[endpoint]}
+            siteTypeLabel={SITE_TYPE_LABEL[endpoint]}
             currentSiteName={currentSiteName}
             siteInfo={boundInfo?.site ?? null}
             flightPoint={boundInfo?.flightPoint ?? null}
@@ -550,7 +557,7 @@ function NameSiteDialog({
         )}
         {step === "site-edit" && boundInfo?.site && (
           <SiteEditStep
-            endpointLabel={ENDPOINT_LABEL[endpoint]}
+            siteTypeLabel={SITE_TYPE_LABEL[endpoint]}
             siteId={boundInfo.site.id}
             initialName={boundInfo.site.name}
             radiusM={radiusForKind(endpoint)}
@@ -646,7 +653,7 @@ function NameSiteDialog({
  * an overview of) and lands directly on SiteStep's choose/create flow.
  */
 function SiteOverviewStep({
-  endpointLabel,
+  siteTypeLabel,
   currentSiteName,
   siteInfo,
   flightPoint,
@@ -655,7 +662,7 @@ function SiteOverviewStep({
   onChooseDifferent,
   onClose,
 }: {
-  endpointLabel: string;
+  siteTypeLabel: string;
   currentSiteName: string | null;
   siteInfo: BoundSiteInfo | null;
   flightPoint: { lat: number; lon: number } | null;
@@ -671,7 +678,7 @@ function SiteOverviewStep({
           {siteInfo?.name ?? currentSiteName}
         </h2>
         <p className="text-sm text-gray-500">
-          {endpointLabel} site{siteInfo ? ` · ${siteInfo.visibility === "public" ? "Public" : "Private"}` : ""}
+          {siteTypeLabel}{siteInfo ? ` · ${siteInfo.visibility === "public" ? "Public" : "Private"}` : ""}
         </p>
       </div>
 
@@ -715,7 +722,7 @@ function SiteOverviewStep({
  * fixed after creation.
  */
 function SiteEditStep({
-  endpointLabel,
+  siteTypeLabel,
   siteId,
   initialName,
   radiusM,
@@ -726,7 +733,7 @@ function SiteEditStep({
   onDelete,
   onBack,
 }: {
-  endpointLabel: string;
+  siteTypeLabel: string;
   siteId: string;
   initialName: string;
   radiusM: number;
@@ -797,7 +804,7 @@ function SiteEditStep({
     <>
       <div className="flex flex-col gap-1">
         <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Editing this site</h2>
-        <p className="text-sm text-gray-500">This is your {endpointLabel} site.</p>
+        <p className="text-sm text-gray-500">This is your {siteTypeLabel.toLocaleLowerCase()}.</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -808,7 +815,7 @@ function SiteEditStep({
           onChange={(e) => setNameInput(e.target.value)}
           maxLength={60}
           disabled={pending}
-          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-amber"
+          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-brand-blue"
         />
       </div>
 
@@ -922,7 +929,7 @@ function SiteStep({
                   key={s.id}
                   className={cn(
                     "flex flex-col gap-1.5 rounded-md border px-3 py-2",
-                    isCurrent ? "border-amber bg-amber/10" : "border-gray-200",
+                    isCurrent ? "border-brand-blue bg-brand-blue/10" : "border-gray-200",
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -934,7 +941,7 @@ function SiteStep({
                       </span>
                     </div>
                     {isCurrent ? (
-                      <span className="font-condensed text-sm font-bold tracking-wide text-amber">Current</span>
+                      <span className="font-condensed text-sm font-bold tracking-wide text-brand-blue">Current</span>
                     ) : (
                       <Button
                         type="button"
@@ -976,7 +983,7 @@ function SiteStep({
           placeholder="e.g. Sonoma Ridge"
           maxLength={60}
           disabled={pending}
-          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-amber"
+          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-brand-blue"
         />
 
         <div className="grid grid-cols-2 gap-1 rounded-md bg-gray-100 p-1">
@@ -1157,7 +1164,7 @@ function ZoneStep({
                   key={z.id}
                   className={cn(
                     "flex items-center justify-between gap-3 rounded-md border px-3 py-2",
-                    isCurrent ? "border-amber bg-amber/10" : "border-gray-200",
+                    isCurrent ? "border-brand-blue bg-brand-blue/10" : "border-gray-200",
                   )}
                 >
                   <div className="flex flex-col">
@@ -1168,7 +1175,7 @@ function ZoneStep({
                     </span>
                   </div>
                   {isCurrent ? (
-                    <span className="font-condensed text-sm font-bold tracking-wide text-amber">Current</span>
+                    <span className="font-condensed text-sm font-bold tracking-wide text-brand-blue">Current</span>
                   ) : (
                     <Button
                       type="button"
@@ -1198,7 +1205,7 @@ function ZoneStep({
           placeholder="e.g. North Launch"
           maxLength={60}
           disabled={pending}
-          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-amber"
+          className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-brand-blue"
         />
 
         <div className="grid grid-cols-2 gap-1 rounded-md bg-gray-100 p-1">

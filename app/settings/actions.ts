@@ -30,6 +30,10 @@ export async function updateProfile(
   }
 
   const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
+  const defaultUnits = formData.get("default_units");
+  if (defaultUnits !== "metric" && defaultUnits !== "imperial") {
+    return { error: "Choose Metric or Imperial for default units." };
+  }
 
   // Reject changing the handle to one another pilot already owns (the unique
   // constraint catches the race; this gives a friendlier message first).
@@ -49,6 +53,7 @@ export async function updateProfile(
         displayName: d.displayName,
         bio: bio || null,
         defaultVisibility,
+        defaultUnits,
       },
     });
   } catch (e) {
@@ -58,7 +63,7 @@ export async function updateProfile(
     return { error: "Something went wrong. Please try again." };
   }
 
-  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   revalidatePath(`/@${h.handle}`);
   return { ok: true };
 }

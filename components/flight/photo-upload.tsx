@@ -74,7 +74,9 @@ export function PhotoUpload({
         }}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-center transition-colors",
-          dragging ? "border-amber bg-amber/10" : "border-gray-300 hover:border-amber",
+          dragging
+            ? "border-[var(--replay-accent)] bg-[var(--replay-profile-sky)]/40"
+            : "border-[var(--replay-inactive-border)] hover:border-[var(--replay-accent)]",
           busy && "pointer-events-none opacity-50",
         )}
       >

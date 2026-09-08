@@ -1,7 +1,29 @@
 import Link from "next/link";
-import { Wordmark } from "@/components/brand/wordmark";
+import Image from "next/image";
+import { BookOpen, Rss, Upload, Users } from "lucide-react";
 import { AvatarMenu } from "@/components/avatar-menu";
 import type { Profile } from "@/lib/profile";
+
+const navItems = [
+  { href: "/logbook", label: "Logbook", icon: BookOpen },
+  { href: "/feed", label: "Feed", icon: Rss },
+  { href: "/friends", label: "Friends", icon: Users },
+  { href: "/upload", label: "Upload", icon: Upload },
+];
+
+function NavWordmark() {
+  return (
+    <Image
+      src="/leaf-log-capsule.png"
+      alt="Leaf Log"
+      width={112}
+      height={42}
+      className="block h-[42px] w-[112px] shrink-0"
+      unoptimized
+      loading="eager"
+    />
+  );
+}
 
 /**
  * Top nav. Signed-in pilots get the full nav + avatar menu; a signed-out
@@ -13,7 +35,7 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
     return (
       <header className="border-b border-gray-200 px-6 py-4 sm:px-10">
         <Link href="/">
-          <Wordmark className="text-xl" />
+          <NavWordmark />
         </Link>
       </header>
     );
@@ -23,24 +45,20 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
     <header className="flex items-center justify-between border-b border-gray-200 px-6 py-4 sm:px-10">
       <div className="flex items-center gap-6">
         <Link href="/logbook">
-          <Wordmark className="text-xl" />
+          <NavWordmark />
         </Link>
-        <nav className="hidden gap-4 text-sm text-gray-600 sm:flex">
-          <Link href="/logbook" className="hover:text-ink">
-            Logbook
-          </Link>
-          <Link href="/feed" className="hover:text-ink">
-            Feed
-          </Link>
-          <Link href="/upload" className="hover:text-ink">
-            Upload
-          </Link>
-          <Link href={`/@${profile.handle}`} className="hover:text-ink">
-            Profile
-          </Link>
-          <Link href="/ratings" className="hover:text-ink">
-            Ratings
-          </Link>
+        <nav aria-label="Main navigation" className="hidden items-center gap-2 text-sm sm:flex">
+          {navItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              title={label}
+              className="inline-flex h-[38px] items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] lg:px-4"
+            >
+              <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-[#0099FF]" />
+              <span className="sr-only lg:not-sr-only">{label}</span>
+            </Link>
+          ))}
         </nav>
       </div>
       <AvatarMenu profile={profile} />

@@ -51,7 +51,7 @@ export function FlightDetailsEditor({
                 name="occupancy"
                 value={value}
                 defaultChecked={(details.occupancy ?? "solo") === value}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {OCCUPANCY_LABELS[value]}
             </label>
@@ -71,7 +71,7 @@ export function FlightDetailsEditor({
                 name="flightTypeTags"
                 value={tag}
                 defaultChecked={details.flightTypeTags.includes(tag)}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {FLIGHT_TYPE_TAG_LABELS[tag]} ({tag})
             </label>
@@ -91,7 +91,7 @@ export function FlightDetailsEditor({
                 name="launchTypes"
                 value={tag}
                 defaultChecked={details.launchTypes.includes(tag)}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {LAUNCH_TYPE_LABELS[tag]} ({tag})
             </label>
@@ -108,7 +108,7 @@ export function FlightDetailsEditor({
             type="checkbox"
             name="restrictedLandingField"
             defaultChecked={details.restrictedLandingField}
-            className="h-4 w-4 accent-amber"
+            className="h-4 w-4 accent-brand-blue"
           />
           Restricted Landing Field (RLF)
         </label>

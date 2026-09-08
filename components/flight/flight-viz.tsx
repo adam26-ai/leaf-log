@@ -14,6 +14,7 @@ import {
   Crosshair,
   Scan,
   RefreshCw,
+  ImagePlus,
   type LucideIcon,
 } from "lucide-react";
 import type { TrackArtifact } from "@/lib/igc/track-artifact";
@@ -248,12 +249,14 @@ function BasemapControl({
  */
 export function FlightViz({
   flightId,
+  canAddPhotos = false,
   takeoffMs,
   offsetMin,
   pilotName,
   notes,
 }: {
   flightId: string;
+  canAddPhotos?: boolean;
   takeoffMs: number;
   offsetMin: number;
   /** Shown on the 3D glider marker's pole. */
@@ -304,6 +307,8 @@ export function FlightViz({
   const [active, setActive] = useState(true);
   // The photo whose lightbox is open (controlled so a map pin can open it).
   const [openPhotoId, setOpenPhotoId] = useState<string | null>(null);
+  const [photoDropActive, setPhotoDropActive] = useState(false);
+  const [photoUploadState, setPhotoUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const timeRef = useRef(0);
   const replayRef = useRef<FlightReplay3DHandle>(null);
   // Same Metric/Imperial preference as the key-statistics card, kept live in
@@ -341,6 +346,28 @@ export function FlightViz({
   useEffect(() => {
     loadPhotos();
   }, [loadPhotos]);
+
+  const uploadDroppedPhotos = useCallback(async (allFiles: File[]) => {
+    const files = allFiles.filter(
+      (file) => file.type.startsWith("image/") || /\.(jpe?g|png|heic|heif)$/i.test(file.name),
+    );
+    if (!canAddPhotos || files.length === 0) return;
+    setPhotoUploadState("uploading");
+    try {
+      const form = new FormData();
+      for (const file of files) form.append("files", file);
+      const response = await fetch(`/api/flights/${flightId}/photos`, {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) throw new Error("Photo upload failed");
+      loadPhotos();
+      setPhotoUploadState("idle");
+    } catch {
+      setPhotoUploadState("error");
+      window.setTimeout(() => setPhotoUploadState("idle"), 3000);
+    }
+  }, [canAddPhotos, flightId, loadPhotos]);
 
   useEffect(() => {
     try {
@@ -539,7 +566,31 @@ export function FlightViz({
             page's centered max-w column rather than following the same
             margins as the key-statistics card above it. */}
         <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
-          <div className="relative">
+          <div
+            className="relative"
+            onDragEnter={(event) => {
+              if (!canAddPhotos || !event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              setPhotoDropActive(true);
+            }}
+            onDragOver={(event) => {
+              if (!canAddPhotos || !event.dataTransfer.types.includes("Files")) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setPhotoDropActive(true);
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setPhotoDropActive(false);
+              }
+            }}
+            onDrop={(event) => {
+              if (!canAddPhotos) return;
+              event.preventDefault();
+              setPhotoDropActive(false);
+              void uploadDroppedPhotos(Array.from(event.dataTransfer.files));
+            }}
+          >
             <FlightReplay3D
               ref={replayRef}
               flightId={flightId}
@@ -554,10 +605,10 @@ export function FlightViz({
               photos={photos}
               pilotName={pilotName}
               onManualCameraChange={() => selectCameraMode("fixed")}
-              onPhotoHover={scrubTo}
+              onPhotoHover={playing ? undefined : scrubTo}
               onPhotoOpen={(id, t) => {
                 setOpenPhotoId(id);
-                if (t != null) scrubTo(t);
+                if (!playing && t != null) scrubTo(t);
               }}
               onTerrainProfile={setTerrainProfile}
             />
@@ -600,6 +651,18 @@ export function FlightViz({
                 onTrackDisplay={selectTrackDisplay}
               />
             </div>
+            {(photoDropActive || photoUploadState !== "idle") && (
+              <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-lg bg-ink/45 backdrop-blur-[1px]">
+                <div className="flex items-center gap-2 rounded-lg border border-white/40 bg-ink/85 px-4 py-3 font-condensed font-bold text-white shadow-lg">
+                  <ImagePlus className="h-5 w-5 text-[var(--replay-accent)]" />
+                  {photoUploadState === "uploading"
+                    ? "Adding photos…"
+                    : photoUploadState === "error"
+                      ? "Photos could not be added"
+                      : "Drop photos to add them to this flight"}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

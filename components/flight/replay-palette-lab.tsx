@@ -240,7 +240,7 @@ export function ReplayPaletteLab({
   basemap: BasemapId;
   onBasemap: (id: BasemapId) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [presetId, setPresetId] = useState("orange");
   const [colors, setColors] = useState<ReplayPalette>(PRESETS[0].colors);
   const [sizes, setSizes] = useState<ReplaySizes>(DEFAULT_SIZES);

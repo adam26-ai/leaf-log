@@ -1324,7 +1324,13 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         const off = rawGround - s0[2];
         if (Math.abs(off) <= 400) offsetRef.current = off; // sanity clamp
         anchoredRef.current = true;
+        // The first shadow is added before the DEM tiles are queryable. Recreate
+        // its source once terrain is ready so MapLibre drapes it onto the ground
+        // immediately, without waiting for playback or a basemap change.
+        removeShadow(map);
+        syncShadow();
         renderLayers(timeRef.current);
+        map.triggerRepaint();
       };
       const publishTerrainProfile = () => {
         if (terrainProfilePublishedRef.current || !dataRef.current) return;

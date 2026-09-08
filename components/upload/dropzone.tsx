@@ -71,8 +71,8 @@ export function Dropzone() {
         className={cn(
           "flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed px-6 py-16 text-center transition-colors",
           dragging
-            ? "border-amber bg-amber/5"
-            : "border-gray-300 hover:border-amber hover:bg-gray-50",
+            ? "border-brand-blue bg-brand-blue/5"
+            : "border-gray-300 hover:border-brand-blue hover:bg-gray-50",
         )}
       >
         <p className="font-condensed text-2xl font-bold text-ink">
@@ -104,7 +104,7 @@ export function Dropzone() {
               ) : r.deduped ? (
                 <span className="text-gray-500">Already uploaded</span>
               ) : r.status === "failed" ? (
-                <span className="text-amber-strong">Couldn&apos;t read flight</span>
+                <span className="text-brand-blue-strong">Couldn&apos;t read flight</span>
               ) : (
                 <a href={`/flights/${r.flightId}`} className="text-leaf-strong">
                   View flight →

@@ -22,9 +22,9 @@ export default async function SettingsPage() {
 
         <div className="flex flex-col gap-6">
           <Link href="/settings/devices" className="group block">
-            <Card className="p-6 transition-colors group-hover:border-amber">
+            <Card className="p-6 transition-colors group-hover:border-brand-blue">
               <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-amber/20 text-ink">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-blue/20 text-ink">
                   <Plug className="h-5 w-5" />
                 </div>
                 <div>
@@ -55,6 +55,7 @@ export default async function SettingsPage() {
               displayName={profile.displayName}
               bio={profile.bio ?? ""}
               defaultVisibility={profile.defaultVisibility}
+              defaultUnits={profile.defaultUnits}
             />
           </Card>
         </div>

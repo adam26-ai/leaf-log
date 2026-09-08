@@ -36,7 +36,7 @@ export function AvatarMenu({ profile }: { profile: Profile }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
-        className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber focus-visible:ring-offset-2"
+        className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
       >
         <Avatar
           handle={profile.handle}

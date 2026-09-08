@@ -122,6 +122,7 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         failureReason: metrics ? null : "No usable GPS fixes in file",
         flightDate: flightDateMs ? isoDate(flightDateMs) : null,
         glider: parsed.headers.glider,
+        pilot: parsed.headers.pilot,
         recorder: parsed.headers.recorder,
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
         landingAt: metrics ? new Date(metrics.landingAtMs) : null,

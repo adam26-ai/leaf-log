@@ -32,11 +32,13 @@ export function SettingsForm({
   displayName,
   bio,
   defaultVisibility,
+  defaultUnits,
 }: {
   handle: string;
   displayName: string;
   bio: string;
   defaultVisibility: string;
+  defaultUnits: string;
 }) {
   const [state, formAction, pending] = useActionState(updateProfile, initial);
   const normalizedDefaultVisibility = normalizeVisibility(defaultVisibility);
@@ -47,7 +49,7 @@ export function SettingsForm({
         <span className="font-condensed text-sm font-bold tracking-wide text-ink">
           Handle
         </span>
-        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-amber focus-within:ring-2 focus-within:ring-amber/40">
+        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/40">
           <span className="pl-3 font-mono text-gray-500">@</span>
           <input
             name="handle"
@@ -71,7 +73,7 @@ export function SettingsForm({
           required
           defaultValue={displayName}
           maxLength={60}
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
       </label>
 
@@ -85,8 +87,18 @@ export function SettingsForm({
           maxLength={280}
           rows={3}
           placeholder="A line about your flying — wings, home site, anything."
-          className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="font-condensed text-sm font-bold tracking-wide text-ink">Default units</span>
+        <select name="default_units" defaultValue={defaultUnits}
+          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40">
+          <option value="metric">Metric (m, km/h, m/s)</option>
+          <option value="imperial">Imperial (ft, mph, ft/min)</option>
+        </select>
+        <span className="text-xs text-gray-500">Flight views start with these units on every device. You can still switch units while viewing a flight.</span>
       </label>
 
       <fieldset className="flex flex-col gap-2">
@@ -100,14 +112,14 @@ export function SettingsForm({
           {FLIGHT_VISIBILITIES.map((value) => (
             <label
               key={value}
-              className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-amber has-[:checked]:border-amber has-[:checked]:bg-amber/5"
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5"
             >
               <input
                 type="radio"
                 name="default_visibility"
                 value={value}
                 defaultChecked={normalizedDefaultVisibility === value}
-                className="mt-0.5 accent-amber"
+                className="mt-0.5 accent-brand-blue"
               />
               <span className="flex flex-col">
                 <span className="font-condensed text-sm font-bold text-ink">

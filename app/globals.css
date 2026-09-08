@@ -1,16 +1,19 @@
 @import "tailwindcss";
+/* Explicit sources keep utility generation reliable in local checkouts. */
+@source "./";
+@source "../components";
 
 /*
   Leaf Log design tokens — see DESIGN.md ("same DNA as leafvario.com, warmer room").
-  Anchors: monochrome base, signature amber #ffb459 accent, Roboto / Roboto Condensed.
+  Anchors: monochrome base, signature brand-blue #0099ff accent, Roboto / Roboto Condensed.
 */
 @theme {
   /* Brand palette */
   --color-ink: #000000;        /* primary text / strong structure */
   --color-ink-soft: #272727;   /* near-black secondary surfaces */
   --color-paper: #ffffff;      /* background */
-  --color-amber: #ffb459;      /* signature accent — accent bar, CTAs, highlights */
-  --color-amber-strong: #f59e2c;
+  --color-brand-blue: #0099ff;      /* signature accent — accent bar, CTAs, highlights */
+  --color-brand-blue-strong: #007dcc;
   --color-leaf: #6fae5e;       /* provisional secondary — success / milestones (DESIGN.md) */
   --color-leaf-strong: #558a47;
 

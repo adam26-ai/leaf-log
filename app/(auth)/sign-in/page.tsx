@@ -49,7 +49,7 @@ export default async function SignInPage({
               required
               autoFocus
               placeholder="you@example.com"
-              className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+              className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
             />
             <Button type="submit" size="lg">
               Send magic link

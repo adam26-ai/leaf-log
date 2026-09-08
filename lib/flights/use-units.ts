@@ -1,42 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext } from "react";
 import type { UnitSystem } from "./format";
 
-const STORAGE_KEY = "leaf-units";
-const CHANGE_EVENT = "leaf-units-change";
+export const UnitsContext = createContext<[UnitSystem, (next: UnitSystem) => void]>(["metric", () => {}]);
 
-function readStored(): UnitSystem {
-  if (typeof window === "undefined") return "metric";
-  return localStorage.getItem(STORAGE_KEY) === "imperial" ? "imperial" : "metric";
-}
-
-/**
- * Shared Metric/Imperial preference, persisted to localStorage and kept live
- * across every mounted instance on the page (the key-statistics card and the
- * 3D replay's instrument readout are separate client components) via a
- * same-tab custom event — the `storage` event only fires in OTHER tabs.
- */
+/** Account default initializes the shared temporary viewing preference. */
 export function useUnits(): [UnitSystem, (next: UnitSystem) => void] {
-  const [units, setUnits] = useState<UnitSystem>(readStored);
-
-  useEffect(() => {
-    function onChange() {
-      setUnits(readStored());
-    }
-    window.addEventListener(CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(CHANGE_EVENT, onChange);
-  }, []);
-
-  function changeUnits(next: UnitSystem) {
-    setUnits(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      /* ignore */
-    }
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  }
-
-  return [units, changeUnits];
+  return useContext(UnitsContext);
 }

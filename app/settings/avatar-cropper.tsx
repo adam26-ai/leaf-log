@@ -171,7 +171,7 @@ export function AvatarCropper({
             value={zoom}
             onChange={(e) => applyZoom(Number(e.target.value))}
             aria-label="Zoom"
-            className="h-1 flex-1 accent-amber"
+            className="h-1 flex-1 accent-brand-blue"
           />
         </div>
         <p className="text-xs text-gray-500">Drag to reposition · scroll or use the slider to zoom.</p>

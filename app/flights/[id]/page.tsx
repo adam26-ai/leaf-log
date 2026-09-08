@@ -123,10 +123,11 @@ export default async function FlightPage({
               <FlightViz
                 key={flight.id}
                 flightId={flight.id}
+                canAddPhotos={isOwner}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}
-                pilotName={owner?.displayName}
-                notes={isOwner ? flight.notes : null}
+                pilotName={flight.pilot || owner?.displayName}
+                notes={flight.notes}
               />
             </div>
           </>
@@ -144,7 +145,7 @@ export default async function FlightPage({
         )}
 
         {isOwner && warnings.length > 0 && (
-          <Card className="mt-8 border-amber/40 bg-amber/5">
+          <Card className="mt-8 border-brand-blue/40 bg-brand-blue/5">
             <CardBody className="flex flex-col gap-1">
               <p className="font-condensed text-sm font-bold tracking-wide text-ink">
                 A few notes about this file
