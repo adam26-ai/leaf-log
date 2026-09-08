@@ -80,6 +80,10 @@ const LIST_SELECT = {
   id: true,
   source: true,
   xcStatus: true,
+  xcError: true,
+  xcQueuedAt: true,
+  metricsVersion: true,
+  launchAltM: true,
   flightDate: true,
   takeoffAt: true,
   takeoffSiteName: true,
@@ -105,7 +109,8 @@ const LIST_SELECT = {
   restrictedLandingField: true,
 } as const;
 
-export type FlightListItem = Pick<Flight, keyof typeof LIST_SELECT>;
+type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM";
+export type FlightListItem = Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
 
 const FEED_SELECT = {
   ...LIST_SELECT,

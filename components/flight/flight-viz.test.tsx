@@ -20,6 +20,12 @@ function view() {
   const flight = group.selected as unknown as LoadedReplayFlight;
   render(<FlightViz flightId={flight.id} primaryPilot={flight.owner} viewerId="self" takeoffMs={100000} offsetMin={0} />);
 }
+it("shows only the friends refresh pill when no companions are detected", () => {
+  view();
+  expect(screen.queryByLabelText("Pilots in this replay")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh friends" }));
+  expect(group.discover).toHaveBeenCalledOnce();
+});
 it("toggles the scored route without seeking or changing pilot", () => {
   view();
   expect(screen.getByTestId("replay")).toHaveAttribute("data-xc", "true");

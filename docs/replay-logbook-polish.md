@@ -10,10 +10,12 @@ Implemented on `codex/friends-flight-replay`, September 8, 2026.
 - Basemap flyouts retain focus during pointer movement, and each style replacement reinstalls terrain and overlays after `style.load`. Switching away cancels stale callbacks.
 - Overview framing stops tracking synchronously before fitting the route, so subsequent playback frames cannot interrupt the animation.
 - Follow and chase position the pilot using altitude within that flight's min/max range. The highest point leaves clearance for the entire badge below the instruments; the lowest anchor is 12% above the map bottom.
-- Orbit takes 60 seconds per revolution. Chase requires 500 m net displacement within the previous 120 seconds and does not bridge recorder gaps. It holds its direction in small thermal circles and eases changes with a two-second time constant, capped at 12 degrees per second.
+- Orbit takes 60 seconds per revolution. Chase recognizes nearly straight travel over 12 seconds (at least 60 m, with net displacement at least 97% of travelled distance), backed by a 300 m / 60-second course window. It does not bridge recorder gaps. Small thermal circles hold the heading; heading changes ease with a one-second time constant, capped at 24 degrees per second.
+- Playback camera position, elevation, and altitude-dependent framing follow a critically damped spring in all tracking modes. It retains velocity for gradual acceleration, runs on wall-clock animation frames, and increases its catch-up rate as screen-space drift grows. Pause allows it to settle; explicit centering, scrubbing while paused, pilot selection, and manual navigation remain immediate. Fixed/overview mode stops the spring.
 - Manual chase rotation stores a bearing offset. Selecting Chase again resets the offset.
 - GPS speed averages travelled distance over a centered ten-second window, weighted by time and excluding recorder gaps. Turning flight is measured along its path, not as a chord.
 - Units move to the flight actions row. Settings use “Draw flight during playback” and “Always show full route.”
+- Replays without companion pilots use a compact friends/refresh pill; discovering a companion expands the full pilot card.
 
 ## Narrow screens
 
@@ -27,8 +29,9 @@ Implemented on `codex/friends-flight-replay`, September 8, 2026.
 - Personal all-time gold, silver, and bronze ranks cover duration, maximum MSL altitude, gain from launch, and each of the three XC route categories. Filters do not recalculate ranks.
 - Ties share a medal and skip subsequent places (two golds followed by bronze). Missing, nonfinite, or failed-flight metrics do not receive awards. Approximate XC scores are labeled “best found.”
 - Gain from launch is maximum altitude minus the first recorded altitude, separate from cumulative climb. An owner-scoped query reads just the first altitude from stored artifacts; no schema change is required.
-- One trophy shows its medal and category icon. Multiple trophies show a white trophy with a plus. Hover or keyboard focus exposes the details.
+- One trophy shows its medal and category icon. Multiple trophies show the highest-earned medal with a plus. Hover or keyboard focus exposes a “Personal Bests” panel with medal/category icons, record labels, and right-aligned values.
 - Site, wing, and trophy filters intersect. Site/wing filters can be enabled independently; dropdowns support All/None. Site options include flight counts and “Unknown site”; wings include airtime. Summary statistics reflect ready flights in the filtered list.
+- Only one filter dropdown opens at a time. Outside pointer/touch interaction, focus moving outside, and Escape dismiss it; selecting checkboxes or All/None inside keeps it open.
 
 ## Validation
 

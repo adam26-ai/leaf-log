@@ -15,7 +15,7 @@ import type { FlightListItem } from "@/lib/flights/repo";
 import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 import { useUnits } from "@/lib/flights/use-units";
-import { CalculateXcButton } from "@/components/flight/calculate-xc-button";
+import { AnalysisStatus } from "@/components/flight/analysis-status";
 
 interface FlightRowOwner {
   handle: string;
@@ -66,18 +66,28 @@ export function FlightRow({
     const blue = `rgb(0 153 255 / ${blueAlpha})`;
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
+    const landing = formatLocationLabel(flight.landingSiteName, flight.landingZoneName);
+    const showLanding = landing && (flight.landingSiteId !== flight.takeoffSiteId
+      || flight.landingZoneId !== flight.takeoffZoneId || landing !== site);
     return (
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
-        className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-gray-200 px-2 py-2 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[6rem_minmax(0,1fr)_auto_1.5rem_1.5rem] sm:grid-cols-[10rem_minmax(6rem,1fr)_4rem_3.5rem_4.5rem_2rem] sm:gap-3 sm:px-4 sm:text-sm">
-        <span className="min-w-0 text-gray-600"><span className="block text-[10px] sm:text-xs">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span><span className="block whitespace-nowrap text-[10px] tabular-nums sm:text-xs">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
-        <span title={site} className="min-w-0 truncate font-condensed text-sm font-bold text-ink sm:text-base">{site}{flight.xcStatus === "queued" && <span className="block text-[10px] font-normal text-gray-500">XC: Calculating…</span>}</span>
-        <span title="Maximum altitude" className="hidden whitespace-nowrap tabular-nums text-gray-700 sm:block">{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
-        <span className="flex justify-end">{trophies && <TrophyPill trophies={trophies} />}</span>
-        <span title={visibility.label} aria-label={visibility.label} className={`hidden h-6 items-center justify-center rounded-full min-[400px]:inline-flex sm:border sm:px-2 ${visibility.className}`}><VisibilityIcon className="h-3.5 w-3.5 sm:hidden" /><span className="hidden sm:inline">{visibility.label}</span></span>
-        <span className="hidden min-[400px]:block"><UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} /></span>
+        className="grid h-[45px] grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[8rem_minmax(0,1fr)_auto_auto] sm:h-auto sm:grid-cols-[9rem_minmax(0,1fr)_minmax(9rem,0.8fr)_auto] sm:gap-3 sm:px-4 sm:py-1 sm:text-sm">
+        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
+        <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+          <span className="block max-w-full truncate font-condensed text-base font-bold leading-4 text-ink">{site}</span>
+          {showLanding && <span title={`Landing: ${landing}`} className="block max-w-full truncate text-xs leading-4 text-gray-600">→ {landing}</span>}
+        </span>
+        <span className="flex min-w-0 items-center gap-3 sm:pr-4">
+          <span title="Maximum altitude" className="hidden w-16 shrink-0 whitespace-nowrap tabular-nums text-gray-700 sm:block">{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
+          {trophies && <TrophyPill trophies={trophies} />}
+        </span>
+        <span className="hidden items-center gap-1 min-[400px]:flex sm:gap-3">
+          <span title={visibility.label} aria-label={visibility.label} className={`inline-flex h-6 w-6 items-center justify-center rounded-full sm:w-[4.5rem] sm:border sm:px-2 ${visibility.className}`}><VisibilityIcon className="h-3.5 w-3.5 sm:hidden" /><span className="hidden sm:inline">{visibility.label}</span></span>
+          <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
+        </span>
       </Link>
-      {trophies !== undefined && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus) && <div className="mt-1 flex justify-end text-xs"><CalculateXcButton flightId={flight.id} /></div>}
+      {trophies !== undefined && <div className="mt-1 flex justify-end empty:hidden"><AnalysisStatus flight={flight} owner compact /></div>}
       </div>
     );
   }

@@ -71,7 +71,6 @@ export default async function FlightPage({
           <FlightHeader
             flight={flight}
             isOwner={isOwner}
-            pilotLabel={owner?.displayName ?? flight.pilot ?? "Pilot"}
             previousFlightId={previousFlightId}
             nextFlightId={nextFlightId}
             actions={
@@ -119,7 +118,7 @@ export default async function FlightPage({
           </Card>
         ) : (
           <>
-            <div className="relative left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+            <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
             <div className="mt-2">

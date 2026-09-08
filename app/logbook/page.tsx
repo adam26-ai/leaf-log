@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/profile";
-import { listOwnFlights, ownLaunchAltitudes } from "@/lib/flights/repo";
+import { listOwnFlights } from "@/lib/flights/repo";
+import { analysisPending } from "@/lib/flights/analysis-state";
+import { AnalysisNotice } from "@/components/logbook/analysis-notice";
 import { countFriends } from "@/lib/social/friends";
 import { AppHeader } from "@/components/app-header";
 import { Avatar } from "@/components/avatar";
@@ -12,17 +14,18 @@ import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
-  const [flights, friendCount, launches] = await Promise.all([
+  const [flights, friendCount] = await Promise.all([
     listOwnFlights(profile.id),
     countFriends(profile.id),
-    ownLaunchAltitudes(profile.id),
   ]);
-  const trophies = flightTrophies(flights.map(f => ({ ...f, launchAltM: launches[f.id] })));
+  const trophies = flightTrophies(flights);
+  // eslint-disable-next-line react-hooks/purity -- This authenticated server page samples queue age once per request.
+  const renderedAt = Date.now();
 
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
-      <XcPendingRefresh pending={flights.some(f => f.xcStatus === "queued")} />
+      <XcPendingRefresh pending={flights.some(f => analysisPending(f.xcStatus))} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-2 py-6 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <Avatar
@@ -63,7 +66,7 @@ export default async function LogbookPage() {
             </CardBody>
           </Card>
         ) : (
-          <LogbookList flights={flights} trophies={trophies} />
+          <><AnalysisNotice flights={flights} now={renderedAt} /><LogbookList flights={flights} trophies={trophies} /></>
 
         )}
       </main>

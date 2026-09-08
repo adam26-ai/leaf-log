@@ -1,5 +1,5 @@
 "use client";
-import { Eye, EyeOff, PlaneTakeoff, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, PlaneTakeoff, RefreshCw, Users } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import type { useGroupReplay } from "./use-group-replay";
 import type { ReplayPilot } from "@/lib/flights/group-replay";
@@ -13,6 +13,16 @@ export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onTogg
   onTakeoff: (pilot: ReplayPilot) => void;
   offsetMin: number;
 }) {
+  if (!group.pilots.some((pilot) => pilot.id !== primaryOwnerId)) {
+    return viewerId ? <button type="button" aria-label="Refresh friends" disabled={group.discovering}
+      title={group.discoveryError ? "Could not find friends' flights. Try again." : "Find nearby friends' flights"}
+      onClick={() => void group.discover()}
+      className="absolute right-2 top-[95px] z-20 inline-flex h-9 items-center gap-2 rounded-full px-3 text-[var(--replay-group-card-text)] shadow-md hover:bg-[var(--replay-group-card-hover)] disabled:opacity-60 sm:top-3"
+      style={{ background: "color-mix(in srgb, var(--replay-group-card-bg) calc(var(--replay-group-card-alpha) * 100%), transparent)" }}>
+      <Users className="h-4 w-4" /><RefreshCw className={`h-3.5 w-3.5 ${group.discovering ? "animate-spin" : ""}`} />
+      <span role="status" className="sr-only">{group.discoveryError ? "Could not refresh friends" : group.discovering ? "Finding nearby flights" : ""}</span>
+    </button> : null;
+  }
   return <div className="absolute right-2 top-[95px] z-20 flex max-h-[calc(100%-145px)] w-[150px] flex-col gap-2 overflow-y-auto rounded-lg p-2 text-[var(--replay-group-card-text)] shadow-md sm:top-3 sm:max-h-[calc(100%-70px)]" style={{ background: "color-mix(in srgb, var(--replay-group-card-bg) calc(var(--replay-group-card-alpha) * 100%), transparent)" }} aria-label="Pilots in this replay">
     {group.pilots.map((pilot) => {
       const shown = group.isVisible(pilot.id), selected = group.selected?.owner.id === pilot.id;

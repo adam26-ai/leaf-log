@@ -638,7 +638,7 @@ export function FlightViz({
                 if (changingSelection) setCameraMode("follow");
               }} />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
-            <div className="pointer-events-none absolute left-12 right-2 top-3 flex flex-col items-center gap-1 px-2 sm:right-[165px]">
+            <div className={cn("pointer-events-none absolute left-12 right-2 top-3 flex flex-col items-center gap-1 px-2", group.pilots.some((pilot) => pilot.id !== primaryPilot.id) ? "sm:right-[165px]" : "sm:right-20")}>
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
@@ -715,11 +715,6 @@ export function FlightViz({
           />
         </div>
 
-        <div className="flex justify-center gap-4 text-xs">
-          <button type="button" onClick={() => applyTime(startS)} className="underline">Group start</button>
-          <button type="button" onClick={() => { selectPilot(primaryPilot, flightId); applyTime(0); }} className="underline">Primary takeoff</button>
-          <span>{new Date(takeoffMs + time * 1000 + offsetMin * 60_000).toISOString().slice(0, 10)} · UTC{offsetMin < 0 ? "−" : "+"}{Math.abs(offsetMin / 60)}</span>
-        </div>
         {/* Same 80vw treatment and padding as the timeline above it. */}
         <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <Card className="px-4 py-2">

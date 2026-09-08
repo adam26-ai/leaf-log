@@ -20,3 +20,13 @@ it("uses the longest valid XC candidate in each category", () => {
   expect(result.xc.find(t => t.category === "open")?.value).toBe(10000);
   expect(result.xc.find(t => t.category === "fai-triangle")?.approximate).toBe(true);
 });
+it("excludes stale measurements and marks XC awards provisional across the whole logbook", () => {
+  const open = { shape: "open", distanceM: 10000, optimal: true };
+  const result = flightTrophies([
+    { ...flight("stale", 9000), metricsVersion: 0, xcStatus: "unscored" },
+    { ...flight("scored", 100), xcStatus: "ready", xcScore: { version: 1, best: open, candidates: [open] } },
+  ]);
+  expect(result.stale).toBeUndefined();
+  expect(result.scored.find(t => t.category === "open")?.provisional).toBe(true);
+  expect(result.scored.find(t => t.category === "duration")?.provisional).toBeUndefined();
+});

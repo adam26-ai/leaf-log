@@ -8,6 +8,7 @@ import { findLocation } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
+import { altitudeMeasurements } from "@/lib/igc/repair-flight";
 
 export const PARSER_VERSION = "2";
 
@@ -128,7 +129,7 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
         landingAt: metrics ? new Date(metrics.landingAtMs) : null,
         durationS: metrics?.durationS ?? null,
-        maxAltM: metrics?.maxAltM ?? null,
+        ...altitudeMeasurements(parsed, metrics),
         altGainM: metrics?.altGainM ?? null,
         maxClimbMs: metrics?.maxClimbMs ?? null,
         maxSinkMs: metrics?.maxSinkMs ?? null,

@@ -6,7 +6,6 @@ import {
   ArrowUp,
   ArrowUpRight,
   ArrowDownRight,
-  TriangleRight,
   Waypoints,
   Triangle,
   type LucideIcon,
@@ -14,15 +13,14 @@ import {
 import {
   formatDuration,
   formatAltitude,
-  formatDistance,
   formatVario,
 } from "@/lib/flights/format";
 import { useUnits } from "@/lib/flights/use-units";
 import type { Flight } from "@prisma/client";
-import { seekReplayToMetric, toggleReplayXcRoute, type ReplayMetric } from "@/lib/flights/replay-events";
-import { readXcScore } from "@/lib/igc/xc-types";
+import { seekReplayToMetric, type ReplayMetric } from "@/lib/flights/replay-events";
 import { XcPendingRefresh } from "./xc-pending-refresh";
-import { CalculateXcButton } from "./calculate-xc-button";
+import { XcStatistic } from "./xc-statistic";
+import { analysisPending } from "@/lib/flights/analysis-state";
 
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
   const content = (
@@ -58,13 +56,10 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */
 export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flight; canCalculateXc?: boolean }) {
   const [units] = useUnits();
-  const xc = readXcScore(flight.xcScore);
-  const xcIcon = xc?.best.shape === "fai-triangle" ? Triangle : xc?.best.shape === "free-triangle" ? TriangleRight : Waypoints;
-  const xcLabel = xc ? `${xc.approximate ? "≈ " : ""}${xc.best.name}` : "XC distance";
   const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
     ["Wing", Triangle, flight.glider ?? "—"],
     ["Airtime", Clock, formatDuration(flight.durationS)],
-    [xcLabel, xcIcon, flight.xcStatus === "queued" ? "Calculating…" : formatDistance(xc?.best.distanceM ?? null, units)],
+    ["XC distance", Waypoints, ""],
     ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units), "max-altitude"],
     ["Height gained", ArrowUp, formatAltitude(flight.altGainM, units)],
     ["Best climb", ArrowUpRight, formatVario(flight.maxClimbMs, units), "best-climb"],
@@ -73,17 +68,10 @@ export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flig
 
   return (
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-7">
-        <XcPendingRefresh pending={flight.xcStatus === "queued"} />
+        <XcPendingRefresh pending={analysisPending(flight.xcStatus)} />
         {statistics.map(([label, Icon, value, seek]) => (
-          label === xcLabel && canCalculateXc && flight.status === "ready" && ["unscored", "failed"].includes(flight.xcStatus)
-          ? <div key={label} className="self-center px-2"><CalculateXcButton flightId={flight.id} /></div> :
-          <Stat key={label} label={label} icon={Icon} value={value} seek={seek}
-            onClick={label === xcLabel && xc ? toggleReplayXcRoute : undefined}
-            description={label === xcLabel ? xc
-              ? `${xc.best.name}: ${formatDistance(xc.best.distanceM, units)} credited distance, ${xc.best.points.toFixed(2)} XContest points.${xc.approximate ? " Best found within the search time limit; a longer search may improve it." : " Optimal route found."} Click to show or hide the scored route.`
-              : flight.xcStatus === "queued" ? "XC scoring is queued or calculating. You can replay the flight now."
-              : "XC distance is unavailable. Reprocess this flight to calculate it."
-              : undefined} />
+          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} /> :
+          <Stat key={label} label={label} icon={Icon} value={value} seek={seek} />
         ))}
     </div>
   );

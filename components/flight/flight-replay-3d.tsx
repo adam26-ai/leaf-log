@@ -10,7 +10,8 @@ import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
 import { Card } from "@/components/ui/card";
 import { locateSample, type Sample } from "@/lib/igc/interpolate";
-import { altitudeAnchorY, chaseCourse } from "@/lib/flights/replay-camera";
+import { altitudeAnchorY, cameraSpring, chaseCourse, trackingFrequency } from "@/lib/flights/replay-camera";
+import { haversineM } from "@/lib/geo/distance";
 import { formatAltitude, type UnitSystem } from "@/lib/flights/format";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import type { XcCandidate } from "@/lib/igc/xc-types";
@@ -337,6 +338,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const chasePitchRef = useRef(CHASE_PITCH);
   const chaseOffsetRef = useRef(0);
   const chaseClockRef = useRef(0);
+  const trackingTargetRef = useRef<{ values: number[]; chase: boolean; bearing?: number } | null>(null);
+  const trackingMotionRef = useRef<{ values: number[]; velocities: number[] } | null>(null);
   const orbitStateRef = useRef<{
     bearing: number;
     timestamp: number;
@@ -576,25 +579,28 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // travel toward the top and the camera BEHIND it, looking forward.
     if (heading == null) {
       // Thermalling / no stable heading — hold the last bearing (don't spin).
-      return chaseBearingRef.current ?? normalizeBearing(map.getBearing());
+      chaseClockRef.current = performance.now();
+      chaseBearingRef.current ??= normalizeBearing(map.getBearing() - chaseOffsetRef.current);
+      return chaseBearingRef.current;
     }
     // On entering chase (ref cleared) snap straight behind; otherwise ease so
     // turns are smooth, not jerky.
     if (chaseBearingRef.current == null) {
       chaseBearingRef.current = heading;
+      chaseClockRef.current = performance.now();
       return heading;
     }
     const now = performance.now();
     const dt = Math.min(0.25, Math.max(0, (now - chaseClockRef.current) / 1000));
     chaseClockRef.current = now;
     const delta = angularDelta(chaseBearingRef.current, heading);
-    const next = normalizeBearing(chaseBearingRef.current + Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-dt / 2)), dt * 12));
+    const next = normalizeBearing(chaseBearingRef.current + Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-dt)), dt * 24));
     chaseBearingRef.current = next;
     return next;
   }
 
-  // Follow/chase camera: make the glider marker itself the camera's look-at
-  // point, so distance (zoom) stays constant as it flies. Uses the SAME
+  // Controls centre immediately; playback feeds a spring toward the glider's
+  // look-at point while preserving the user's zoom. Uses the SAME
   // ground-clamped anchor height the marker itself renders at (markerAnchorZ)
   // — looking at the raw flight altitude while the marker renders higher (or
   // vice versa) can separate the two enough that the marker falls outside
@@ -607,15 +613,23 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     chase = false,
     orbitBearing?: number,
     zoom?: number,
+    smooth = false,
   ) {
     const map = mapRef.current;
     if (!map || !dataRef.current) return;
     if (map.getCenterClampedToGround()) map.setCenterClampedToGround(false);
     const p = positionAt(t);
+    const padding = trackingPadding(p[2]);
+    if (smooth) {
+      trackingTargetRef.current = { values: [p[0], p[1], markerAnchorZ(p), padding.top, padding.bottom], chase, bearing: orbitBearing };
+      return;
+    }
+    trackingTargetRef.current = null;
+    trackingMotionRef.current = null;
     map.jumpTo({
       center: [p[0], p[1]],
       elevation: markerAnchorZ(p),
-      padding: trackingPadding(p[2]),
+      padding,
       ...(zoom != null ? { zoom } : {}),
       ...(chase
         ? { bearing: easedChaseBearing(t) + chaseOffsetRef.current, pitch: chasePitchRef.current }
@@ -658,6 +672,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const map = mapRef.current;
     const d = dataRef.current;
     if (!map || !d) return;
+    trackingTargetRef.current = null;
+    trackingMotionRef.current = null;
     // Stop follow/orbit synchronously; the next replay frame must not cancel
     // fitBounds (especially on slower machines).
     if (duration > 0) {
@@ -1204,6 +1220,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     bearing: number,
     pitch: number,
   ) {
+    trackingTargetRef.current = null;
+    trackingMotionRef.current = null;
     if (cameraModeRef.current === "fixed" || !dataRef.current) {
       map.jumpTo({ bearing, pitch });
       return;
@@ -1757,7 +1775,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           mapRef.current.getPitch(),
         );
       } else if (!cameraTrackingSuspended()) {
-        centerOnGlider(time, cameraMode === "chase");
+        centerOnGlider(time, cameraMode === "chase", cameraMode === "orbit" ? orbitStateRef.current?.bearing : undefined, undefined, playing);
       }
     }
     suppressFollowRef.current = false;
@@ -1765,6 +1783,62 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     renderLayers(time);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time, cameraMode]);
+
+  // Playback supplies targets; this independent wall-clock loop keeps camera
+  // motion continuous between replay updates and settles gently after Pause.
+  useEffect(() => {
+    if (!hasData) return;
+    let frame = 0;
+    let previous = performance.now();
+    const track = (now: number) => {
+      frame = requestAnimationFrame(track);
+      const dt = Math.min(0.1, Math.max(0, (now - previous) / 1000));
+      previous = now;
+      const map = mapRef.current;
+      const target = trackingTargetRef.current;
+      if (!map || !target) return;
+      if (cameraModeRef.current === "fixed" || cameraTrackingSuspended(now)) {
+        trackingTargetRef.current = null;
+        trackingMotionRef.current = null;
+        return;
+      }
+      const center = map.getCenter();
+      const padding = map.getPadding();
+      const motion = trackingMotionRef.current ?? {
+        values: [center.lng, center.lat, map.getCameraTargetElevation(), padding.top ?? 0, padding.bottom ?? 0],
+        velocities: [0, 0, 0, 0, 0],
+      };
+      // Follow the shortest longitude arc, including dateline crossings.
+      const destination = [...target.values];
+      destination[0] = motion.values[0] + angularDelta(motion.values[0], destination[0]);
+      const metresPerPixel = Math.max(0.01, 40075016.686 * Math.cos(center.lat * Math.PI / 180) / (512 * 2 ** map.getZoom()));
+      const horizontal = haversineM(motion.values[1], motion.values[0], destination[1], destination[0]);
+      const errorPixels = Math.hypot(horizontal, destination[2] - motion.values[2]) / metresPerPixel
+        + Math.abs(destination[3] - motion.values[3]) / 2 + Math.abs(destination[4] - motion.values[4]) / 2;
+      const frequency = trackingFrequency(errorPixels);
+      destination.forEach((value, index) => {
+        [motion.values[index], motion.velocities[index]] = cameraSpring(motion.values[index], motion.velocities[index], value, dt, frequency);
+      });
+      trackingMotionRef.current = motion;
+      const bearing = target.chase ? easedChaseBearing(timeRef.current) + chaseOffsetRef.current : target.bearing;
+      map.jumpTo({
+        center: [motion.values[0], motion.values[1]], elevation: motion.values[2],
+        padding: { top: Math.max(0, motion.values[3]), bottom: Math.max(0, motion.values[4]), left: 0, right: 0 },
+        ...(bearing != null ? { bearing } : {}),
+        ...(target.chase ? { pitch: chasePitchRef.current } : {}),
+      });
+      const course = target.chase ? chaseCourse(dataRef.current!.samples, timeRef.current, dataRef.current!.gapThresholdS) : null;
+      const turning = course != null && Math.abs(angularDelta(chaseBearingRef.current ?? course, course)) > 0.05;
+      if (errorPixels < 0.01 && motion.velocities.every((v, i) => Math.abs(v) < (i < 2 ? 1e-8 : 0.01)) && !turning) {
+        trackingTargetRef.current = null;
+        trackingMotionRef.current = null;
+      }
+    };
+    frame = requestAnimationFrame(track);
+    return () => { cancelAnimationFrame(frame); trackingTargetRef.current = null; trackingMotionRef.current = null; };
+    // All live camera/data inputs are kept in refs; never restart on a time tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasData]);
 
   // Starting or stopping playback is a reliable transport boundary. Rebuild
   // the marker there so any stale perspective scale is corrected immediately,
@@ -1797,7 +1871,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         );
         orbitState.timestamp = now;
         if (!cameraTrackingSuspended(now)) {
-          centerOnGlider(timeRef.current, false, orbitState.bearing);
+          centerOnGlider(timeRef.current, false, orbitState.bearing, undefined, true);
         }
       }
       animationFrame = requestAnimationFrame(orbit);
