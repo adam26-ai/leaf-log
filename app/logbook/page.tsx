@@ -9,6 +9,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { StatsBar } from "@/components/logbook/stats-bar";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { listHighlights } from "@/lib/flights/list-highlights";
+import { xcRankings } from "@/lib/flights/xc-rankings";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
@@ -17,6 +18,7 @@ export default async function LogbookPage() {
     countFriends(profile.id),
   ]);
   const stats = statsFrom(flights);
+  const rankings = xcRankings(flights);
   const { highlightScore, distanceScore } = listHighlights(flights);
 
   return (
@@ -67,9 +69,9 @@ export default async function LogbookPage() {
               <StatsBar stats={stats} />
             </div>
             <ul className="mt-6 flex flex-col gap-1 overflow-x-auto pb-1">
-              {flights.map((f) => (
+              {flights.map((f, index) => (
                 <li key={f.id}>
-                  <FlightRow flight={f} compact highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} />
+                  <FlightRow flight={f} compact xcBadges={rankings.get(f.id) ?? []} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} previewAutoUpload={process.env.NODE_ENV === "development" && index < 5 && index % 2 === 0} />
                 </li>
               ))}
             </ul>

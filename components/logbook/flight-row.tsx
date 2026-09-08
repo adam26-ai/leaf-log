@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { ThumbsUp } from "lucide-react";
+import Image from "next/image";
+import { Monitor, ThumbsUp, Waypoints, Triangle, TriangleRight } from "lucide-react";
+import type { XcBadge } from "@/lib/flights/xc-rankings";
 import {
   formatDuration,
+  formatDistance,
   formatAltitude,
   formatLocalDate,
   formatLocalTime,
@@ -19,6 +22,16 @@ interface FlightRowOwner {
   avatarUpdatedAt: Date | string | null;
 }
 
+function UploadSource({ source }: { source: string }) {
+  const automatic = source === "device_push";
+  const label = automatic ? "Auto-uploaded from Leaf" : "Manually uploaded";
+  return <span title={label} role="img" aria-label={label} className="grid h-8 w-8 shrink-0 place-items-center justify-self-end">
+    {automatic
+      ? <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-8 w-8" />
+      : <Monitor aria-hidden="true" className="h-5 w-5 text-gray-500" />}
+  </span>;
+}
+
 export function FlightRow({
   flight,
   owner,
@@ -26,6 +39,8 @@ export function FlightRow({
   compact = false,
   highlightScore = 0,
   distanceScore = 0,
+  previewAutoUpload = false,
+  xcBadges,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -33,14 +48,16 @@ export function FlightRow({
   compact?: boolean;
   highlightScore?: number;
   distanceScore?: number;
+  previewAutoUpload?: boolean;
+  xcBadges?: XcBadge[];
 }) {
   const [units] = useUnits();
   const visibility =
     flight.visibility === "public"
-      ? { label: "Public", className: "bg-leaf/15 text-leaf-strong" }
+      ? { label: "Public", className: "border-white bg-[#d8ff00] text-gray-800" }
       : flight.visibility === "friends"
-        ? { label: "Friends", className: "bg-brand-blue/15 text-brand-blue-strong" }
-        : { label: "Private", className: "bg-gray-100 text-gray-500" };
+        ? { label: "Friends", className: "border-brand-blue bg-brand-blue/10 text-brand-blue-strong" }
+        : { label: "Private", className: "border-gray-400 bg-white text-gray-600" };
   if (compact) {
     const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.22;
     const greenAlpha = Math.min(1, Math.max(0, distanceScore)) * 0.38;
@@ -56,16 +73,31 @@ export function FlightRow({
             : undefined,
           backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green,
         }}
-        className="grid min-w-[700px] grid-cols-[10.5rem_3.5rem_4.5rem_minmax(8rem,1fr)_5.5rem_4.5rem] items-center gap-5 rounded-md border border-gray-200 px-4 py-2 text-sm transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-brand-blue"
+        className={`grid items-center rounded-md border border-gray-200 px-4 py-2 text-sm transition-colors hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-brand-blue ${xcBadges !== undefined
+          ? "min-w-[800px] grid-cols-[9.5rem_3.25rem_4.5rem_minmax(6rem,1fr)_4rem_9rem_4.5rem_2rem] gap-3"
+          : "min-w-[748px] grid-cols-[9.5rem_3.25rem_4.5rem_minmax(8rem,1fr)_5.5rem_4.5rem_2rem] gap-5"}`}
       >
         <span className="whitespace-nowrap text-gray-600">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span>
-        <span className="tabular-nums text-gray-600">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)}</span>
-        <span title="Duration" className="whitespace-nowrap tabular-nums text-gray-700">{formatDuration(flight.durationS)}</span>
+        <span className={`${xcBadges !== undefined ? "-ml-1" : "-ml-3"} whitespace-nowrap tabular-nums text-gray-600`}>{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)}</span>
+        <span title="Duration" className="whitespace-nowrap text-right tabular-nums text-gray-700">{formatDuration(flight.durationS)}</span>
         <span title={site} className="truncate font-condensed text-base font-bold text-ink">{site}</span>
-        <span title="Maximum altitude" className="whitespace-nowrap text-right tabular-nums text-gray-700">
+        <span title="Maximum altitude" className="whitespace-nowrap text-left tabular-nums text-gray-700">
           {flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}
         </span>
-        <span className={`justify-self-end rounded-sm px-2 py-0.5 text-xs font-medium ${visibility.className}`}>{visibility.label}</span>
+        {xcBadges !== undefined && <span className="grid grid-cols-3 items-center gap-1" aria-label="Personal top 10 XC rankings">
+          {(["open", "fai-triangle", "free-triangle"] as const).map(shape => {
+            const badge = xcBadges.find(b => b.shape === shape);
+            if (!badge) return <span key={shape} aria-hidden="true" />;
+            const Icon = badge.shape === "open" ? Waypoints : badge.shape === "fai-triangle" ? Triangle : TriangleRight;
+            const name = badge.shape === "open" ? "Open distance" : badge.shape === "fai-triangle" ? "FAI triangle" : "Free triangle";
+            const label = `${name}: #${badge.rank} in your logbook — ${formatDistance(badge.distanceM, units)}${badge.approximate ? " (best found; search may improve)" : ""}`;
+            return <span key={badge.shape} title={label} aria-label={label} className="inline-flex h-6 items-center justify-center gap-1 rounded-full border border-brand-blue/40 bg-white/75 text-xs font-semibold tabular-nums text-brand-blue-strong">
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />{badge.rank}
+            </span>;
+          })}
+        </span>}
+        <span className={`inline-flex h-6 w-[4.5rem] shrink-0 items-center justify-center justify-self-end rounded-full border text-xs font-medium ${visibility.className}`}>{visibility.label}</span>
+        <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
       </Link>
     );
   }
@@ -115,10 +147,11 @@ export function FlightRow({
         </div>
       )}
       <span
-        className={"rounded-sm px-2 py-0.5 text-xs font-medium " + visibility.className}
+        className={"inline-flex h-6 w-[4.5rem] shrink-0 items-center justify-center rounded-full border text-xs font-medium " + visibility.className}
       >
         {visibility.label}
       </span>
+      <UploadSource source={flight.source} />
     </div>
   );
 }

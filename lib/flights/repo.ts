@@ -26,6 +26,7 @@ import { kudoCountsFor } from "@/lib/social/kudos";
 
 const LIST_SELECT = {
   id: true,
+  source: true,
   flightDate: true,
   takeoffAt: true,
   takeoffSiteName: true,
