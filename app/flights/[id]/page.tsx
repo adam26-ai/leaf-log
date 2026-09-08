@@ -44,7 +44,7 @@ export default async function FlightPage({
       ? viewer
       : await prisma.profile.findUnique({
           where: { id: flight.ownerId },
-          select: { displayName: true },
+          select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true },
         });
   const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
   const instructorNotes = viewerId
@@ -70,6 +70,7 @@ export default async function FlightPage({
           <FlightHeader
             flight={flight}
             isOwner={isOwner}
+            pilotLabel={owner?.displayName ?? flight.pilot ?? "Pilot"}
             previousFlightId={previousFlightId}
             nextFlightId={nextFlightId}
             actions={
@@ -121,6 +122,8 @@ export default async function FlightPage({
             </div>
             <div className="mt-2">
               <FlightViz
+                viewerId={viewerId}
+                primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName ?? flight.pilot ?? "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
                 xcScore={flight.xcScore}
                 key={flight.id}
                 flightId={flight.id}

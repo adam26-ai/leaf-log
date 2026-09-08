@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import { listPhotosWithFlightForViewer } from "@/lib/photos/repo";
-import { addPhotos, type PhotoInput } from "@/lib/photos/add-photos";
+import type { PhotoInput } from "@/lib/photos/add-photos";
 
 export const runtime = "nodejs";
 
@@ -19,10 +19,7 @@ export async function GET(
     { photos: result.photos },
     {
       headers: {
-        "cache-control":
-          result.flight.visibility === "public"
-            ? "private, max-age=60"
-            : "no-store",
+        "cache-control": "no-store",
       },
     },
   );
@@ -65,6 +62,8 @@ export async function POST(
     })),
   );
 
+  // Metadata reads do not load the native image decoder used only by uploads.
+  const { addPhotos } = await import("@/lib/photos/add-photos");
   const out = await addPhotos({ flightId: id, ownerId: viewerId, files });
   return NextResponse.json(out);
 }

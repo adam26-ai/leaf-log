@@ -29,12 +29,12 @@ function Cell({
 }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-1">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+      <span className="whitespace-nowrap text-[9px] font-bold uppercase tracking-wide text-gray-400 sm:text-[10px]">
         {label}
       </span>
       <span className="flex items-baseline justify-center gap-1 whitespace-nowrap">
         <span
-          className="font-condensed text-2xl font-bold leading-none tabular-nums"
+          className="font-condensed text-xl font-bold leading-none tabular-nums sm:text-2xl"
           style={{ color }}
         >
           {value}
@@ -64,7 +64,11 @@ export function InstrumentReadout({
   units?: UnitSystem;
   ranges?: InstrumentRanges | null;
 }) {
-  if (!reading) return null;
+  if (!reading) return <div className="grid w-80 max-w-full grid-cols-3 items-center rounded-2xl bg-ink/85 px-4 py-2.5 shadow-lg backdrop-blur-sm">
+    <Cell label="Altitude MSL" value="—" color="#b0b0b0" />
+    <Cell label="Vario" value="—" color="#b0b0b0" />
+    <Cell label="Speed" value="—" color="#b0b0b0" />
+  </div>;
   const v = reading.varioMs;
   const [altValue, altUnit] = splitUnit(formatAltitude(reading.altM, units));
   const [varioValue, varioUnit] = splitUnit(formatVario(v, units));

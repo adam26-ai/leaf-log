@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
+import { IconLayer, SolidPolygonLayer, TextLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
@@ -15,6 +15,10 @@ import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 import { syncXcMapRoute, XC_SOURCE } from "./xc-map-route";
 import { varioReplayColor } from "./replay-palette";
+import { replayPositionAt, replayStateAt, splitReplaySamples, flightForPilot } from "@/lib/flights/group-replay";
+import type { ReplayResponse } from "@/lib/igc/replay";
+import type { LoadedReplayFlight } from "./use-group-replay";
+import type { Layer } from "@deck.gl/core";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -24,7 +28,9 @@ const CAMERA_SVG =
   '<rect x="9.5" y="13.8" width="15" height="10.7" rx="2.2" fill="#ffffff"/>' +
   '<circle cx="17" cy="19.2" r="3.4" fill="#272727"/>' +
   '<circle cx="17" cy="19.2" r="1.6" fill="#ffffff"/></svg>';
-const CAMERA_ICON = `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG)}`;
+const cameraIcon = (primary: boolean) => `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG.replace('stroke="#ffffff"', primary ? 'stroke="#d8ff00"' : 'stroke="#0099ff"'))}`;
+const PRIMARY_CAMERA_ICON = cameraIcon(true);
+const COMPANION_CAMERA_ICON = cameraIcon(false);
 
 const LEAF_GREEN: [number, number, number] = [216, 255, 0];
 // White-on-black front view of a paraglider: a curved ram-air canopy,
@@ -83,9 +89,10 @@ function escapeXml(text: string): string {
   });
 }
 
-function verticalNameBanner(name: string | null): NameBannerIcon | null {
+function verticalNameBanner(name: string | null, primary = true): NameBannerIcon | null {
   if (!name) return null;
-  const cached = nameBannerCache.get(name);
+  const cacheKey = `${primary}:${name}`;
+  const cached = nameBannerCache.get(cacheKey);
   if (cached) return cached;
 
   const displayHeight = Math.max(115, Math.ceil(name.length * 9 + 23));
@@ -93,7 +100,7 @@ function verticalNameBanner(name: string | null): NameBannerIcon | null {
   const height = displayHeight * NAME_BANNER_SCALE;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${NAME_BANNER_WIDTH_PX} ${displayHeight}">` +
-    `<rect x="0.5" y="0.5" width="${NAME_BANNER_WIDTH_PX - 1}" height="${displayHeight - 1}" fill="#d8ff00" stroke="#141414"/>` +
+    `<rect x="0.5" y="0.5" width="${NAME_BANNER_WIDTH_PX - 1}" height="${displayHeight - 1}" fill="${primary ? "#d8ff00" : "#0099ff"}" stroke="#141414"/>` +
     `<text transform="translate(${NAME_BANNER_WIDTH_PX / 2} ${displayHeight / 2}) rotate(-90)" text-anchor="middle" dominant-baseline="central" fill="#141414" font-family="Arial,Helvetica,sans-serif" font-size="${NAME_BANNER_FONT_PX}" font-weight="700">${escapeXml(name)}</text>` +
     "</svg>";
   const icon = {
@@ -102,7 +109,7 @@ function verticalNameBanner(name: string | null): NameBannerIcon | null {
     height,
     displayHeight,
   };
-  nameBannerCache.set(name, icon);
+  nameBannerCache.set(cacheKey, icon);
   return icon;
 }
 
@@ -123,15 +130,7 @@ const ALT_LABEL_HEIGHT_PX = ALT_LABEL_FONT_PX + ALT_LABEL_PADDING_Y * 2;
 export type CameraMode = "follow" | "chase" | "orbit" | "fixed";
 export type AltitudeMode = "asl" | "agl";
 
-interface ReplayData {
-  samples: Sample[];
-  vario: number[];
-  bounds: [number, number, number, number];
-  durationS: number;
-  altSource: "baro" | "gps";
-  takeoffMs: number;
-  offsetMin: number;
-}
+type ReplayData = ReplayResponse;
 
 type GeoJsonData = Parameters<maplibregl.GeoJSONSource["setData"]>[0];
 
@@ -232,6 +231,9 @@ export interface FlightReplay3DHandle {
 interface FlightReplay3DProps {
   xcRoute?: XcCandidate | null;
   flightId: string;
+  primaryFlightId: string;
+  replay: ReplayResponse;
+  companions: LoadedReplayFlight[];
   basemap?: BasemapId;
   /** Shared replay time (s from takeoff) — drives the glider position. */
   time: number;
@@ -255,7 +257,7 @@ interface FlightReplay3DProps {
   /** Clicking a photo pin opens it (lightbox) and moves the scrubber. */
   onPhotoOpen?: (photoId: string, tSec: number | null) => void;
   /** Reports sampled DEM heights along the route for the altitude profile. */
-  onTerrainProfile?: (profile: TerrainProfilePoint[]) => void;
+  onTerrainProfile?: (flightId: string, profile: TerrainProfilePoint[]) => void;
   /** Switch the parent camera mode when a manual gesture needs a free camera. */
   onManualCameraChange?: () => void;
 }
@@ -264,6 +266,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   function FlightReplay3D(
     {
       flightId,
+      primaryFlightId,
+      replay: data,
+      companions,
       xcRoute,
       basemap = "monochrome",
       time,
@@ -291,17 +296,20 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   }, [xcRoute]);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const dataRef = useRef<ReplayData | null>(null);
-  const trackRef = useRef<TimedTrackDatum | null>(null);
+  const trackRef = useRef<TimedTrackDatum[]>([]);
+  const companionRef = useRef(companions);
+  const identityRef = useRef({ flightId, primaryFlightId });
+  const preparedTracks = useRef(new WeakMap<ReplayData, TimedTrackDatum[]>());
+  const terrainOffsets = useRef(new Map<string, number>());
   const timeRef = useRef(time);
   const basemapRef = useRef(basemap);
   const cameraModeRef = useRef(cameraMode);
   const showShadowRef = useRef(showShadow);
   const trackDisplayRef = useRef(trackDisplay);
-  const displayedTrackCacheRef = useRef<{
-    source: TimedTrackDatum;
+  const displayedTrackCacheRef = useRef(new WeakMap<TimedTrackDatum, {
     count: number;
     value: MultiColorPathDatum;
-  } | null>(null);
+  }>());
   const chaseBearingRef = useRef<number | null>(null);
   const chasePitchRef = useRef(CHASE_PITCH);
   const orbitStateRef = useRef<{
@@ -314,7 +322,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const trackedZoomAnimationRef = useRef<number | null>(null);
   const manualCameraInteractionRef = useRef<"rotate" | "pan" | null>(null);
   const preserveCameraOnFixedRef = useRef(false);
-  const didInitBasemap = useRef(false);
   // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
   // IGC baro/GPS reference vs the DEM's sea-level reference).
   const offsetRef = useRef(0);
@@ -336,6 +343,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // recenter slides the icon out from under the cursor mid-hover).
   const suppressFollowRef = useRef(false);
   useEffect(() => {
+    companionRef.current = companions;
+    identityRef.current = { flightId, primaryFlightId };
     photosRef.current = photos;
     onPhotoHoverRef.current = onPhotoHover;
     onPhotoOpenRef.current = onPhotoOpen;
@@ -346,44 +355,48 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     altitudeModeRef.current = altitudeMode;
   });
 
-  const [data, setData] = useState<ReplayData | null>(null);
-  const [error, setError] = useState(false);
+  const hasData = data.samples.length >= 2;
   // Hovered photo thumbnail preview (screen position from deck picking).
-  const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string; flightId: string; name: string; primary: boolean } | null>(null);
 
-  // Fetch the replay path.
+  function tracksFor(d: ReplayData): TimedTrackDatum[] {
+    const cached = preparedTracks.current.get(d);
+    if (cached) return cached;
+    let index = 0;
+    const tracks = splitReplaySamples(d).map((samples) => {
+      const colors = samples.map(() => varioReplayColor(d.vario[index++] ?? 0));
+      return splineTrack(samples, colors);
+    });
+    preparedTracks.current.set(d, tracks);
+    return tracks;
+  }
+
   useEffect(() => {
-    let active = true;
-    fetch(`/api/flights/${flightId}/replay`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: ReplayData) => {
-        if (!active) return;
-        groundElevationCacheRef.current.clear();
-        terrainProfilePublishedRef.current = false;
-        displayedTrackCacheRef.current = null;
-        dataRef.current = d;
-        trackRef.current = splineTrack(
-          d.samples,
-          d.samples.map((_, index) => varioReplayColor(d.vario[index] ?? 0)),
-        );
-        setData(d);
-      })
-      .catch(() => active && setError(true));
-    return () => {
-      active = false;
-    };
-  }, [flightId]);
+    dataRef.current = data;
+    timeRef.current = time;
+    identityRef.current = { flightId, primaryFlightId };
+    trackRef.current = tracksFor(data);
+    offsetRef.current = terrainOffsets.current.get(flightId) ?? 0;
+    anchoredRef.current = terrainOffsets.current.has(flightId);
+    groundElevationCacheRef.current.clear();
+    terrainProfilePublishedRef.current = false;
+    displayedTrackCacheRef.current = new WeakMap();
+    chaseBearingRef.current = null;
+    const map = mapRef.current;
+    if (map) {
+      removeShadow(map);
+      if (cameraModeRef.current !== "fixed") centerOnGlider(time, cameraModeRef.current === "chase");
+      syncShadow();
+      renderLayers(time);
+      map.triggerRepaint();
+    }
+    // Time/transport changes are handled by the animation effect; a selection
+    // updates the data in the existing map instead of reconstructing WebGL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, flightId, primaryFlightId]);
 
   function positionAt(t: number): [number, number, number] {
-    const s = dataRef.current!.samples;
-    const { i, f } = locateSample(s, t);
-    const a = s[i - 1];
-    const b = s[i];
-    return [
-      a[0] + (b[0] - a[0]) * f,
-      a[1] + (b[1] - a[1]) * f,
-      a[2] + (b[2] - a[2]) * f,
-    ];
+    return replayPositionAt(dataRef.current!, t);
   }
 
   function varioAt(t: number): number {
@@ -445,14 +458,14 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       if (track.times[middle] <= t) low = middle + 1;
       else high = middle;
     }
-    const count = Math.max(2, Math.min(track.path.length, low));
-    const cached = displayedTrackCacheRef.current;
-    if (cached?.source === track && cached.count === count) return cached.value;
+    const count = Math.min(track.path.length, low);
+    const cached = displayedTrackCacheRef.current.get(track);
+    if (cached?.count === count) return cached.value;
     const value = {
       path: track.path.slice(0, count),
       colors: track.colors.slice(0, count),
     };
-    displayedTrackCacheRef.current = { source: track, count, value };
+    displayedTrackCacheRef.current.set(track, { count, value });
     return value;
   }
 
@@ -594,13 +607,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const d = dataRef.current;
     if (!map || !d) return;
     if (map.getCenterClampedToGround() === false) map.setCenterClampedToGround(true);
+    // Follow mode leaves camera padding behind; fitBounds adds its own padding.
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 });
     map.fitBounds(
       [
         [d.bounds[0], d.bounds[1]],
         [d.bounds[2], d.bounds[3]],
       ],
       {
-        padding: { top: ROUTE_FIT_TOP_PADDING_PX, bottom: 60, left: 60, right: 60 },
+        padding: { top: Math.min(ROUTE_FIT_TOP_PADDING_PX, map.getContainer().clientHeight * 0.4), bottom: 40, left: 40, right: 40 },
         duration,
         bearing: -20,
         pitch: 62,
@@ -649,23 +664,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useImperativeHandle(ref, () => ({ centerOnPilot, fitToRoute: () => fitToRoute(600), fitToXcRoute }));
 
   function shadowGeoJson(d: ReplayData, t: number): GeoJsonData {
-    const samples =
-      trackDisplayRef.current === "full"
-        ? d.samples
-        : d.samples.slice(0, Math.max(2, locateSample(d.samples, t).i + 1));
     return {
       type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-          properties: {},
-          geometry: {
-            type: "LineString",
-            coordinates: samples.map((s) => [s[0], s[1]]),
-          },
-        },
-      ],
-    };
+      features: tracksFor(d).map((track) => displayedTrackAt(track, t)).filter((track) => track.path.length >= 2).map((track) => ({
+        type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: track.path.map((s) => [s[0], s[1]]) },
+      })),
+    } as GeoJsonData;
   }
 
   function removeShadow(map: maplibregl.Map) {
@@ -681,7 +685,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     if (!map.getSource(XC_SOURCE) || !map.getLayer("xc-route-line")) {
       syncXcMapRoute(map, xcRouteRef.current);
     }
-    if (!showShadowRef.current || !d || d.samples.length < 2) {
+    if (!showShadowRef.current || !d || d.samples.length < 2 || (timeRef.current < 0 && trackDisplayRef.current === "elapsed")) {
       removeShadow(map);
       return;
     }
@@ -736,22 +740,23 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   function renderLayers(t: number) {
     const overlay = overlayRef.current;
     const d = dataRef.current;
-    const track = trackRef.current;
-    if (!overlay || !d || !track) return;
-    const displayedTrack = displayedTrackAt(track, t);
+    const tracks = trackRef.current;
+    if (!overlay || !d || !tracks.length) return;
+    const displayedTracks = tracks.map((track) => displayedTrackAt(track, t)).filter((track) => track.path.length >= 2);
     const pos = positionAt(t);
-    type PhotoIcon = { id: string; tSec: number; position: [number, number, number] };
-    // Place each photo at its position on the track (at altitude).
-    const photoIcons: PhotoIcon[] = photosRef.current.filter(isPinned).map((ph) => {
-      if (ph.tSec != null) {
-        const q = positionAt(ph.tSec);
-        return { id: ph.id, tSec: ph.tSec, position: [q[0], q[1], zOf(q[2])] };
-      }
-      return {
-        id: ph.id,
-        tSec: -1,
-        position: [ph.lon as number, ph.lat as number, zOf(ph.altM ?? 0)],
-      };
+    const state = replayStateAt(d, t);
+    const identities = identityRef.current;
+    const primary = identities.flightId === identities.primaryFlightId;
+    const nowMs = d.takeoffMs + t * 1000;
+    const companions = companionRef.current;
+    type PhotoIcon = { id: string; flightId: string; name: string; primary: boolean; tSec: number; position: [number, number, number] };
+    const photoIcons: PhotoIcon[] = photosRef.current.filter(isPinned).flatMap((ph) => {
+      const f = companions.find((f) => f.id === ph.flightId);
+      if (!f) return [];
+      const q = ph.tSec != null ? replayPositionAt(f.replay, ph.tSec) : [ph.lon!, ph.lat!, ph.altM ?? 0];
+      const offset = offsetFor(f);
+      return [{ id: ph.id, flightId: f.id, name: f.owner.displayName, primary: f.id === identities.primaryFlightId,
+        tSec: ph.tSec ?? -1, position: [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number] }];
     });
 
     // The ground elevation directly under the glider's current position.
@@ -762,7 +767,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       color: [number, number, number, number];
     };
     const curtainLayers: SolidPolygonLayer<CurtainDatum>[] = [];
-    if (showShadowRef.current) {
+    if (showShadowRef.current && state === "Flying") {
       type CurtainSample = {
         time: number;
         position: [number, number, number];
@@ -775,6 +780,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const curtainSamples: CurtainSample[] = [];
       for (let index = 0; index < sampleCount; index++) {
         const sampleTime = start + ((t - start) * index) / (sampleCount - 1);
+        if (replayStateAt(d, sampleTime) !== "Flying") continue;
         const samplePos = positionAt(sampleTime);
         const sampleGround = cachedGroundElevationAt(
           Math.round(sampleTime),
@@ -798,6 +804,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       for (let index = 1; index < curtainSamples.length; index++) {
         const a = curtainSamples[index - 1];
         const b = curtainSamples[index];
+        if (b.time - a.time > 2) continue;
         const temporal = Math.pow((a.recency + b.recency) / 2, 1.35);
         const [red, green, blue] = varioReplayColor(varioAt((a.time + b.time) / 2));
         for (let band = 0; band < CURTAIN_VERTICAL_BANDS; band++) {
@@ -845,7 +852,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // white-on-black glider above one ground-clamped anchor.
     type LabelDatum = { text: string; position: [number, number, number] };
     const nameText = pilotNameRef.current ? pilotNameRef.current.toUpperCase() : null;
-    const nameBanner = verticalNameBanner(nameText);
+    const nameBanner = verticalNameBanner(nameText, primary);
     const anchorZ = ground != null ? Math.max(zOf(pos[2]), ground) : zOf(pos[2]);
     const anchorPos: [number, number, number] = [pos[0], pos[1], anchorZ];
     const markerScale = markerPerspectiveScale(anchorPos);
@@ -873,7 +880,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false },
         getIcon: () => ({
-          url: CONNECTOR_ICON,
+          url: primary ? CONNECTOR_ICON : `data:image/svg+xml,${encodeURIComponent(CONNECTOR_SVG.replace("rgb(216,255,0)", "#0099ff"))}`,
           width: CONNECTOR_WIDTH_PX,
           height: CONNECTOR_HEIGHT_PX,
           anchorX: CONNECTOR_WIDTH_PX / 2,
@@ -889,7 +896,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         id: "glider-altitude",
         data: [
           {
-            text: `${formatAltitude(Math.round(displayAlt), unitsRef.current)} ${isAgl ? "AGL" : "MSL"}`,
+            text: state === "Flying" ? `${formatAltitude(Math.round(displayAlt), unitsRef.current)} ${isAgl ? "AGL" : "MSL"}` : state,
             position: anchorPos,
           },
         ],
@@ -947,7 +954,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     poleLayers.push(
       new IconLayer<[number, number, number]>({
         id: "glider-marker",
-        data: [anchorPos],
+        data: state === "Flying" ? [anchorPos] : [],
         billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false },
         getIcon: () => ({
@@ -967,11 +974,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
     overlay.setProps({
       layers: [
+        ...companionLayers(nowMs),
         // The outline is shaded inside this one ribbon so separate halo joins
         // cannot expose black wedges at thermals and self-crossings.
         new MultiColorPathLayer({
-          id: `track-outlined-v10-${trackDisplayRef.current}`,
-          data: [displayedTrack],
+          id: `track-outlined-${identities.flightId}-${trackDisplayRef.current}`,
+          data: displayedTracks,
           getPath: (flight) =>
             flight.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
               number,
@@ -990,7 +998,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           jointRounded: true,
           updateTriggers: {
             getPath: offsetRef.current,
-            getColor: displayedTrack.colors,
+            getColor: d,
           },
         }),
         // Photo pins (camera icons) at their position on the track.
@@ -999,7 +1007,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           data: photoIcons,
           pickable: true,
           billboard: true,
-          getIcon: () => ({ url: CAMERA_ICON, width: 68, height: 68, anchorX: 34, anchorY: 34 }),
+          getIcon: (photo) => ({ url: photo.primary ? PRIMARY_CAMERA_ICON : COMPANION_CAMERA_ICON, width: 68, height: 68, anchorX: 34, anchorY: 34 }),
           getPosition: (d) => d.position,
           getSize: 30,
           sizeUnits: "pixels",
@@ -1007,15 +1015,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           onHover: (info) => {
             const o = info.object as PhotoIcon | null;
             if (o) {
-              if (o.tSec >= 0) {
-                // Only suppress when this hover actually changes the time (so the
-                // flag can't go stale when re-hovering the same pin).
-                if (Math.round(o.tSec) !== Math.round(timeRef.current)) {
-                  suppressFollowRef.current = true;
-                }
-                onPhotoHoverRef.current?.(o.tSec);
-              }
-              setHoverPhoto({ x: info.x, y: info.y, id: o.id });
+              setHoverPhoto({ x: info.x, y: info.y, id: o.id, flightId: o.flightId, name: o.name, primary: o.primary });
             } else {
               setHoverPhoto(null);
             }
@@ -1032,6 +1032,62 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         ...poleLayers,
       ],
     });
+  }
+
+  function offsetFor(flight: LoadedReplayFlight): number {
+    const cached = terrainOffsets.current.get(flight.id);
+    if (cached != null) return cached;
+    const start = flight.replay.samples[0];
+    const ground = start ? groundElevationAt(start[0], start[1]) : null;
+    if (ground == null) return 0;
+    const offset = ground / TERRAIN_EXAGGERATION - start[2];
+    const safe = Math.abs(offset) <= 400 ? offset : 0;
+    terrainOffsets.current.set(flight.id, safe);
+    return safe;
+  }
+
+  function companionLayers(nowMs: number): Layer[] {
+    const layers: Layer[] = [];
+    const all = companionRef.current;
+    const selectedId = identityRef.current.flightId;
+    const selectedOwner = all.find((f) => f.id === selectedId)?.owner.id;
+    for (const flight of all) {
+      if (flight.id === selectedId) continue;
+      const local = (nowMs - flight.takeoffMs) / 1000;
+      const offset = offsetFor(flight);
+      const paths = tracksFor(flight.replay).map((path) => displayedTrackAt(path, local)).filter((p) => p.path.length >= 2);
+      layers.push(new PathLayer<MultiColorPathDatum>({
+        id: 'companion-track-' + flight.id, data: paths,
+        getPath: (p) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
+        getColor: [225, 230, 235, 210], getWidth: 2.5, widthUnits: "pixels", billboard: true,
+        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal", depthWriteEnabled: false },
+        updateTriggers: { getPath: offset },
+      }));
+      const pilotFlights = all.filter((f) => f.owner.id === flight.owner.id);
+      if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
+      const state = replayStateAt(flight.replay, local);
+      const point = replayPositionAt(flight.replay, local);
+      const ground = groundElevationAt(point[0], point[1]);
+      const anchor: [number, number, number] = [point[0], point[1], Math.max((point[2] + offset) * TERRAIN_EXAGGERATION, ground ?? -Infinity)];
+      const primary = flight.id === identityRef.current.primaryFlightId;
+      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), primary)!;
+      const scale = markerPerspectiveScale(anchor) * 0.8;
+      layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+        getFillColor: primary ? [216, 255, 0] : [0, 153, 255], getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
+        parameters: { depthCompare: "always", depthWriteEnabled: false } }));
+      layers.push(new IconLayer({ id: 'companion-name-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+        getIcon: () => ({ url: banner.url, width: banner.width, height: banner.height, anchorX: banner.width / 2, anchorY: banner.height }),
+        getPixelOffset: [0, -10 * scale], getSize: banner.displayHeight * scale, sizeUnits: "pixels", billboard: true,
+        opacity: state === "Flying" ? 1 : 0.55, parameters: { depthCompare: "always", depthWriteEnabled: false } }));
+      if (state === "Flying") layers.push(new IconLayer({ id: 'companion-glider-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+        getIcon: () => ({ url: GLIDER_ICON, width: GLIDER_ICON_SOURCE_WIDTH, height: GLIDER_ICON_SOURCE_HEIGHT, anchorX: GLIDER_ICON_SOURCE_WIDTH / 2, anchorY: GLIDER_ICON_SOURCE_HEIGHT }),
+        getPixelOffset: [0, -(banner.displayHeight + 14) * scale], getSize: GLIDER_ICON_WIDTH_PX * scale, sizeBasis: "width", sizeUnits: "pixels", billboard: true,
+        parameters: { depthCompare: "always", depthWriteEnabled: false } }));
+      else layers.push(new TextLayer({ id: 'companion-state-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+        getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: [60, 60, 60], background: true, getBackgroundColor: [255, 255, 255, 220],
+        parameters: { depthCompare: "always", depthWriteEnabled: false } }));
+    }
+    return layers;
   }
 
   function setZoomAroundTrackedPilot(map: maplibregl.Map, zoom: number) {
@@ -1307,13 +1363,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   // Build the map once we have data.
   useEffect(() => {
-    if (!containerRef.current || !data) return;
+    if (!containerRef.current || !hasData) return;
     anchoredRef.current = false;
     terrainProfilePublishedRef.current = false;
     shadowSampleCountRef.current = -1;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleFor(basemapRef.current),
+      center: [dataRef.current!.samples[0][0], dataRef.current!.samples[0][1]],
+      zoom: 12,
       pitch: 62,
       bearing: -20,
       maxPitch: 85,
@@ -1379,7 +1437,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         }
         const rawGround = exaggerated / TERRAIN_EXAGGERATION;
         const off = rawGround - s0[2];
-        if (Math.abs(off) <= 400) offsetRef.current = off; // sanity clamp
+        if (Math.abs(off) <= 400) offsetRef.current = off;
+        terrainOffsets.current.set(identityRef.current.flightId, offsetRef.current); // sanity clamp
         anchoredRef.current = true;
         // The first shadow is added before the DEM tiles are queryable. Recreate
         // its source once terrain is ready so MapLibre drapes it onto the ground
@@ -1422,7 +1481,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         // the complete route; gaps would imply false terrain ramps.
         if (profile.length !== sampleIndexes.length) return;
         terrainProfilePublishedRef.current = true;
-        onTerrainProfileRef.current?.(profile);
+        onTerrainProfileRef.current?.(identityRef.current.flightId, profile);
       };
       map.on("idle", anchorToTerrain);
       map.on("idle", publishTerrainProfile);
@@ -1455,18 +1514,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+  }, [hasData]);
 
   // Swap basemap style, then re-apply terrain + re-render the deck overlay
   // (setStyle preserves the camera but resets terrain and custom layers).
   useEffect(() => {
     const map = mapRef.current;
+    const previousBasemap = basemapRef.current;
     basemapRef.current = basemap;
-    if (!map) return;
-    if (!didInitBasemap.current) {
-      didInitBasemap.current = true;
-      return; // initial style already set at build time
-    }
+    if (!map || previousBasemap === basemap) return;
     const reAdd = () => {
       setupTerrain(map);
       syncShadow();
@@ -1596,7 +1652,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   useEffect(() => {
     trackDisplayRef.current = trackDisplay;
-    displayedTrackCacheRef.current = null;
+    displayedTrackCacheRef.current = new WeakMap();
     syncShadow();
     renderLayers(timeRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1622,9 +1678,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     if (overlayRef.current) renderLayers(timeRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photos]);
+  }, [photos, companions]);
 
-  if (error) {
+  if (!hasData) {
     return (
       <Card className="flex h-[calc(100vh-430px)] min-h-[420px] max-h-[70vh] items-center justify-center text-gray-500">
         3D replay unavailable.
@@ -1642,10 +1698,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={photoUrl(flightId, hoverPhoto.id, "thumb")}
-            alt=""
+            src={photoUrl(hoverPhoto.flightId, hoverPhoto.id, "thumb")}
+            alt={hoverPhoto.name}
             className="pointer-events-none absolute z-10 h-[120px] w-[120px] rounded object-cover shadow-lg ring-1 ring-black/20"
             style={{
+              outline: `2px solid ${hoverPhoto.primary ? "#d8ff00" : "#0099ff"}`,
               left: hoverPhoto.x + 16,
               top: Math.max(hoverPhoto.y - 132, 8),
             }}

@@ -274,6 +274,7 @@ model Flight {
   @@index([xcStatus, xcQueuedAt])
   @@index([ownerId, flightDate])
   @@index([ownerId, status, flightDate])
+  @@index([ownerId, status, takeoffAt])
   @@index([takeoffSiteId])
   @@index([landingSiteId])
   @@index([takeoffZoneId])
@@ -318,6 +319,7 @@ model FlightData {
   flight   Flight @relation(fields: [flightId], references: [id], onDelete: Cascade)
   rawIgc   Bytes // original .igc bytes (source of truth)
   track    Json? // derived render artifact (line + barograph)
+  replay   Json? // versioned replay and recorded matching geometry, rebuilt from rawIgc
 }
 
 // A photo attached to a flight. Light metadata row (no image bytes) so the

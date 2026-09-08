@@ -51,12 +51,14 @@ export function FlightHeader({
   previousFlightId,
   nextFlightId,
   actions,
+  pilotLabel,
 }: {
   flight: Flight;
   isOwner: boolean;
   previousFlightId: string | null;
   nextFlightId: string | null;
   actions: ReactNode;
+  pilotLabel?: string;
 }) {
   const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
   // A named landing only earns its own display when it's somewhere other
@@ -125,6 +127,7 @@ export function FlightHeader({
           )}
         </div>
         <AccentBar width="3rem" className="h-[var(--replay-header-accent-height)] bg-[var(--replay-accent)]" />
+        {pilotLabel && <p className="text-center text-xs text-gray-600">{pilotLabel} · Primary flight</p>}
       </div>
 
       <div className="flex items-center justify-start sm:justify-end">{actions}</div>

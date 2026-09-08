@@ -111,8 +111,10 @@ export function Barograph({
   units,
   activeTime = null,
   onScrubTime,
+  timeDomain,
 }: {
-  baro: [number, number][];
+  baro: [number, number | null][];
+  timeDomain?: [number, number];
   terrain?: TerrainProfilePoint[];
   takeoffMs: number;
   offsetMin: number;
@@ -128,9 +130,9 @@ export function Barograph({
         const groundM = terrainElevationAt(terrain ?? [], t);
         return {
           t,
-          alt: units === "imperial" ? alt * FEET_PER_METER : alt,
+          alt: alt == null ? undefined : units === "imperial" ? alt * FEET_PER_METER : alt,
           ground:
-            groundM == null
+            groundM == null || alt == null
               ? undefined
               : units === "imperial"
                 ? groundM * FEET_PER_METER
@@ -140,8 +142,8 @@ export function Barograph({
     [baro, terrain, units],
   );
   const altitudeUnit = units === "imperial" ? "ft" : "m";
-  const tMin = data[0]?.t ?? 0;
-  const tMax = data[data.length - 1]?.t ?? 1;
+  const tMin = timeDomain?.[0] ?? data[0]?.t ?? 0;
+  const tMax = timeDomain?.[1] ?? data[data.length - 1]?.t ?? 1;
   const timeTicks = useMemo(
     () => clockAlignedTicks(tMin, tMax, takeoffMs, offsetMin),
     [tMin, tMax, takeoffMs, offsetMin],
@@ -149,10 +151,10 @@ export function Barograph({
   const altitudeScale = useMemo(
     () => {
       const scale = buildAltitudeScale(
-        data.flatMap(({ alt, ground }) => (ground == null ? [alt] : [alt, ground])),
+        data.flatMap(({ alt, ground }) => [alt, ground].filter((v): v is number => v != null)),
         units,
       );
-      const flightMax = Math.max(...data.map(({ alt }) => alt));
+      const flightMax = Math.max(...data.map(({ alt }) => alt ?? -Infinity));
       const span = scale.domain[1] - scale.domain[0];
       const headroom = Math.max(span * 0.04, units === "imperial" ? 100 : 30);
       return {
@@ -203,7 +205,7 @@ export function Barograph({
           <XAxis
             dataKey="t"
             type="number"
-            domain={["dataMin", "dataMax"]}
+            domain={[tMin, tMax]}
             ticks={timeTicks}
             tick={(props) =>
               <TimeAxisTick
@@ -215,7 +217,7 @@ export function Barograph({
               />
             }
             minTickGap={48}
-            interval={0}
+            interval="preserveStartEnd"
           />
           <YAxis
             domain={altitudeScale.domain}
@@ -239,7 +241,6 @@ export function Barograph({
             stroke="none"
             fill="var(--replay-terrain-fill)"
             fillOpacity="var(--replay-terrain-fill-alpha)"
-            connectNulls
             isAnimationActive={false}
           />
           <Area
@@ -249,7 +250,6 @@ export function Barograph({
             tooltipType="none"
             stroke="none"
             fill="url(#terrainGradient)"
-            connectNulls
             isAnimationActive={false}
           />
           <Area
@@ -260,7 +260,6 @@ export function Barograph({
             stroke="var(--replay-terrain-line)"
             strokeWidth="var(--replay-terrain-line-width)"
             fill="none"
-            connectNulls
             isAnimationActive={false}
           />
           <Area
@@ -284,7 +283,7 @@ export function Barograph({
       ? Math.max(0, Math.min(1, (activeTime - tMin) / (tMax - tMin)))
       : null;
   const activeValues = useMemo(() => {
-    if (activeTime == null || data.length === 0) return null;
+    if (activeTime == null || data.length === 0 || activeTime < data[0].t || activeTime > data[data.length - 1].t) return null;
     let next = data.findIndex((point) => point.t >= activeTime);
     if (next < 0) next = data.length - 1;
     const previous = Math.max(0, next - 1);
