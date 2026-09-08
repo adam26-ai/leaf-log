@@ -206,6 +206,8 @@ Compact pilot list: avatars are 28 pixels instead of 36, with controls in one ho
 
 Track opacity: Palette Lab provides independent alpha controls for unselected track fill and outline (0–1, default 1), saved with presets and applied live while paused. Both remain in the same depth-tested ribbon shader; fully transparent fragments are discarded so they do not occlude tracks behind them.
 
+Transparency correction: companion ribbons with either alpha below 1 render after opaque tracks and altitude trails with depth testing enabled and depth writes disabled. Their alpha now blends over underlying tracks, including the selected route, rather than masking those routes out of the depth buffer. Fully opaque companion tracks retain depth writes and their existing crossing behavior. Photo pins and pilot badges still render above both passes. Multiple translucent crossings blend in submission order; exact sorting of intersecting translucent segments is not implemented.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.

@@ -996,7 +996,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const companion = companionLayers(nowMs);
     overlay.setProps({
       layers: [
-        ...companion.tracks,
+        ...companion.opaqueTracks,
         // The outline is shaded inside this one ribbon so separate halo joins
         // cannot expose black wedges at thermals and self-crossings.
         new MultiColorPathLayer({
@@ -1024,6 +1024,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           },
         }),
         ...curtainLayers,
+        // Blend translucent ribbons after opaque tracks and trails. They test
+        // existing depth but must not block other tracks from showing through.
+        ...companion.translucentTracks,
         // Photo pins clear every track/curtain but remain below all badges.
         new ScreenSpaceIconLayer<PhotoIcon>({
           id: "photo-pins",
@@ -1078,13 +1081,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return badgeHeightRef.current;
   }
 
-  function companionLayers(nowMs: number): { tracks: Layer[]; badges: Layer[] } {
-    const tracks: Layer[] = [];
+  function companionLayers(nowMs: number): { opaqueTracks: Layer[]; translucentTracks: Layer[]; badges: Layer[] } {
+    const opaqueTracks: Layer[] = [];
+    const translucentTracks: Layer[] = [];
     const layers: Layer[] = [];
     const all = companionRef.current;
     const selectedId = identityRef.current.flightId;
     const selectedOwner = all.find((f) => f.id === selectedId)?.owner.id;
     const colors = groupColorsRef.current;
+    const translucent = colors.groupTrackAlpha < 1 || colors.groupTrackOutlineAlpha < 1;
     for (const flight of all) {
       if (flight.id === selectedId) continue;
       const local = (nowMs - flight.takeoffMs) / 1000;
@@ -1094,10 +1099,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         data: paths,
         getPath: (p: MultiColorPathDatum) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
         widthUnits: "pixels" as const, billboard: true,
-        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: true },
+        capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: !translucent },
         updateTriggers: { getPath: offset },
       };
-      tracks.push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
+      (translucent ? translucentTracks : opaqueTracks).push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
         getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline),
         fillAlpha: colors.groupTrackAlpha, outlineAlpha: colors.groupTrackOutlineAlpha,
         getWidth: 4.75, widthMinPixels: 4.75 }));
@@ -1125,7 +1130,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         getText: () => state, getPixelOffset: [0, 12 * markerPerspectiveScale(anchor)],
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
     }
-    return { tracks, badges: layers };
+    return { opaqueTracks, translucentTracks, badges: layers };
   }
 
   function setZoomAroundTrackedPilot(map: maplibregl.Map, zoom: number) {
