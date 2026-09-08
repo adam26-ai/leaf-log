@@ -19,6 +19,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:backfill-short-ids": "tsx scripts/backfill-short-ids.ts",
+    "db:reprocess-igc": "tsx scripts/reprocess-igc.ts",
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "prisma": {

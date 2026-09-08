@@ -72,10 +72,17 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
     if (d > GAIN_NOISE_THRESHOLD_M) altGainM += d;
   }
 
-  // Max climb / sink over a ~CLIMB_WINDOW_S vario window (smoothed altitude).
+  // Prefer the logger's recorded vario. Older files fall back to a calculated
+  // ~CLIMB_WINDOW_S vertical speed from smoothed altitude.
   let maxClimbMs = 0;
   let maxSinkMs = 0;
-  for (let i = takeoffIndex; i <= landingIndex; i++) {
+  const recordedVario = window
+    .map((fix) => fix.varioMs)
+    .filter((value): value is number => value != null);
+  if (recordedVario.length > 0) {
+    maxClimbMs = Math.max(0, ...recordedVario);
+    maxSinkMs = Math.min(0, ...recordedVario);
+  } else for (let i = takeoffIndex; i <= landingIndex; i++) {
     let j = i;
     while (j < landingIndex && fixes[j].t - fixes[i].t < CLIMB_WINDOW_S) j++;
     const dt = fixes[j].t - fixes[i].t;

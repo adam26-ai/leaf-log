@@ -6,7 +6,6 @@ import {
   Area,
   XAxis,
   YAxis,
-  Tooltip,
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
@@ -111,7 +110,7 @@ export function Barograph({
   altSource,
   units,
   activeTime = null,
-  onHoverTime,
+  onScrubTime,
 }: {
   baro: [number, number][];
   terrain?: TerrainProfilePoint[];
@@ -121,8 +120,7 @@ export function Barograph({
   units: UnitSystem;
   /** Linked-cursor time (s from takeoff) — draws a reference line. */
   activeTime?: number | null;
-  /** Report the hovered time for linked highlighting (not called on leave). */
-  onHoverTime?: (t: number) => void;
+  onScrubTime?: (t: number) => void;
 }) {
   const data = useMemo(
     () =>
@@ -174,16 +172,13 @@ export function Barograph({
     () => (
       <ResponsiveContainer width="100%" height="100%" minHeight={135}>
         <AreaChart
+          accessibilityLayer={false}
           data={data}
           margin={{
             top: 8,
             right: BAROGRAPH_PLOT_RIGHT_INSET,
             bottom: 4,
             left: CHART_LEFT_MARGIN,
-          }}
-          onMouseMove={(s) => {
-            const label = (s as { activeLabel?: number | string })?.activeLabel;
-            if (label != null) onHoverTime?.(Number(label));
           }}
         >
           <defs>
@@ -228,14 +223,6 @@ export function Barograph({
             tick={{ fontSize: 12, fill: "#7a7a7a" }}
             width={Y_AXIS_WIDTH}
             tickFormatter={(v) => `${Math.round(Number(v)).toLocaleString()}${altitudeUnit}`}
-          />
-          <Tooltip
-            labelFormatter={(t) => localClock(Number(t), takeoffMs, offsetMin)}
-            formatter={(v, name) => [
-              `${Math.round(Number(v)).toLocaleString()} ${altitudeUnit}`,
-              String(name),
-            ] as [string, string]}
-            contentStyle={{ borderRadius: 6, borderColor: "#e0e0e0", fontSize: 13 }}
           />
           <Area
             type="monotone"
@@ -289,7 +276,6 @@ export function Barograph({
         </AreaChart>
       </ResponsiveContainer>
     ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, takeoffMs, offsetMin, altSource, altitudeUnit, altitudeScale, timeTicks, tMin, tMax],
   );
 
@@ -297,9 +283,49 @@ export function Barograph({
     activeTime != null && tMax > tMin
       ? Math.max(0, Math.min(1, (activeTime - tMin) / (tMax - tMin)))
       : null;
+  const activeValues = useMemo(() => {
+    if (activeTime == null || data.length === 0) return null;
+    let next = data.findIndex((point) => point.t >= activeTime);
+    if (next < 0) next = data.length - 1;
+    const previous = Math.max(0, next - 1);
+    const a = data[previous];
+    const b = data[next];
+    const portion = b.t === a.t ? 0 : (activeTime - a.t) / (b.t - a.t);
+    const interpolate = (first: number | undefined, second: number | undefined) =>
+      first == null || second == null ? undefined : first + (second - first) * portion;
+    return { alt: interpolate(a.alt, b.alt), ground: interpolate(a.ground, b.ground) };
+  }, [activeTime, data]);
+  const verticalPosition = (value: number) => {
+    const [minimum, maximum] = altitudeScale.domain;
+    return 8 + (1 - (value - minimum) / (maximum - minimum)) * 123;
+  };
+  const labelSide = frac != null && frac > 0.72 ? "-translate-x-full -ml-2" : "ml-2";
+
+  function scrubFromPointer(event: React.PointerEvent<HTMLDivElement>) {
+    if (!onScrubTime) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const plotWidth = bounds.width - BAROGRAPH_PLOT_LEFT_INSET - BAROGRAPH_PLOT_RIGHT_INSET;
+    if (plotWidth <= 0) return;
+    const fraction = Math.max(
+      0,
+      Math.min(1, (event.clientX - bounds.left - BAROGRAPH_PLOT_LEFT_INSET) / plotWidth),
+    );
+    onScrubTime(tMin + fraction * (tMax - tMin));
+  }
 
   return (
-    <div className="relative h-[165px] w-full">
+    <div
+      className="relative h-[165px] w-full cursor-ew-resize select-none [&_.recharts-wrapper]:outline-none [&_.recharts-wrapper_*]:outline-none"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        scrubFromPointer(event);
+      }}
+      onPointerMove={(event) => {
+        if ((event.buttons & 1) !== 0) scrubFromPointer(event);
+      }}
+    >
       <div
         className="pointer-events-none absolute top-[8px] bottom-[34px] bg-[var(--replay-profile-sky)]"
         style={{
@@ -315,6 +341,34 @@ export function Barograph({
             left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
           }}
         />
+      )}
+      {frac != null && activeValues?.alt != null && (
+        <div
+          className="pointer-events-none absolute z-30 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--replay-profile-line)] shadow-sm"
+          style={{
+            left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
+            top: verticalPosition(activeValues.alt),
+          }}
+        >
+          {activeValues.ground != null && (
+            <span className={`absolute left-full bottom-full mb-0.5 whitespace-nowrap rounded bg-ink/35 px-1.5 py-0.5 text-[10px] font-bold text-white ${labelSide}`}>
+              AGL {Math.round(activeValues.alt - activeValues.ground).toLocaleString()} {altitudeUnit}
+            </span>
+          )}
+        </div>
+      )}
+      {frac != null && activeValues?.ground != null && (
+        <div
+          className="pointer-events-none absolute z-30 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--replay-terrain-line)] shadow-sm"
+          style={{
+            left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
+            top: verticalPosition(activeValues.ground),
+          }}
+        >
+          <span className={`absolute left-full top-full mt-0.5 whitespace-nowrap rounded bg-ink/35 px-1.5 py-0.5 text-[10px] font-bold text-white ${labelSide}`}>
+            Terrain {Math.round(activeValues.ground).toLocaleString()} {altitudeUnit}
+          </span>
+        </div>
       )}
     </div>
   );

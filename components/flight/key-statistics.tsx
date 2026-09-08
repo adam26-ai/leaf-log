@@ -21,10 +21,11 @@ import {
 import { useUnits } from "@/lib/flights/use-units";
 import { cn } from "@/lib/utils";
 import type { Flight } from "@prisma/client";
+import { seekReplayToMetric, type ReplayMetric } from "@/lib/flights/replay-events";
 
-function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
+function Stat({ icon: Icon, label, value, seek }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric }) {
+  const content = (
+    <>
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
           <Icon className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
@@ -39,8 +40,18 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
       <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">
         {label}
       </span>
-    </div>
+    </>
   );
+  return seek ? (
+    <button
+      type="button"
+      onClick={() => seekReplayToMetric(seek)}
+      title={`Go to ${label.toLowerCase()}`}
+      className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
+    >
+      {content}
+    </button>
+  ) : <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">{content}</div>;
 }
 
 /** Best climb and strongest sink together in one cell — two readings that
@@ -50,22 +61,22 @@ function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
       <div className="flex items-center gap-2.5">
-        <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => seekReplayToMetric("best-climb")} title="Go to best climb" className="flex items-center gap-1.5 rounded-md transition-colors hover:bg-gray-100">
           <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
             <ArrowUpRight className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
           </span>
           <span className="whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">
             {climb}
           </span>
-        </div>
-        <div className="flex items-center gap-1.5">
+        </button>
+        <button type="button" onClick={() => seekReplayToMetric("max-sink")} title="Go to max sink" className="flex items-center gap-1.5 rounded-md transition-colors hover:bg-gray-100">
           <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
             <ArrowDownRight className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
           </span>
           <span className="whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">
             {sink}
           </span>
-        </div>
+        </button>
       </div>
       <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">
         Best climb / max sink
@@ -77,19 +88,19 @@ function ClimbSinkStat({ climb, sink }: { climb: string; sink: string }) {
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */
 export function KeyStatistics({ flight }: { flight: Flight }) {
   const [units] = useUnits();
-  const statistics: [string, LucideIcon, string][] = [
+  const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
     ["Wing", Triangle, flight.glider ?? "—"],
     ["Airtime", Clock, formatDuration(flight.durationS)],
     ["Distance", Route, formatDistance(flight.trackDistM, units)],
     ["Straight line", ArrowLeftRight, formatDistance(flight.straightDistM, units)],
-    ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units)],
+    ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units), "max-altitude"],
     ["Height gained", ArrowUp, formatAltitude(flight.altGainM, units)],
   ];
 
   return (
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-[repeat(6,minmax(0,1fr))_minmax(10rem,1.35fr)_2.25rem]">
-        {statistics.map(([label, Icon, value]) => (
-          <Stat key={label} label={label} icon={Icon} value={value} />
+        {statistics.map(([label, Icon, value, seek]) => (
+          <Stat key={label} label={label} icon={Icon} value={value} seek={seek} />
         ))}
         <ClimbSinkStat
           climb={formatVario(flight.maxClimbMs, units)}

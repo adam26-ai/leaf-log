@@ -42,6 +42,7 @@ import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ReplayPaletteLab } from "./replay-palette-lab";
+import { REPLAY_SEEK_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
 
 /** Small square icon button for the map's own control overlay — distinct
  *  from the flat `title`-only text buttons used elsewhere in the app since
@@ -373,18 +374,15 @@ export function FlightViz({
     return () => cancelAnimationFrame(raf);
   }, [playing, speed, replay]);
 
-  function applyTime(t: number) {
+  const applyTime = useCallback((t: number) => {
     timeRef.current = t;
     setTime(t);
     setActive(true);
-  }
+  }, []);
   function scrubTo(t: number) {
     applyTime(t);
   }
-  function onHover(t: number) {
-    applyTime(t);
-  }
-  function togglePlay() {
+  const togglePlay = useCallback(() => {
     setActive(true);
     if (playing) {
       setPlaying(false);
@@ -393,7 +391,42 @@ export function FlightViz({
     if (replay && timeRef.current >= replay.durationS) applyTime(0);
     setHasPlaybackStarted(true);
     setPlaying(true);
-  }
+  }, [applyTime, playing, replay]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" || event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.closest("input, textarea, select")) return;
+      event.preventDefault();
+      togglePlay();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [togglePlay]);
+
+  useEffect(() => {
+    function seekToMetric(event: Event) {
+      if (!replay?.samples.length) return;
+      const metric = (event as CustomEvent<ReplayMetric>).detail;
+      let selected = 0;
+      for (let index = 1; index < replay.samples.length; index++) {
+        if (
+          (metric === "max-altitude" && replay.samples[index][2] > replay.samples[selected][2]) ||
+          (metric === "best-climb" && replay.vario[index] > replay.vario[selected]) ||
+          (metric === "max-sink" && replay.vario[index] < replay.vario[selected])
+        ) {
+          selected = index;
+        }
+      }
+      setPlaying(false);
+      if (cameraMode === "fixed") selectCameraMode("follow");
+      applyTime(replay.samples[selected][3]);
+      requestAnimationFrame(() => replayRef.current?.centerOnPilot());
+    }
+    window.addEventListener(REPLAY_SEEK_EVENT, seekToMetric);
+    return () => window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
+  }, [applyTime, cameraMode, replay]);
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
     try {
@@ -600,7 +633,7 @@ export function FlightViz({
               altSource={track.altSource}
               units={units}
               activeTime={active ? time : null}
-              onHoverTime={onHover}
+              onScrubTime={scrubTo}
             />
           </Card>
         </div>

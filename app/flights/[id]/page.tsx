@@ -74,7 +74,12 @@ export default async function FlightPage({
             nextFlightId={nextFlightId}
             actions={
               <div className="flex shrink-0 items-center gap-3">
-                {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
+                {isOwner && (
+                  <ShareToggle
+                    flightId={flight.id}
+                    visibility={normalizeVisibility(flight.visibility)}
+                  />
+                )}
                 {kudoSummary && (
                   <KudosButton
                     flightId={flight.id}

@@ -72,7 +72,7 @@ export function buildReplayPath(
 
   // Centred, time-based vertical speed. A fixed time window keeps the color
   // response consistent whether fixes arrive once or several times a second.
-  const vario = samples.map((s, i) => {
+  const calculatedVario = samples.map((s, i) => {
     let previousIndex = i;
     let nextIndex = i;
     while (
@@ -92,6 +92,7 @@ export function buildReplayPath(
     const dt = next[3] - prev[3];
     return dt > 0 ? (next[2] - prev[2]) / dt : 0;
   });
+  const vario = picked.map((fix, index) => fix.varioMs ?? calculatedVario[index]);
 
   let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
   for (const [lon, lat] of samples) {

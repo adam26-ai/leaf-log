@@ -47,4 +47,19 @@ describe("buildReplayPath", () => {
     expect(replay.samples.length).toBeLessThanOrEqual(1001);
     expect(replay.samples.length).toBeGreaterThan(100);
   });
+
+  it("uses recorded VAR values in the replay stream", () => {
+    const fixes = Array.from({ length: 60 }, (_, i) => ({
+      tSec: 36000 + i,
+      lat: 37.8 + i * 0.0002,
+      lon: -122.5,
+      baro: 500,
+    }));
+    const lines = makeIgc({ fixes }).trimEnd().split("\n");
+    lines.splice(2, 0, "I013638VAR");
+    const igc = lines.map((line) => line.startsWith("B") ? `${line}047` : line).join("\n");
+    const parsed = parseIgc(igc);
+    const replay = buildReplayPath(parsed, deriveMetrics(parsed)!);
+    expect(replay.vario.every((value) => value === 4.7)).toBe(true);
+  });
 });

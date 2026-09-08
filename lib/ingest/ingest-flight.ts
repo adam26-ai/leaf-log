@@ -8,7 +8,7 @@ import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 
-export const PARSER_VERSION = "1";
+export const PARSER_VERSION = "2";
 
 export type IngestSource = "web_upload" | "device_push";
 
