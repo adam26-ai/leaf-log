@@ -200,6 +200,8 @@ Overlap refinement: both selected and unselected tracks now share one outlined-r
 
 Badge shape refinement: all pilot name badges have an 8-pixel bottom-center pointer with a continuous outline. The pointer inherits the selected or unselected fill, adds space below the name, and preserves matching badge sizes and the existing anchor position.
 
+Takeoff controls: each pilot has a permanent takeoff shortcut below their eye button. It reveals/selects the pilot, follows them, pauses playback, and seeks to the chosen flight's takeoff (the selected flight, primary flight for its owner, or nearest flight at the current time). The temporary top-of-map takeoff button is removed. Preflight labels now say "On Launch"; all status labels share the active altitude label's white-on-dark colors, bold font, padding, and perspective sizing.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.

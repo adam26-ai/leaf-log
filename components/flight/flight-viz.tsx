@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useGroupReplay } from "./use-group-replay";
 import { ReplayPilots } from "./replay-pilots";
-import { replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
+import { flightForPilot, replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import {
   BAROGRAPH_PLOT_LEFT_INSET,
@@ -601,6 +601,17 @@ export function FlightViz({
               onTerrainProfile={recordTerrain}
             />
             <ReplayPilots group={group} primaryOwnerId={primaryPilot.id} viewerId={viewerId} offsetMin={offsetMin}
+              onTakeoff={(pilot) => {
+                const flights = group.candidates.filter((f) => f.owner.id === pilot.id)
+                  .map((f) => group.flights.find((loaded) => loaded.id === f.id) ?? f);
+                const flight = selected?.owner.id === pilot.id ? selected
+                  : flights.find((f) => f.id === flightId) ?? flightForPilot(flights, takeoffMs + timeRef.current * 1000);
+                if (!flight) return;
+                setPlaying(false);
+                setOpenPhotoId(null);
+                selectPilot(pilot, flight.id);
+                applyTime((flight.takeoffMs - takeoffMs) / 1000);
+              }}
               onSelect={selectPilot} onToggle={(id) => {
                 const changingSelection = group.selected?.owner.id === id && group.isVisible(id);
                 if (group.isVisible(id)) setOpenPhotoId(null);
@@ -610,7 +621,6 @@ export function FlightViz({
             {/* Live instrument panel, overlaid on the map (top-centre). */}
             <div className="pointer-events-none absolute left-12 right-2 top-3 flex flex-col items-center gap-1 px-2 sm:right-[165px]">
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
-              {selectedState !== "Flying" && <button type="button" className="pointer-events-auto rounded bg-paper/95 px-2 py-1 text-xs underline" onClick={() => applyTime(selectedOffset)}>Jump to takeoff</button>}
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
             <div className="absolute left-[10px] top-1/2 flex -translate-y-1/2 flex-col gap-1">

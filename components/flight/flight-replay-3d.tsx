@@ -539,6 +539,21 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return ((bearing % 360) + 360) % 360;
   }
 
+  function pilotReadoutStyle(position: [number, number, number]) {
+    const scale = markerPerspectiveScale(position);
+    return {
+      getColor: [255, 255, 255] as [number, number, number],
+      getSize: ALT_LABEL_FONT_PX * scale,
+      sizeUnits: "pixels" as const,
+      fontFamily: "Arial, Helvetica, sans-serif",
+      fontWeight: 700,
+      billboard: true,
+      background: true,
+      getBackgroundColor: [39, 39, 39, 235] as [number, number, number, number],
+      backgroundPadding: [ALT_LABEL_PADDING_X * scale, ALT_LABEL_PADDING_Y * scale] as [number, number],
+    };
+  }
+
   function angularDelta(from: number, to: number) {
     return ((((to - from) % 360) + 540) % 360) - 180;
   }
@@ -924,18 +939,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         // the leader line), growing further upward from there.
         getPixelOffset: [0, -markerPixels(CONNECTOR_HEIGHT_PX)],
         getAlignmentBaseline: "bottom",
-        getColor: [255, 255, 255],
-        getSize: markerPixels(ALT_LABEL_FONT_PX),
-        sizeUnits: "pixels",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        fontWeight: 700,
-        billboard: true,
-        background: true,
-        getBackgroundColor: [39, 39, 39, 235],
-        backgroundPadding: [
-          markerPixels(ALT_LABEL_PADDING_X),
-          markerPixels(ALT_LABEL_PADDING_Y),
-        ],
+        ...pilotReadoutStyle(anchorPos),
       }),
     );
     if (nameBanner) {
@@ -1115,7 +1119,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         getPixelOffset: [0, -(banner.displayHeight + 14)], getSize: GLIDER_ICON_WIDTH_PX, sizeBasis: "width", sizeUnits: "pixels", billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
       else layers.push(new TextLayer({ id: 'companion-state-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
-        getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: colorRgb(colors.groupBadgeText), background: true, getBackgroundColor: [...colorRgb(colors.groupBadgeIdle), 220],
+        ...pilotReadoutStyle(anchor),
+        getText: () => state, getPixelOffset: [0, 12 * markerPerspectiveScale(anchor)],
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
     }
     return { tracks, badges: layers };

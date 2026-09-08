@@ -1,15 +1,16 @@
 "use client";
-import { Eye, EyeOff, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, PlaneTakeoff, RefreshCw } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import type { useGroupReplay } from "./use-group-replay";
 import type { ReplayPilot } from "@/lib/flights/group-replay";
 
-export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onToggle, offsetMin }: {
+export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onToggle, onTakeoff, offsetMin }: {
   group: ReturnType<typeof useGroupReplay>;
   primaryOwnerId: string;
   viewerId: string | null;
   onSelect: (pilot: ReplayPilot, flightId?: string) => void;
   onToggle: (pilotId: string) => void;
+  onTakeoff: (pilot: ReplayPilot) => void;
   offsetMin: number;
 }) {
   return <div className="absolute right-2 top-[95px] z-20 flex max-h-[calc(100%-145px)] max-w-[150px] flex-col gap-2 overflow-y-auto rounded-lg p-2 text-[var(--replay-group-card-text)] shadow-md sm:top-3 sm:max-h-[calc(100%-70px)]" style={{ background: "color-mix(in srgb, var(--replay-group-card-bg) calc(var(--replay-group-card-alpha) * 100%), transparent)" }} aria-label="Pilots in this replay">
@@ -26,10 +27,16 @@ export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onTogg
               <Avatar {...pilot} className="h-9 w-9 bg-[var(--replay-group-avatar-bg)] text-sm text-[var(--replay-group-avatar-text)]" />
             </span>
           </button>
-          <button type="button" aria-label={`${shown ? "Hide" : "Show"} ${pilot.displayName}`} title={`${shown ? "Hide" : "Show"} ${pilot.displayName}`}
-            onClick={() => onToggle(pilot.id)} disabled={shown && !group.visibleFlights.some((f) => f.owner.id !== pilot.id)} className="grid h-10 w-10 place-items-center rounded hover:bg-[var(--replay-group-card-hover)] disabled:opacity-30">
-            {shown ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-          </button>
+          <div className="flex flex-col">
+            <button type="button" aria-label={`${shown ? "Hide" : "Show"} ${pilot.displayName}`} title={`${shown ? "Hide" : "Show"} ${pilot.displayName}`}
+              onClick={() => onToggle(pilot.id)} disabled={shown && !group.visibleFlights.some((f) => f.owner.id !== pilot.id)} className="grid h-10 w-10 place-items-center rounded hover:bg-[var(--replay-group-card-hover)] disabled:opacity-30">
+              {shown ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
+            <button type="button" aria-label={`Jump to ${pilot.displayName}'s takeoff`} title={`Jump to ${pilot.displayName}'s takeoff`}
+              onClick={() => onTakeoff(pilot)} className="grid h-10 w-10 place-items-center rounded hover:bg-[var(--replay-group-card-hover)]">
+              <PlaneTakeoff className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <span className="max-w-full truncate text-[11px] font-medium" title={pilot.displayName}>{pilot.displayName}{pilot.id === viewerId ? " · You" : ""}</span>
         {pilot.id === primaryOwnerId && <span className="text-[10px] text-[var(--replay-group-card-muted)]">Primary flight</span>}

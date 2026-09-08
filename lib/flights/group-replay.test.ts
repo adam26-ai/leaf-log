@@ -30,7 +30,7 @@ describe("group replay with the supplied flights", () => {
     expect(bounds.startMs).toBe(Math.min(...flights.map((f) => f.takeoffMs)));
     expect(bounds.endMs).toBe(Math.max(...flights.map((f) => f.landingMs)));
     const r = artifacts[0].replay;
-    expect(replayStateAt(r, -1)).toBe("Not launched");
+    expect(replayStateAt(r, -1)).toBe("On Launch");
     expect(replayStateAt(r, r.durationS)).toBe("Landed");
     expect(replayPositionAt(r, -100)).toEqual(r.samples[0].slice(0, 3));
   });

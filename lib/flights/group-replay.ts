@@ -21,7 +21,7 @@ export interface CompanionManifest {
   nextCursor: string | null;
 }
 
-export type ReplayState = "Not launched" | "Flying" | "Landed" | "Recording gap";
+export type ReplayState = "On Launch" | "Flying" | "Landed" | "Recording gap";
 
 /** A gap is at least 30 seconds and five times the recorder's median cadence. */
 export function recordingGapSeconds(samples: Sample[]): number {
@@ -31,7 +31,7 @@ export function recordingGapSeconds(samples: Sample[]): number {
 }
 
 export function replayStateAt(replay: ReplayResponse, localTime: number): ReplayState {
-  if (localTime < 0) return "Not launched";
+  if (localTime < 0) return "On Launch";
   if (localTime >= replay.durationS) return "Landed";
   if (replay.samples.length < 2) return "Recording gap";
   const { i } = locateSample(replay.samples, localTime);
