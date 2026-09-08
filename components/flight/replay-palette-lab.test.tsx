@@ -13,7 +13,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); localSto
 
 it("restores older palettes with defaults for newly added pilot colors", async () => {
   localStorage.setItem("leaf-dev-replay-palette", JSON.stringify({ presetId: "custom", colors: { timeline: "#123456" }, sizes: { timeline: 6 } }));
-  render(<ReplayPaletteLab basemap="map" onBasemap={vi.fn()} />);
+  render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
   await waitFor(() => expect(document.documentElement.style.getPropertyValue("--replay-timeline")).toBe("#123456"));
   expect(readGroupReplayColors().groupBadgeIdle).toBe("#ffffff");
   expect(document.documentElement.style.getPropertyValue("--replay-group-card-alpha")).toBe("0.7");
@@ -23,7 +23,7 @@ it("publishes live map colors and saves card opacity without making avatars tran
   const listener = vi.fn();
   window.addEventListener(REPLAY_PALETTE_EVENT, listener);
   try {
-    render(<ReplayPaletteLab basemap="map" onBasemap={vi.fn()} />);
+    render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Palette lab" }));
     fireEvent.click(screen.getByText("Friends & pilots"));
     fireEvent.change(screen.getByLabelText("Unselected track color"), { target: { value: "#ff9900" } });

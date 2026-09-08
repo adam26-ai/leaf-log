@@ -20,6 +20,7 @@ import type { ReplayResponse } from "@/lib/igc/replay";
 import type { LoadedReplayFlight } from "./use-group-replay";
 import type { Layer } from "@deck.gl/core";
 import { GROUP_REPLAY_COLORS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -87,13 +88,12 @@ function escapeXml(text: string): string {
   });
 }
 
-function verticalNameBanner(name: string | null, fill: string, text: string, border: string): NameBannerIcon | null {
+function verticalNameBanner(name: string | null, fill: string, text: string, border: string, displayHeight: number): NameBannerIcon | null {
   if (!name) return null;
-  const cacheKey = `${fill}:${text}:${border}:${name}`;
+  const cacheKey = `${fill}:${text}:${border}:${displayHeight}:${name}`;
   const cached = nameBannerCache.get(cacheKey);
   if (cached) return cached;
 
-  const displayHeight = Math.max(115, Math.ceil(name.length * 9 + 23));
   const width = NAME_BANNER_WIDTH_PX * NAME_BANNER_SCALE;
   const height = displayHeight * NAME_BANNER_SCALE;
   const svg =
@@ -297,6 +297,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const dataRef = useRef<ReplayData | null>(null);
   const trackRef = useRef<TimedTrackDatum[]>([]);
   const companionRef = useRef(companions);
+  const badgeHeightRef = useRef(115);
   const identityRef = useRef({ flightId, primaryFlightId });
   const groupColorsRef = useRef(GROUP_REPLAY_COLORS);
   useEffect(() => {
@@ -865,7 +866,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const nameText = pilotNameRef.current ? pilotNameRef.current.toUpperCase() : null;
     const colors = groupColorsRef.current;
     const identityColor = primary ? colors.groupPrimary : colors.groupCompanion;
-    const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder);
+    const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder, sharedBadgeHeight());
     const anchorZ = ground != null ? Math.max(zOf(pos[2]), ground) : zOf(pos[2]);
     const anchorPos: [number, number, number] = [pos[0], pos[1], anchorZ];
     const markerScale = markerPerspectiveScale(anchorPos);
@@ -887,7 +888,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // point by construction, so ordinary depth testing let it slice into the
     // label at some viewing angles.
     const poleLayers: (IconLayer<[number, number, number]> | TextLayer<LabelDatum>)[] = [
-      new IconLayer<[number, number, number]>({
+      new ScreenSpaceIconLayer<[number, number, number]>({
         id: "glider-connector",
         data: [anchorPos],
         billboard: true,
@@ -900,7 +901,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           anchorY: CONNECTOR_HEIGHT_PX,
         }),
         getPosition: (p) => p,
-        getSize: markerPixels(CONNECTOR_HEIGHT_PX),
+        getSize: CONNECTOR_HEIGHT_PX,
         sizeUnits: "pixels",
       }),
     ];
@@ -936,7 +937,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
     if (nameBanner) {
       poleLayers.push(
-        new IconLayer<[number, number, number]>({
+        new ScreenSpaceIconLayer<[number, number, number]>({
           id: "glider-name",
           data: [anchorPos],
           billboard: true,
@@ -951,9 +952,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           getPosition: (p) => p,
           getPixelOffset: [
             0,
-            -markerPixels(CONNECTOR_HEIGHT_PX + ALT_LABEL_HEIGHT_PX + LABEL_GAP_PX),
+            -(CONNECTOR_HEIGHT_PX + ALT_LABEL_HEIGHT_PX + LABEL_GAP_PX),
           ],
-          getSize: markerPixels(nameBanner.displayHeight),
+          getSize: nameBanner.displayHeight,
           sizeUnits: "pixels",
           sizeBasis: "height",
         }),
@@ -965,7 +966,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       LABEL_GAP_PX +
       (nameBanner ? nameBanner.displayHeight + LABEL_GAP_PX : 0);
     poleLayers.push(
-      new IconLayer<[number, number, number]>({
+      new ScreenSpaceIconLayer<[number, number, number]>({
         id: "glider-marker",
         data: state === "Flying" ? [anchorPos] : [],
         billboard: true,
@@ -978,8 +979,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           anchorY: GLIDER_ICON_SOURCE_HEIGHT,
         }),
         getPosition: (p) => p,
-        getPixelOffset: [0, -markerPixels(iconBottomOffset)],
-        getSize: markerPixels(GLIDER_ICON_WIDTH_PX),
+        getPixelOffset: [0, -iconBottomOffset],
+        getSize: GLIDER_ICON_WIDTH_PX,
         sizeUnits: "pixels",
         sizeBasis: "width",
       }),
@@ -1015,7 +1016,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           },
         }),
         // Photo pins (camera icons) at their position on the track.
-        new IconLayer<PhotoIcon>({
+        new ScreenSpaceIconLayer<PhotoIcon>({
           id: "photo-pins",
           data: photoIcons,
           pickable: true,
@@ -1023,6 +1024,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           getIcon: (photo) => ({ url: cameraIcon(photo.primary ? colors.groupPrimary : colors.groupCompanion), width: 68, height: 68, anchorX: 34, anchorY: 34 }),
           getPosition: (d) => d.position,
           getSize: 30,
+          sizeBasis: "width",
           sizeUnits: "pixels",
           updateTriggers: { getPosition: offsetRef.current, getIcon: [colors.groupPrimary, colors.groupCompanion] },
           onHover: (info) => {
@@ -1059,6 +1061,14 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return safe;
   }
 
+  function sharedBadgeHeight(): number {
+    // Keep the longest loaded name's height for this replay session, even if
+    // that pilot is subsequently hidden. Selection cannot change dimensions.
+    const names = [pilotNameRef.current ?? "", ...companionRef.current.map((f) => f.owner.displayName)];
+    badgeHeightRef.current = Math.max(badgeHeightRef.current, ...names.map((name) => Math.ceil(name.toUpperCase().length * 9 + 23)));
+    return badgeHeightRef.current;
+  }
+
   function companionLayers(nowMs: number): Layer[] {
     const layers: Layer[] = [];
     const all = companionRef.current;
@@ -1086,18 +1096,17 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const ground = groundElevationAt(point[0], point[1]);
       const anchor: [number, number, number] = [point[0], point[1], Math.max((point[2] + offset) * TERRAIN_EXAGGERATION, ground ?? -Infinity)];
       const primary = flight.id === identityRef.current.primaryFlightId;
-      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder)!;
-      const scale = markerPerspectiveScale(anchor);
+      const banner = verticalNameBanner(flight.owner.displayName.toUpperCase(), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder, sharedBadgeHeight())!;
       layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getFillColor: colorRgb(primary ? colors.groupPrimary : colors.groupCompanion), getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
-      layers.push(new IconLayer({ id: 'companion-name-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+      layers.push(new ScreenSpaceIconLayer({ id: 'companion-name-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getIcon: () => ({ url: banner.url, width: banner.width, height: banner.height, anchorX: banner.width / 2, anchorY: banner.height }),
-        getPixelOffset: [0, -10 * scale], getSize: banner.displayHeight * scale, sizeUnits: "pixels", billboard: true,
+        getPixelOffset: [0, -10], getSize: banner.displayHeight, sizeUnits: "pixels", billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
-      if (state === "Flying") layers.push(new IconLayer({ id: 'companion-glider-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
+      if (state === "Flying") layers.push(new ScreenSpaceIconLayer({ id: 'companion-glider-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getIcon: () => ({ url: GLIDER_ICON, width: GLIDER_ICON_SOURCE_WIDTH, height: GLIDER_ICON_SOURCE_HEIGHT, anchorX: GLIDER_ICON_SOURCE_WIDTH / 2, anchorY: GLIDER_ICON_SOURCE_HEIGHT }),
-        getPixelOffset: [0, -(banner.displayHeight + 14) * scale], getSize: GLIDER_ICON_WIDTH_PX * scale, sizeBasis: "width", sizeUnits: "pixels", billboard: true,
+        getPixelOffset: [0, -(banner.displayHeight + 14)], getSize: GLIDER_ICON_WIDTH_PX, sizeBasis: "width", sizeUnits: "pixels", billboard: true,
         parameters: { depthCompare: "always", depthWriteEnabled: false } }));
       else layers.push(new TextLayer({ id: 'companion-state-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getText: () => state, getSize: 10, getPixelOffset: [0, 12], getColor: colorRgb(colors.groupBadgeText), background: true, getBackgroundColor: [...colorRgb(colors.groupBadgeIdle), 220],

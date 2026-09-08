@@ -194,6 +194,8 @@ Implementation/review tuning: neutral-track contrast, label collisions, mobile e
 
 Visual refinement: the pilot card defaults to a 70%-opaque white background with opaque avatars. Palette Lab groups its controls into collapsible sections, including Friends & pilots with light/dark card shortcuts, opacity, identity/photo accents, avatar colors, track/outline colors, and badge colors. Canvas overlays update from the same palette as the controls. Unselected badges are white and use the same perspective-adjusted font/width scale as selection; the former 80% companion scale was removed. The extra "Viewing" notice was removed. Palette compatibility/live-update tests, controller tests, lint, TypeScript, production build, and browser checks passed for this refinement.
 
+Sizing correction: all name badges now share the longest loaded name's height for the current replay session, preserving that height when a pilot is hidden. This removes the shorter-name/smaller-badge effect. Pilot banner/glider icons and photo pins use a screen-space icon layer that cancels the perspective divide at each anchor. Pilot badges retain matching dimensions, and photo icon frames remain 30 CSS pixels wide when the camera moves or zooms. Browser zoom/selection checks after a fresh renderer load, TypeScript, lint, and focused tests passed.
+
 Implemented:
 
 - Viewer-scoped companion discovery on page load and explicit refresh, with no inherited friends-only access. Every replay/photo payload still authorizes its own request. Anonymous replay is solo. The viewer's own private flights can accompany a readable primary; another pilot's private flights are excluded even if an instructor role would permit direct access.
