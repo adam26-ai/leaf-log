@@ -73,7 +73,7 @@ export function InstructorNoteCard({
               maxLength={2000}
               rows={4}
               placeholder="Private notes for this pilot — visible only to them and to you."
-              className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+              className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
             />
             <div className="flex items-center gap-3">
               <Button type="submit" disabled={pending}>

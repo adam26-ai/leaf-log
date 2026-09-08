@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "@/lib/prisma";
+import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
-const LINK_FILE = "/tmp/leaf-magic-link.txt";
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
 /** Poll the dev magic-link file written by sendMagicLink's dev fallback. */
@@ -45,8 +45,12 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
   // 4. Upload a flight.
-  await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles(IGC_PATH);
+  await page.goto("/upload", { waitUntil: "networkidle" });
+  // Use the picker so the client has hydrated before dispatching a file change.
+  const chooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Choose file", exact: true }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles(IGC_PATH);
 
   // 5. Land on the flight page with real metrics. Sites are fully
   // community-driven (no curated seed), so a first-ever flight here reads

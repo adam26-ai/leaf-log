@@ -53,7 +53,7 @@ export function KudosButton({
 
   const content = (
     <>
-      <ThumbsUp className={cn("h-4 w-4", state.kudoed && "fill-amber text-amber-strong")} aria-hidden="true" />
+      <ThumbsUp className={cn("h-4 w-4", state.kudoed && "fill-brand-blue text-brand-blue-strong")} aria-hidden="true" />
       <span className="tabular-nums">{state.count}</span>
     </>
   );
@@ -80,7 +80,7 @@ export function KudosButton({
       onClick={toggle}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-gray-100 disabled:opacity-60",
-        state.kudoed ? "text-amber-strong" : "text-gray-600 hover:text-ink",
+        state.kudoed ? "text-brand-blue-strong" : "text-gray-600 hover:text-ink",
       )}
     >
       {content}

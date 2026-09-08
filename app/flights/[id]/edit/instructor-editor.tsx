@@ -42,7 +42,7 @@ export function InstructorEditor({
             name="instructorId"
             value=""
             defaultChecked={instructorId === null}
-            className="h-4 w-4 accent-amber"
+            className="h-4 w-4 accent-brand-blue"
           />
           None
         </label>
@@ -53,7 +53,7 @@ export function InstructorEditor({
               name="instructorId"
               value={option.id}
               defaultChecked={instructorId === option.id}
-              className="h-4 w-4 accent-amber"
+              className="h-4 w-4 accent-brand-blue"
             />
             {option.displayName} (@{option.handle})
             {option.stale && (

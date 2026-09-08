@@ -18,6 +18,7 @@ export function PhotoGallery({
   onOpenChange,
   onSelect,
   onChanged,
+  showHeading = true,
 }: {
   flightId: string;
   photos: FlightPhoto[];
@@ -26,6 +27,7 @@ export function PhotoGallery({
   onOpenChange?: (id: string | null) => void;
   onSelect?: (tSec: number) => void;
   onChanged?: () => void;
+  showHeading?: boolean;
 }) {
   const openIdx = openId ? photos.findIndex((p) => p.id === openId) : -1;
   const open = openIdx >= 0 ? photos[openIdx] : null;
@@ -68,9 +70,11 @@ export function PhotoGallery({
 
   return (
     <div className="flex flex-col gap-2">
-      <h2 className="font-condensed text-sm font-bold uppercase tracking-wide text-gray-500">
-        Photos
-      </h2>
+      {showHeading && (
+        <h2 className="font-condensed text-sm font-bold uppercase tracking-wide text-gray-500">
+          Photos
+        </h2>
+      )}
       <div className="flex flex-wrap gap-2">
         {photos.map((p) => (
           <button

@@ -12,7 +12,7 @@ export function Wordmark({ className }: { className?: string }) {
         className,
       )}
     >
-      Leaf<span className="text-amber-strong">Log</span>
+      Leaf<span className="text-brand-blue-strong">Log</span>
     </span>
   );
 }

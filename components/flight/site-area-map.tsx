@@ -85,15 +85,15 @@ export function SiteAreaMap({
       const areaRing = boundary ? boundary.geometry.coordinates[0] : circleRing(anchor.lat, anchor.lon, radiusM);
 
       map.addSource("area", { type: "geojson", data: ringGeoJson(areaRing) });
-      map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#ffb459", "fill-opacity": 0.2 } });
-      map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": "#ffb459", "line-width": 2 } });
+      map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#0099ff", "fill-opacity": 0.2 } });
+      map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": "#0099ff", "line-width": 2 } });
 
       new maplibregl.Marker({ color: "#272727" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
 
       if (flightPoint) {
         const el = document.createElement("div");
         el.style.cssText =
-          "width:14px;height:14px;border-radius:50%;background:#ffb459;border:2px solid #141414;box-sizing:border-box;";
+          "width:14px;height:14px;border-radius:50%;background:#0099ff;border:2px solid #141414;box-sizing:border-box;";
         new maplibregl.Marker({ element: el }).setLngLat([flightPoint.lon, flightPoint.lat]).addTo(map);
       }
 

@@ -27,6 +27,43 @@ A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ## Local development
 
+### Windows quick start
+
+Start Docker Desktop, then run this from the project folder in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-local.ps1
+```
+
+The launcher uses installed dependencies, creates `.env.local` if needed with a
+random auth secret, starts Postgres, applies existing migrations, and serves the
+app at **http://localhost:3000**. It uses Node from PATH or the Node runtime bundled
+with Codex on this machine. On a fresh checkout, install dependencies with
+`pnpm install` first. The launcher requires the local database settings from
+`.env.example` and an empty `RESEND_API_KEY`.
+
+Keep that terminal running; saved code changes appear automatically in the
+browser. Press **Ctrl+C** to stop the website. `docker compose stop` stops the
+database while keeping its data; running the launcher again resumes it.
+
+The local database starts empty and persists in Docker's `leaf-log-db` volume.
+Create a local account from the sign-in page using any test email address. After
+requesting a magic link, copy it from the server terminal, or open the latest link
+from another PowerShell window:
+
+```powershell
+Start-Process (Get-Content (Join-Path $env:TEMP 'leaf-magic-link.txt') -Raw).Trim()
+```
+
+No email is sent when `RESEND_API_KEY` is empty. Local accounts and flights are
+separate from Railway. `.env.local` is gitignored. If you need a sample IGC file:
+
+```powershell
+node --import tsx scripts/gen-fixture.ts test/e2e/.fixture.igc
+```
+
+### Manual setup (all platforms)
+
 ```bash
 pnpm install
 
@@ -46,8 +83,9 @@ pnpm db:seed         # currently a no-op; kept as the seed entry point
 pnpm dev             # http://localhost:3000
 ```
 
-In dev, **no real email is sent** — the magic-link URL is logged to the server
-console and written to `/tmp/leaf-magic-link.txt`.
+With `RESEND_API_KEY` empty, **no real email is sent** — the magic-link URL is
+logged to the server console and written to `leaf-magic-link.txt` in the operating
+system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 
 ## Testing
 

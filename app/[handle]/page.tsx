@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { listProfileFlightsForViewer, statsFrom } from "@/lib/flights/repo";
 import { getCurrentProfile } from "@/lib/profile";
@@ -31,6 +31,7 @@ export default async function ProfilePage({
 
   const viewer = await getCurrentProfile();
   const viewerId = viewer?.id ?? null;
+  if (viewerId === profile.id) redirect("/logbook");
   const [flights, friendCount, friendState] = await Promise.all([
     listProfileFlightsForViewer(profile.id, viewerId),
     countFriends(profile.id),

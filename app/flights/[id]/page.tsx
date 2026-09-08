@@ -3,7 +3,11 @@ import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
-import { getFlightForViewer } from "@/lib/flights/repo";
+import {
+  getFlightForViewer,
+  listOwnFlights,
+  listProfileFlightsForViewer,
+} from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
@@ -46,35 +50,57 @@ export default async function FlightPage({
   const instructorNotes = viewerId
     ? await listInstructorNotesForViewer(flight.id, viewerId)
     : [];
+  const navigationFlights = isOwner
+    ? await listOwnFlights(flight.ownerId)
+    : await listProfileFlightsForViewer(flight.ownerId, viewerId);
+  const navigationIndex = navigationFlights.findIndex((row) => row.id === flight.id);
+  // Logs are newest-first: left goes to the previous (older) log and right
+  // goes to the next (newer) log.
+  const previousFlightId =
+    navigationIndex >= 0 ? navigationFlights[navigationIndex + 1]?.id ?? null : null;
+  const nextFlightId =
+    navigationIndex > 0 ? navigationFlights[navigationIndex - 1]?.id ?? null : null;
 
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={viewer} />
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <FlightHeader flight={flight} isOwner={isOwner} />
-          <div className="flex items-center gap-3">
-            {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
-            {kudoSummary && (
-              <KudosButton
-                flightId={flight.id}
-                initialCount={kudoSummary.count}
-                initialKudoed={kudoSummary.hasKudoed}
-                canToggle={!isOwner}
-              />
-            )}
-            {isOwner && (
-              <Link
-                href={`/flights/${flight.id}/edit`}
-                title="Edit flight"
-                aria-label="Edit flight"
-                className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
-              >
-                <Pencil className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            )}
-          </div>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 pt-3">
+        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+          <FlightHeader
+            flight={flight}
+            isOwner={isOwner}
+            previousFlightId={previousFlightId}
+            nextFlightId={nextFlightId}
+            actions={
+              <div className="flex shrink-0 items-center gap-3">
+                {isOwner && (
+                  <ShareToggle
+                    flightId={flight.id}
+                    visibility={normalizeVisibility(flight.visibility)}
+                  />
+                )}
+                {kudoSummary && (
+                  <KudosButton
+                    flightId={flight.id}
+                    initialCount={kudoSummary.count}
+                    initialKudoed={kudoSummary.hasKudoed}
+                    canToggle={!isOwner}
+                  />
+                )}
+                {isOwner && (
+                  <Link
+                    href={`/flights/${flight.id}/edit`}
+                    title="Edit flight"
+                    aria-label="Edit flight"
+                    className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            }
+          />
         </div>
 
         {flight.status === "failed" ? (
@@ -90,32 +116,37 @@ export default async function FlightPage({
           </Card>
         ) : (
           <>
-            <div className="mt-8">
-              <KeyStatistics flight={flight} />
+            <div className="relative left-1/2 mt-2 w-[80vw] -translate-x-1/2">
+              <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
-            <div className="mt-8">
+            <div className="mt-2">
               <FlightViz
+                xcScore={flight.xcScore}
+                key={flight.id}
                 flightId={flight.id}
+                canAddPhotos={isOwner}
                 takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
                 offsetMin={flight.localUtcOffsetMinutes ?? 0}
-                pilotName={owner?.displayName}
-                notes={isOwner ? flight.notes : null}
+                pilotName={flight.pilot || owner?.displayName}
+                notes={flight.notes}
               />
             </div>
           </>
         )}
 
-        <div className="mt-8">
-          <InstructorNoteCard
-            flightId={flight.id}
-            notes={instructorNotes}
-            viewerId={viewerId}
-            isViewerCurrentInstructor={isViewerCurrentInstructor}
-          />
-        </div>
+        {(instructorNotes.length > 0 || isViewerCurrentInstructor) && (
+          <div className="mt-8">
+            <InstructorNoteCard
+              flightId={flight.id}
+              notes={instructorNotes}
+              viewerId={viewerId}
+              isViewerCurrentInstructor={isViewerCurrentInstructor}
+            />
+          </div>
+        )}
 
         {isOwner && warnings.length > 0 && (
-          <Card className="mt-8 border-amber/40 bg-amber/5">
+          <Card className="mt-8 border-brand-blue/40 bg-brand-blue/5">
             <CardBody className="flex flex-col gap-1">
               <p className="font-condensed text-sm font-bold tracking-wide text-ink">
                 A few notes about this file

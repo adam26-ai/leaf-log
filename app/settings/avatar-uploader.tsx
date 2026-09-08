@@ -117,7 +117,7 @@ export function AvatarUploader({
           }}
           className={cn(
             "flex cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-5 py-3 text-center transition-colors",
-            dragging ? "border-amber bg-amber/10" : "border-gray-300 hover:border-amber",
+            dragging ? "border-brand-blue bg-brand-blue/10" : "border-gray-300 hover:border-brand-blue",
             busy && "pointer-events-none opacity-50",
           )}
         >

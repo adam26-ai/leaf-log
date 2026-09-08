@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { ThumbsUp } from "lucide-react";
+import { Avatar } from "@/components/avatar";
+import { listHighlights } from "@/lib/flights/list-highlights";
+import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 import { requireProfile } from "@/lib/profile";
 import { listFeedForViewer } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
@@ -26,10 +30,12 @@ export default async function FeedPage({
     limit: 20,
     cursor: firstParam(cursor),
   });
+  const { highlightScore, distanceScore } = listHighlights(feed.rows);
 
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
+      <XcPendingRefresh pending={feed.rows.some(f => f.xcStatus === "queued")} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Feed</SectionHeading>
 
@@ -46,14 +52,24 @@ export default async function FeedPage({
           </Card>
         ) : (
           <>
-            <ul className="mt-8 flex flex-col gap-2">
+            <ul className="mt-8 flex flex-col gap-4">
               {feed.rows.map((flight) => (
                 <li key={flight.id}>
+                  <div className="mb-1 flex items-center justify-between gap-3 px-1">
+                    <Link href={`/@${flight.owner.handle}`} className="flex min-w-0 items-center gap-2 text-sm text-gray-600 hover:text-ink">
+                      <Avatar handle={flight.owner.handle} displayName={flight.owner.displayName} avatarUpdatedAt={flight.owner.avatarUpdatedAt} className="h-6 w-6 text-xs" />
+                      <span className="truncate">{flight.owner.displayName} <span className="text-xs text-gray-500">@{flight.owner.handle}</span></span>
+                    </Link>
+                    <span className="flex items-center gap-1 text-xs text-gray-500" title="Kudos"><ThumbsUp className="h-3.5 w-3.5" />{flight.kudoCount}</span>
+                  </div>
+                  <div className="overflow-x-auto pb-1">
                   <FlightRow
                     flight={flight}
-                    owner={flight.owner}
-                    kudoCount={flight.kudoCount}
+                    compact
+                    highlightScore={highlightScore(flight)}
+                    distanceScore={distanceScore(flight)}
                   />
+                  </div>
                 </li>
               ))}
             </ul>

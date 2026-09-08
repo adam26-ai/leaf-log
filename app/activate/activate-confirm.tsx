@@ -67,7 +67,7 @@ export function ActivateConfirm({
           name="label"
           maxLength={60}
           placeholder="My Leaf"
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
       </label>
       <Button type="submit" size="lg" disabled={pending}>

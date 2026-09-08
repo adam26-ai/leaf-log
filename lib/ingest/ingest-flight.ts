@@ -8,7 +8,7 @@ import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 
-export const PARSER_VERSION = "1";
+export const PARSER_VERSION = "2";
 
 export type IngestSource = "web_upload" | "device_push";
 
@@ -122,6 +122,7 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         failureReason: metrics ? null : "No usable GPS fixes in file",
         flightDate: flightDateMs ? isoDate(flightDateMs) : null,
         glider: parsed.headers.glider,
+        pilot: parsed.headers.pilot,
         recorder: parsed.headers.recorder,
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
         landingAt: metrics ? new Date(metrics.landingAtMs) : null,
@@ -133,6 +134,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         altSource: metrics?.altSource ?? null,
         trackDistM: metrics?.trackDistM ?? null,
         straightDistM: metrics?.straightDistM ?? null,
+        xcStatus: metrics ? "queued" : "unscored",
+        xcQueuedAt: metrics ? new Date() : null,
         takeoffLat: metrics?.takeoff.lat ?? null,
         takeoffLon: metrics?.takeoff.lon ?? null,
         landingLat: metrics?.landing.lat ?? null,

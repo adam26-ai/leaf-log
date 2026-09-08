@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 
-const LINK_FILE = "/tmp/leaf-magic-link.txt";
+import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
 /** Poll the dev magic-link file written by sendMagicLink's dev fallback. */
 async function getMagicLink(): Promise<string> {

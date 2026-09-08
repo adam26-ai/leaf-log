@@ -86,4 +86,31 @@ describe("parseIgc", () => {
     expect(headers.recorder).toContain("Foreign");
     expect(fixes).toHaveLength(1);
   });
+
+  it("parses optional B-record extensions declared by an I record", () => {
+    const igc = [
+      "AXLFLeaf1",
+      "HFDTE060926",
+      "I063638FXA3941GSP4244TRT4547WDI4850WSP5153VAR",
+      "B1958433731056N12153531WA0055200593005025335000000-12",
+    ].join("\n");
+    const { fixes } = parseIgc(igc);
+    expect(fixes[0]).toMatchObject({
+      fixAccuracyM: 5,
+      groundSpeedKmh: 25,
+      trueTrackDeg: 335,
+      windDirectionDeg: 0,
+      windSpeedKmh: 0,
+      varioMs: -1.2,
+    });
+  });
+
+  it("does not interpret undeclared B-record suffix data", () => {
+    const igc = [
+      "AXLFLeaf1",
+      "HFDTE060926",
+      "B1958433731056N12153531WA0055200593005025335000000012",
+    ].join("\n");
+    expect(parseIgc(igc).fixes[0].varioMs).toBeNull();
+  });
 });

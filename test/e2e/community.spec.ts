@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 import { prisma } from "@/lib/prisma";
 
-const LINK_FILE = "/tmp/leaf-magic-link.txt";
+import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
 async function getMagicLink(): Promise<string> {
   for (let i = 0; i < 40; i++) {

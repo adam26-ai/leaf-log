@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-const LINK_FILE = "/tmp/leaf-magic-link.txt";
+import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 const JPEG = join(process.cwd(), "test/photos/fixtures/exif-sample.jpg");
 const HEIC = join(process.cwd(), "test/photos/fixtures/tiled-sample.heic");

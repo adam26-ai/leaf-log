@@ -9,6 +9,8 @@ import { normalizeVisibility } from "@/lib/flights/visibility";
 
 export type SettingsState = { error?: string; ok?: boolean };
 
+import { readMapDefaults } from "@/lib/flights/map-defaults";
+
 const MAX_BIO = 280;
 
 /** Update the signed-in pilot's profile (handle, display name, bio, default privacy). */
@@ -30,6 +32,17 @@ export async function updateProfile(
   }
 
   const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
+  const defaultUnits = formData.get("default_units");
+  if (defaultUnits !== "metric" && defaultUnits !== "imperial") {
+    return { error: "Choose Metric or Imperial for default units." };
+  }
+
+  let mapDefaults;
+  try {
+    mapDefaults = readMapDefaults(JSON.parse(String(formData.get("map_defaults") ?? "{}")));
+  } catch {
+    return { error: "Invalid map defaults. Please reload and try again." };
+  }
 
   // Reject changing the handle to one another pilot already owns (the unique
   // constraint catches the race; this gives a friendlier message first).
@@ -49,6 +62,8 @@ export async function updateProfile(
         displayName: d.displayName,
         bio: bio || null,
         defaultVisibility,
+        defaultUnits,
+        mapDefaults: { ...mapDefaults },
       },
     });
   } catch (e) {
@@ -58,7 +73,7 @@ export async function updateProfile(
     return { error: "Something went wrong. Please try again." };
   }
 
-  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   revalidatePath(`/@${h.handle}`);
   return { ok: true };
 }
