@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { AvatarUploader } from "./avatar-uploader";
 import {
@@ -37,6 +37,7 @@ export function SettingsForm({
   defaultUnits,
   mapDefaults,
   avatarUpdatedAt,
+  afterProfile,
 }: {
   handle: string;
   displayName: string;
@@ -45,6 +46,7 @@ export function SettingsForm({
   defaultUnits: string;
   mapDefaults: unknown;
   avatarUpdatedAt: Date | string | null;
+  afterProfile?: ReactNode;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const latestRevision = useRef(0);
@@ -158,6 +160,7 @@ export function SettingsForm({
 
       {saveStatus}
       </Card>
+      {afterProfile}
       <Card className="flex flex-col gap-5 p-6">
       <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
       <MapDefaultsFields units={defaultUnits} defaults={mapDefaults} onChange={changed} />

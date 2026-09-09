@@ -12,39 +12,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
-    date: "2026-09-02",
-    title: "Instructors can leave private notes",
-    body: "If you're the instructor named on a flight, you can now leave a private note right on that flight's page — coaching points, what to work on next time. Only you and the pilot can see it, never anyone else the flight is shared with.",
+    date: "2026-09-08",
+    title: "See friends in your replays",
+    body: "Relive a flying day together: nearby friends' flights from the same time can now appear alongside the flight you're replaying, with sharing permissions respected. Tap a pilot's avatar to follow them and see their live stats and altitude profile, jump to their takeoff, or hide their flight to simplify the view. Shared photos appear along their tracks too. Smoother camera movement and clearer pilot markers make the group easier to follow. Also new: rename or merge wing names across your logbook in Settings, automatically save flight notes as you type, and use clearer Calculate, Retry, and Improve options when an XC score needs attention.",
   },
   {
-    date: "2026-09-01",
-    title: "Name a flight's instructor",
-    body: "A flight's edit page now has an Instructor card — name any accepted friend as the instructor of record for that flight. It's the first step toward instructor sign-offs on your Ratings page; for now it's just a tag you control, with no notification sent.",
-  },
-  {
-    date: "2026-08-31",
-    title: "Tag flight details for your ratings",
-    body: "A flight's edit page now has a Flight details card: Occupancy (solo/tandem), Flight type (like Cross Country), Launch type (Ridge Soaring, Cliff Launch, and more), and Landing (Restricted Landing Field). Tagging a tandem flight keeps it out of your solo airtime on the Ratings page. The other tags show up there too, as your own self-reported tally — a great way to track what you've flown before talking it through with an instructor.",
-  },
-  {
-    date: "2026-08-29",
-    title: "Track your ratings progress",
-    body: "A new Ratings page shows how you're coming along toward USHPA's P2, P3, and P4 paragliding ratings — flight count, flying days, airtime, and the variety of sites and gliders you've flown, all worked out automatically from your logbook. Criteria that need an instructor's sign-off show up too, clearly marked as coming soon.",
-  },
-  {
-    date: "2026-08-29",
-    title: "Edit a flight after the fact",
-    body: "Tap the pencil next to a flight's title to open its new edit page — change who can see it, jot down notes about the conditions or how it went, add more photos, or delete the flight, all in one place. Notes are just for you; they show up on the flight page but only when you're the one looking.",
-  },
-  {
-    date: "2026-08-29",
-    title: "A bigger, smarter 3D replay",
-    body: "The 3D replay is now the main event — bigger, wider, and on by default. A new set of controls sits right on the map: toggle the ground shadow, hover the camera icon to pick Follow, Chase, Orbit, or Fixed, hover the basemap icon to swap styles, jump straight back to your glider, or zoom out to frame the whole route in one tap. The playback timeline now lines up with the altitude profile, while the clock and speed control sit in a compact card on the map.",
-  },
-  {
-    date: "2026-08-29",
-    title: "Cleaner flight stats and sharing",
-    body: "Your flight's key numbers got a refresh — start and landing time now sit right in the stats card, climb and sink read together on one line, and your wing rounds out the header row. Kudos and your flight's visibility now sit together as simple icons next to the title. Prefer feet and mph? The Metric/Imperial toggle now follows you into the 3D replay's live readout too, so everything matches.",
+    date: "2026-09-07",
+    title: "A cleaner logbook, a roomier replay",
+    body: "Leaf Log has had a big UI tidy-up, from desktop to phone. Larger text and tighter logbook rows make flights easier to scan, with launch and destination names together when space allows and clearer sections for altitude, trophies, and sharing icons. Filter by site, wing, or trophies, and open the Personal Bests panel to see your gold, silver, and bronze results. The replay gives more room to the map and altitude profile, with compact controls and clearer flight statistics. You can also choose your preferred map, camera, playback speed, units, and route display in Settings so each replay starts the way you like it.",
   },
   {
     date: "2026-08-26",

@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Waypoints,
-  Triangle,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -21,6 +20,7 @@ import { seekReplayToMetric, type ReplayMetric } from "@/lib/flights/replay-even
 import { XcPendingRefresh } from "./xc-pending-refresh";
 import { XcStatistic } from "./xc-statistic";
 import { analysisPending } from "@/lib/flights/analysis-state";
+import { WingIcon } from "@/components/icons/wing-icon";
 
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
   const content = (
@@ -57,7 +57,7 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
 export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flight; canCalculateXc?: boolean }) {
   const [units] = useUnits();
   const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
-    ["Wing", Triangle, flight.glider ?? "—"],
+    ["Wing", WingIcon, flight.glider ?? "—"],
     ["Airtime", Clock, formatDuration(flight.durationS)],
     ["XC distance", Waypoints, ""],
     ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units), "max-altitude"],

@@ -5,11 +5,14 @@ import { AppHeader } from "@/components/app-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Card } from "@/components/ui/card";
 import { SettingsForm } from "./settings-form";
+import { WingEditor } from "./wing-editor";
+import { listOwnWings } from "@/lib/flights/wings";
 
 export const metadata = { title: "Settings — Leaf Log" };
 
 export default async function SettingsPage() {
   const profile = await requireProfile();
+  const wings = await listOwnWings(profile.id);
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
@@ -47,6 +50,7 @@ export default async function SettingsPage() {
               defaultVisibility={profile.defaultVisibility}
               defaultUnits={profile.defaultUnits}
               mapDefaults={profile.mapDefaults}
+              afterProfile={<WingEditor wings={wings} />}
             />
         </div>
       </main>

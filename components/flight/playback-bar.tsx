@@ -247,13 +247,13 @@ export function PlaybackStatus({
         aria-pressed={progressive}
         aria-label={
           progressive
-            ? "Show flight so far during playback"
-            : "Keep the full route visible during playback"
+            ? "Draw flight during playback — click to change"
+            : "Always show full route — click to change"
         }
         title={
           progressive
-            ? "Show flight so far: on (click to keep full route visible)"
-            : "Show flight so far: off (click to draw route during playback)"
+            ? "Draw flight during playback — click to change"
+            : "Always show full route — click to change"
         }
         onClick={() => onTrackDisplay(progressive ? "full" : "elapsed")}
         className={cn(

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Mountain, Triangle, Trophy, ChevronDown } from "lucide-react";
+import { Mountain, Trophy, ChevronDown } from "lucide-react";
+import { WingIcon } from "@/components/icons/wing-icon";
 import type { FlightListItem } from "@/lib/flights/repo";
 import type { FlightTrophy } from "@/lib/flights/trophies";
 import { matchesLogbookFilters, siteKey, wingKey } from "@/lib/flights/logbook-filters";
@@ -64,7 +65,7 @@ export function LogbookList({ flights, trophies }: { flights: FlightListItem[]; 
       <StatsBar stats={{ totalSeconds: ready.reduce((s,f) => s + (f.durationS ?? 0), 0), flightCount: ready.length, siteCount: new Set(ready.map(siteKey).filter(key => key !== "unknown")).size }} />
       <div className="relative flex flex-wrap items-center gap-2" aria-label="Logbook filters">
         <div className="flex gap-1"><button type="button" aria-label="Filter by site" aria-pressed={siteFilter} onClick={() => setSiteFilter(active => !active)} className={toggleClass(siteFilter)}><Mountain className="h-4 w-4" /></button><FilterChoices open={openChoices === "sites"} onOpenChange={open => setOpenChoices(open ? "sites" : null)} label="Sites" options={sites} selected={selectedSites} onChange={keys => { setSelectedSites(keys); setSiteFilter(true); }} /></div>
-        <div className="flex gap-1"><button type="button" aria-label="Filter by wing" aria-pressed={wingFilter} onClick={() => setWingFilter(active => !active)} className={toggleClass(wingFilter)}><Triangle className="h-4 w-4" /></button><FilterChoices open={openChoices === "wings"} onOpenChange={open => setOpenChoices(open ? "wings" : null)} label="Wings" options={wings} selected={selectedWings} onChange={keys => { setSelectedWings(keys); setWingFilter(true); }} /></div>
+        <div className="flex gap-1"><button type="button" aria-label="Filter by wing" aria-pressed={wingFilter} onClick={() => setWingFilter(active => !active)} className={toggleClass(wingFilter)}><WingIcon aria-hidden="true" className="h-5 w-5" /></button><FilterChoices open={openChoices === "wings"} onOpenChange={open => setOpenChoices(open ? "wings" : null)} label="Wings" options={wings} selected={selectedWings} onChange={keys => { setSelectedWings(keys); setWingFilter(true); }} /></div>
         <button type="button" aria-label="Only flights with trophies" aria-pressed={trophyFilter} onClick={() => setTrophyFilter(active => !active)} className={toggleClass(trophyFilter)}><Trophy className="h-4 w-4" /></button>
       </div>
     </div>
