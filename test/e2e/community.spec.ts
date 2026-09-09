@@ -1,7 +1,7 @@
+import { uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
-import { prisma } from "@/lib/prisma";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -62,7 +62,7 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
 
   // Pilot A: upload, name the site PUBLIC, make the flight itself public.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "comm-a.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(lat, lon, 1),
@@ -79,10 +79,10 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   // directly, no zone step to skip.
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
-  // The visibility control is read-only in the UI for now (editing moves to
-  // a future flight-edit page) — stands in for that page until it exists.
-  const flightId = flightUrl.split("/").pop()!;
-  await prisma.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
+  await page.goto(`${flightUrl}/edit`);
+  await page.getByRole("button", { name: "Public", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.goto(flightUrl);
 
   // Pilot B: a completely separate context, viewing pilot A's public flight
   // — the label must be clickable even though this isn't B's own flight.

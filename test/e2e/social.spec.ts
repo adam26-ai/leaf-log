@@ -1,7 +1,7 @@
+import { uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { prisma } from "@/lib/prisma";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
@@ -60,13 +60,12 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   await expect(bPage.getByText("No pending requests.")).toBeVisible();
 
   await bPage.goto("/upload");
-  await bPage.locator('input[type="file"]').setInputFiles(IGC_PATH);
+  await uploadFlight(bPage, IGC_PATH);
   await expect(bPage).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   const flightUrl = bPage.url();
-  // The visibility control is read-only in the UI for now (editing moves to
-  // a future flight-edit page) — stands in for that page until it exists.
-  const flightId = flightUrl.split("/").pop()!;
-  await prisma.flight.update({ where: { id: flightId }, data: { visibility: "friends" } });
+  await bPage.goto(`${flightUrl}/edit`);
+  await bPage.getByRole("button", { name: "Friends only", exact: true }).click();
+  await expect(bPage.getByRole("button", { name: "Friends only", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   await page.goto("/feed");
   await expect(page.getByText(`@${bHandle}`)).toBeVisible();

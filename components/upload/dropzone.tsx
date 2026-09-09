@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 type UploadResult = {
   filename: string;
@@ -14,6 +15,7 @@ type UploadResult = {
 };
 
 export function Dropzone() {
+  const hydrated = useHydrated();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -87,6 +89,7 @@ export function Dropzone() {
           accept=".igc"
           multiple
           hidden
+          disabled={!hydrated || busy}
           onChange={(e) => e.target.files && upload(e.target.files)}
         />
       </div>
@@ -116,7 +119,7 @@ export function Dropzone() {
       )}
 
       <div>
-        <Button onClick={() => inputRef.current?.click()} disabled={busy}>
+        <Button onClick={() => inputRef.current?.click()} disabled={!hydrated || busy}>
           Choose file
         </Button>
       </div>

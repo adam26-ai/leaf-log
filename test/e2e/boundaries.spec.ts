@@ -1,3 +1,4 @@
+import { uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -33,6 +34,22 @@ async function stubBasemapTiles(page: Page) {
  *  drag/click was an insert vs. a move. */
 async function expectVertexCount(page: Page, n: number, timeout = 5_000) {
   await expect(page.locator('[data-testid="boundary-vertex"]')).toHaveCount(n, { timeout });
+}
+
+// Validation messages change the centered dialog's height while drawing.
+// Re-measure its position for every gesture instead of reusing stale pixels.
+async function mapPoint(page: Page, point: { x: number; y: number }) {
+  const box = await page.getByTestId("boundary-editor-map").boundingBox();
+  if (!box) throw new Error("Boundary map is not visible");
+  return { x: box.x + point.x, y: box.y + point.y };
+}
+async function clickMap(page: Page, point: { x: number; y: number }) {
+  const screen = await mapPoint(page, point);
+  await page.mouse.click(screen.x, screen.y);
+}
+async function moveOnMap(page: Page, point: { x: number; y: number }, steps = 1) {
+  const screen = await mapPoint(page, point);
+  await page.mouse.move(screen.x, screen.y, { steps });
 }
 
 function remoteFlightIgc(runOffset: number, lat: number, lon: number, seed: number): Buffer {
@@ -143,7 +160,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   // Flight #1: name a new public site at the anchor. SPRINT-008: zones are
   // hidden, so this is a bare site — no zone to also name.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6-1.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
@@ -163,7 +180,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   // the site named above from HERE is the reachability fix under test: the
   // picker, not a bound-flight shortcut.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6-2.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat + 5, anchorLon + 5, 2),
@@ -205,7 +222,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
 
   for (const [lon, lat] of corners) {
     const px = pixelFor(lon, lat, center, zoom, container);
-    await page.mouse.click(box.x + px.x, box.y + px.y);
+    await clickMap(page, px);
   }
 
   await expectVertexCount(page, 4, 5000);
@@ -216,7 +233,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   // circle, inside the drawn boundary. Must auto-name with ZERO dialog
   // interaction.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6-3.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon + metersToDegLon(700, anchorLat), 3),
@@ -252,7 +269,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   // Name a site, then reach its boundary editor via the BOUND-FLIGHT
   // shortcut this time (not the picker) — the other reachable path.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6x-1.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
@@ -289,7 +306,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   ];
   for (const [lon, lat] of triangle) {
     const px = pixelFor(lon, lat, center, zoom, container);
-    await page.mouse.click(box.x + px.x, box.y + px.y);
+    await clickMap(page, px);
   }
 
   await expectVertexCount(page, 3, 5000);
@@ -335,7 +352,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6ro-1.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
@@ -373,20 +390,19 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   ];
   for (const [lon, lat] of square) {
     const px = pixelFor(lon, lat, center, zoom, container);
-    await page.mouse.click(box.x + px.x, box.y + px.y);
+    await clickMap(page, px);
   }
   await expectVertexCount(page, 4, 5000);
 
   // The unified Save (bottom row) commits the boundary draft (dirty) and
-  // the name (unchanged, still succeeds) together, then returns to the
-  // read-only overview — the same "one Save, one place it lands" behavior
-  // as every other edit in this dialog.
+  // the name (unchanged, still succeeds) together, then closes the dialog.
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".fixed.inset-0").getByRole("heading", { name: siteName })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("boundary-editor-map")).not.toBeVisible();
 
   // Second edit: re-entering "Edit this site" re-fetches from the server
   // fresh, so the dashed reference (the fix under test) and the correct
   // vertex count must reflect what was actually just persisted.
+  await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
   await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 10_000 });
   await expectVertexCount(page, 4, 5000);
@@ -430,7 +446,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6mid-1.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
@@ -474,7 +490,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   const sw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
   for (const [lon, lat] of [nw, ne, se, sw]) {
     const px = pixelFor(lon, lat, center, zoom, container);
-    await page.mouse.click(box.x + px.x, box.y + px.y);
+    await clickMap(page, px);
   }
   await expectVertexCount(page, 4, 5000);
 
@@ -484,7 +500,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   // append one at the end.
   const topMid: [number, number] = [(nw[0] + ne[0]) / 2, (nw[1] + ne[1]) / 2];
   const topMidPx = pixelFor(topMid[0], topMid[1], center, zoom, container);
-  await page.mouse.click(box.x + topMidPx.x, box.y + topMidPx.y);
+  await clickMap(page, topMidPx);
   await expectVertexCount(page, 5, 5000);
 
   // After that insert the ring is [nw, newTop, ne, se, sw] — the BOTTOM
@@ -497,18 +513,16 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   const dragTarget: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(80)];
   const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
 
-  await page.mouse.move(box.x + bottomMidPx.x, box.y + bottomMidPx.y);
+  await moveOnMap(page, bottomMidPx);
   await page.mouse.down();
   // Multiple intermediate steps — a single jump can register as a click
   // rather than a drag in some pointer-event implementations.
-  await page.mouse.move(box.x + dragEndPx.x, box.y + dragEndPx.y, { steps: 10 });
+  await moveOnMap(page, dragEndPx, 10);
   await page.mouse.up();
 
   await expectVertexCount(page, 6, 5000);
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".fixed.inset-0").getByRole("button", { name: "Edit this site" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await expect(page.getByTestId("boundary-editor-map")).not.toBeVisible();
 
   // A flight positioned comfortably INSIDE the new south bulge — south of
   // the original square's bottom edge (-120m) entirely, but well short of
@@ -521,7 +535,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   // the same amount the first one did.
   const insideBulge: [number, number] = [bottomMid[0], bottomMid[1] - metersToDegLat(40)];
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6mid-2.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, insideBulge[1] - driftLat, insideBulge[0] - driftLon, 2),
@@ -557,7 +571,7 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles({
+  await uploadFlight(page, {
     name: "b6vtx-1.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
@@ -588,7 +602,7 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   const sw: [number, number] = [center.lng - metersToDegLon(150, center.lat), center.lat - metersToDegLat(120)];
   for (const [lon, lat] of [nw, ne, se, sw]) {
     const px = pixelFor(lon, lat, center, zoom, container);
-    await page.mouse.click(box.x + px.x, box.y + px.y);
+    await clickMap(page, px);
   }
   await expectVertexCount(page, 4, 5000);
 
@@ -609,7 +623,7 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await expectVertexCount(page, 4, 2000); // still 4 mid-press, no insert yet
-  await page.mouse.move(box.x + dragEndPx.x, box.y + dragEndPx.y, { steps: 10 });
+  await moveOnMap(page, dragEndPx, 10);
   await expectVertexCount(page, 4, 2000); // still 4 mid-drag
   await page.mouse.up();
 
