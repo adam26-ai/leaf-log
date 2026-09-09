@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { scoreXc } from "./xc";
+import { analyzeXc, scoreXc } from "./xc";
 import { parseIgc } from "./parse";
 import { makeRealisticFlight } from "@/test/igc/make-igc";
 
@@ -46,5 +46,10 @@ describe("XC scoring", () => {
     expect(await score([[0, 0], [0, 0], [0, 0]])).toBeNull();
     const fixes = track([[0, 0], [0, 0.1]]).map((fix) => ({ ...fix, valid: false }));
     expect(await scoreXc(fixes, { takeoffIndex: 0, landingIndex: fixes.length - 1 })).toBeNull();
+  });
+  it("records stationary tracks as evaluated empty results, not unfinished work", async () => {
+    const fixes = track([[0, 0], [0, 0], [0, 0]]);
+    expect(await analyzeXc(fixes, { takeoffIndex: 0, landingIndex: fixes.length - 1 }))
+      .toMatchObject({ score: null, complete: true, emptyReason: "no_eligible_route", completedCategories: ["open", "free-triangle", "fai-triangle"] });
   });
 });

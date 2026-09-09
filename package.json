@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "node --import tsx scripts/gen-fixture.ts test/e2e/.fixture.igc && playwright test",
+    "e2e": "playwright test",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "prisma migrate dev",

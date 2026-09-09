@@ -7,6 +7,58 @@ import {
 import { canSeeSite, canSeeZone, normalizeSiteVisibility } from "@/lib/sites/visibility";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
 import { kudoCountsFor } from "@/lib/social/kudos";
+import { replayArtifactForFlight } from "./replay-repo";
+import { routeProximityIndex } from "./route-proximity";
+import type { CompanionManifest } from "./group-replay";
+
+/** Social eligibility is narrower than direct flight access (no instructor exceptions).
+ * Filter before pagination, geometry reads, or returning any participant metadata.
+ */
+export async function listReplayCompanions(flightId: string, viewerId: string | null, offset = 0): Promise<CompanionManifest | null> {
+  const primary = await getFlightForViewer(flightId, viewerId);
+  if (!primary) return null;
+  const empty = { flights: [], nextCursor: null };
+  if (!viewerId || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
+  const graph = await prisma.friendship.findMany({
+    where: { status: "accepted", OR: [{ requesterId: primary.ownerId }, { addresseeId: primary.ownerId }, { requesterId: viewerId }, { addresseeId: viewerId }] },
+    select: { requesterId: true, addresseeId: true },
+  });
+  const friendsOf = (id: string) => graph.flatMap((f) => f.requesterId === id ? [f.addresseeId] : f.addresseeId === id ? [f.requesterId] : []);
+  const eligible = [...new Set([primary.ownerId, viewerId, ...friendsOf(primary.ownerId)])];
+  const directFriends = friendsOf(viewerId);
+  const pageSize = 32;
+  const candidates = await prisma.flight.findMany({
+    where: {
+      id: { not: primary.id }, ownerId: { in: eligible }, status: "ready",
+      takeoffAt: { lte: new Date(primary.landingAt.getTime() + 3_600_000) },
+      landingAt: { gte: new Date(primary.takeoffAt.getTime() - 3_600_000) },
+      OR: [{ ownerId: viewerId }, { visibility: "public" }, { visibility: "friends", ownerId: { in: directFriends } }],
+    },
+    include: { owner: { select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true } } },
+    orderBy: [{ takeoffAt: "asc" }, { id: "asc" }], skip: offset, take: pageSize + 1,
+  });
+  const artifact = await replayArtifactForFlight(primary);
+  if (!artifact) return empty;
+  const proximity = routeProximityIndex(artifact.matchingPaths);
+  const matches = [];
+  for (const flight of candidates.slice(0, pageSize)) {
+    if (!flight.takeoffAt || !flight.landingAt || flight.landingAt < flight.takeoffAt) continue;
+    const other = await replayArtifactForFlight(flight);
+    if (!other) continue;
+    const distance = proximity(other.matchingPaths);
+    if (distance == null) continue;
+    const overlap = Math.max(0, Math.min(primary.landingAt!.getTime(), flight.landingAt.getTime()) - Math.max(primary.takeoffAt!.getTime(), flight.takeoffAt.getTime()));
+    matches.push({ flight, distance, overlap });
+  }
+  matches.sort((a, b) => b.overlap - a.overlap || a.distance - b.distance || a.flight.id.localeCompare(b.flight.id));
+  return {
+    flights: matches.map(({ flight }) => ({
+      id: flight.id, owner: { ...flight.owner, avatarUpdatedAt: flight.owner.avatarUpdatedAt?.toISOString() ?? null },
+      takeoffMs: flight.takeoffAt!.getTime(), landingMs: flight.landingAt!.getTime(), xcScore: flight.xcScore,
+    })),
+    nextCursor: candidates.length > pageSize ? String(offset + pageSize) : null,
+  };
+}
 
 /**
  * App-layer privacy enforcement (this app has no DB RLS). EVERY flight read goes
@@ -28,6 +80,10 @@ const LIST_SELECT = {
   id: true,
   source: true,
   xcStatus: true,
+  xcError: true,
+  xcQueuedAt: true,
+  metricsVersion: true,
+  launchAltM: true,
   flightDate: true,
   takeoffAt: true,
   takeoffSiteName: true,
@@ -53,7 +109,8 @@ const LIST_SELECT = {
   restrictedLandingField: true,
 } as const;
 
-export type FlightListItem = Pick<Flight, keyof typeof LIST_SELECT>;
+type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM";
+export type FlightListItem = Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
 
 const FEED_SELECT = {
   ...LIST_SELECT,
@@ -406,6 +463,16 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
     select: LIST_SELECT,
   });
   return resolveLocationFields(rows, ownerId);
+}
+
+/** Only the launch altitude scalar is needed for personal gain trophies. */
+export async function ownLaunchAltitudes(ownerId: string): Promise<Record<string, number>> {
+  const rows = await prisma.$queryRaw<{ flightId: string; altitude: unknown }[]>`
+    SELECT d."flightId", d.track #> '{baro,0,1}' AS altitude
+    FROM "FlightData" d JOIN "Flight" f ON f.id = d."flightId"
+    WHERE f."ownerId" = ${ownerId} AND f.status = 'ready'
+  `;
+  return Object.fromEntries(rows.flatMap(row => typeof row.altitude === "number" && Number.isFinite(row.altitude) ? [[row.flightId, row.altitude]] : []));
 }
 
 /**

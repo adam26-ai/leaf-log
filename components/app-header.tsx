@@ -18,7 +18,7 @@ function NavWordmark() {
       alt="Leaf Log"
       width={112}
       height={42}
-      className="block h-[42px] w-[112px] shrink-0"
+      className="block h-auto w-[84px] sm:h-[42px] sm:w-[112px] shrink-0"
       unoptimized
       loading="eager"
     />
@@ -33,7 +33,7 @@ function NavWordmark() {
 export function AppHeader({ profile }: { profile: Profile | null }) {
   if (!profile) {
     return (
-      <header className="border-b border-gray-200 px-6 py-4 sm:px-10">
+      <header className="border-b border-gray-200 px-2 py-3 sm:px-6 sm:py-4 sm:px-10">
         <Link href="/">
           <NavWordmark />
         </Link>
@@ -42,18 +42,18 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
   }
 
   return (
-    <header className="flex items-center justify-between border-b border-gray-200 px-6 py-4 sm:px-10">
-      <div className="flex items-center gap-6">
+    <header className="flex items-center justify-between border-b border-gray-200 px-2 py-3 sm:px-6 sm:py-4 sm:px-10">
+      <div className="flex items-center gap-2 sm:gap-6">
         <Link href="/logbook">
           <NavWordmark />
         </Link>
-        <nav aria-label="Main navigation" className="hidden items-center gap-2 text-sm sm:flex">
+        <nav aria-label="Main navigation" className="flex items-center gap-1 text-sm sm:gap-2">
           {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
               title={label}
-              className="inline-flex h-[38px] items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] lg:px-4"
+              className="inline-flex h-[38px] items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-2 sm:px-3 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] lg:px-4"
             >
               <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-[#0099FF]" />
               <span className="sr-only lg:not-sr-only">{label}</span>

@@ -1,3 +1,4 @@
+import { UnitToggle } from "@/components/flight/unit-toggle";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Pencil } from "lucide-react";
@@ -44,7 +45,7 @@ export default async function FlightPage({
       ? viewer
       : await prisma.profile.findUnique({
           where: { id: flight.ownerId },
-          select: { displayName: true },
+          select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true },
         });
   const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
   const instructorNotes = viewerId
@@ -65,8 +66,8 @@ export default async function FlightPage({
     <div className="flex flex-1 flex-col">
       <AppHeader profile={viewer} />
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 pt-3">
-        <div className="relative left-1/2 w-[80vw] -translate-x-1/2">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-2 pt-3 sm:px-6">
+        <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <FlightHeader
             flight={flight}
             isOwner={isOwner}
@@ -74,6 +75,7 @@ export default async function FlightPage({
             nextFlightId={nextFlightId}
             actions={
               <div className="flex shrink-0 items-center gap-3">
+                <UnitToggle />
                 {isOwner && (
                   <ShareToggle
                     flightId={flight.id}
@@ -116,11 +118,13 @@ export default async function FlightPage({
           </Card>
         ) : (
           <>
-            <div className="relative left-1/2 mt-2 w-[80vw] -translate-x-1/2">
+            <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
             <div className="mt-2">
               <FlightViz
+                viewerId={viewerId}
+                primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName ?? flight.pilot ?? "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
                 xcScore={flight.xcScore}
                 key={flight.id}
                 flightId={flight.id}

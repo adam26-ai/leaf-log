@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildReplayPath } from "@/lib/igc/replay";
-import { instrumentAt } from "./instruments";
+import { instrumentAt, smoothedSpeedKmh } from "./instruments";
+import type { Sample } from "@/lib/igc/interpolate";
 import { makeRealisticFlight } from "@/test/igc/make-igc";
 
 function replayFromFixture() {
@@ -14,6 +15,14 @@ function replayFromFixture() {
 }
 
 describe("instrumentAt", () => {
+  it("smooths alternating GPS segment speeds without shortcutting curved distance or gaps", () => {
+    const replay = replayFromFixture();
+    const samples: Sample[] = Array.from({ length: 21 }, (_, i) => [(i + (i % 2 ? 0.4 : 0)) * 0.0001, 0, 1000, i]);
+    const smoothed = { ...replay, samples, durationS: 20 };
+    expect(Math.abs(smoothedSpeedKmh(smoothed, 8) - smoothedSpeedKmh(smoothed, 9))).toBeLessThan(1);
+    expect(smoothedSpeedKmh(smoothed, 10)).toBeCloseTo(40.03, 0);
+    expect(smoothedSpeedKmh({ ...smoothed, samples: [[0, 0, 0, 0], [1, 0, 0, 100]], gapThresholdS: 30 }, 50)).toBe(0);
+  });
   it("reads climbing values early and gliding values late", () => {
     const replay = replayFromFixture();
     const dur = replay.durationS;

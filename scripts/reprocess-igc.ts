@@ -4,7 +4,9 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { parseIgc } from "../lib/igc/parse";
 import { deriveMetrics } from "../lib/igc/derive";
 import { buildTrackArtifact } from "../lib/igc/track-artifact";
+import { buildReplayArtifact } from "../lib/igc/replay-artifact";
 import { PARSER_VERSION } from "../lib/ingest/ingest-flight";
+import { altitudeMeasurements } from "../lib/igc/repair-flight";
 
 const prisma = new PrismaClient();
 
@@ -36,7 +38,8 @@ async function reprocess(flightId: string) {
         parseWarnings: parsed.warnings,
         status: metrics ? "ready" : "failed",
         failureReason: metrics ? null : "No usable GPS fixes in file",
-        maxAltM: metrics?.maxAltM ?? null,
+        ...altitudeMeasurements(parsed, metrics),
+        xcStartedAt: null,
         altGainM: metrics?.altGainM ?? null,
         maxClimbMs: metrics?.maxClimbMs ?? null,
         maxSinkMs: metrics?.maxSinkMs ?? null,
@@ -57,7 +60,10 @@ async function reprocess(flightId: string) {
     }),
     prisma.flightData.update({
       where: { flightId },
-      data: { track: track ? (track as unknown as Prisma.InputJsonValue) : Prisma.JsonNull },
+      data: {
+        track: track ? (track as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        replay: metrics ? (buildReplayArtifact(parsed, metrics, flight.igcSha256, PARSER_VERSION) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+      },
     }),
   ]);
 

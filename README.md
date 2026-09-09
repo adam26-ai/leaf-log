@@ -93,11 +93,28 @@ system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
-pnpm e2e         # Playwright happy-path (needs local Postgres running)
+pnpm e2e         # Playwright browser suite (needs local Postgres running)
 ```
 
 Integration tests (`*.integration.test.ts`, `lib/sites/lookup.test.ts`) auto-skip
 when `DATABASE_URL` is unset.
+
+With a local database configured, the unit/integration suite applies migrations
+to its own temporary schema and removes it afterward. Files run serially because
+they exercise the shared XC queue. Existing development flights are not included
+in backfill tests, so a growing local logbook cannot slow down those checks.
+
+Playwright starts its own server at `http://localhost:3100`, with separate
+`.next-e2e` output and a fresh temporary PostgreSQL schema for each run. It applies
+migrations, generates the IGC fixture, and removes that schema after the run;
+your normal logbook and phone-testing settings are left alone. Real email is
+disabled for this server, and its magic links use a separate temporary file.
+Keep port 3100 free. Test traces are saved under `test-results/playwright` on failure.
+
+Install Chromium once with `pnpm exec playwright install chromium` (CI uses
+`--with-deps`). Windows falls back to installed Edge if bundled Chromium is
+missing; `PLAYWRIGHT_CHANNEL=msedge` can also select it explicitly. The test
+browser enables software WebGL for map interactions on machines without a GPU.
 
 ## Sites data
 

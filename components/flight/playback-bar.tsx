@@ -93,11 +93,13 @@ function AlignedTimeSlider({
   duration,
   disabled,
   onScrub,
+  primaryTime,
 }: {
   time: number;
   duration: number;
   disabled: boolean;
   onScrub: (time: number) => void;
+  primaryTime?: number;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -158,6 +160,7 @@ function AlignedTimeSlider({
       }}
     >
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full bg-gray-300" style={{ height: "var(--replay-timeline-width)" }} />
+      {primaryTime != null && <span title="Primary takeoff" className="absolute top-1/2 h-5 w-1 -translate-x-1/2 -translate-y-1/2 bg-[#d8ff00] ring-1 ring-black/40" style={{ left: `${Math.max(0, Math.min(1, primaryTime / maximum)) * 100}%` }} />}
       <div
         className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-[var(--replay-timeline)]"
         style={{ width: `${fraction * 100}%`, height: "var(--replay-timeline-width)" }}
@@ -178,6 +181,7 @@ export function PlaybackTimeline({
   disabled = false,
   onTogglePlay,
   onScrub,
+  primaryTime,
 }: {
   playing: boolean;
   time: number;
@@ -185,6 +189,7 @@ export function PlaybackTimeline({
   disabled?: boolean;
   onTogglePlay: () => void;
   onScrub: (time: number) => void;
+  primaryTime?: number;
 }) {
   const Icon = playing ? Pause : Play;
   const label = playing ? "Pause" : "Play";
@@ -203,6 +208,7 @@ export function PlaybackTimeline({
         {label}
       </button>
       <AlignedTimeSlider
+        primaryTime={primaryTime}
         time={time}
         duration={duration}
         disabled={disabled}
@@ -241,13 +247,13 @@ export function PlaybackStatus({
         aria-pressed={progressive}
         aria-label={
           progressive
-            ? "Show flight so far during playback"
-            : "Keep the full route visible during playback"
+            ? "Draw flight during playback — click to change"
+            : "Always show full route — click to change"
         }
         title={
           progressive
-            ? "Show flight so far: on (click to keep full route visible)"
-            : "Show flight so far: off (click to draw route during playback)"
+            ? "Draw flight during playback — click to change"
+            : "Always show full route — click to change"
         }
         onClick={() => onTrackDisplay(progressive ? "full" : "elapsed")}
         className={cn(

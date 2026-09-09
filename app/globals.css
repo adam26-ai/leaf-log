@@ -14,6 +14,9 @@
   --color-paper: #ffffff;      /* background */
   --color-brand-blue: #0099ff;      /* signature accent — accent bar, CTAs, highlights */
   --color-brand-blue-strong: #007dcc;
+  --color-emergency-orange: #c2410c;
+  --color-emergency-orange-strong: #9a3412;
+  --color-emergency-orange-light: #fff0e5;
   --color-leaf: #6fae5e;       /* provisional secondary — success / milestones (DESIGN.md) */
   --color-leaf-strong: #558a47;
 
@@ -78,6 +81,22 @@
   --replay-terrain-fill-alpha: 1;
   --replay-terrain-gradient-alpha: 0.75;
   --replay-header-accent-height: 5px;
+  --replay-group-primary: #d8ff00;
+  --replay-group-companion: #0099ff;
+  --replay-group-card-bg: #ffffff;
+  --replay-group-card-text: #141414;
+  --replay-group-card-muted: #4b5563;
+  --replay-group-card-hover: #e5e7eb;
+  --replay-group-card-alpha: 0.55;
+  --replay-group-avatar-bg: #ffffff;
+  --replay-group-avatar-text: #536779;
+  --replay-group-track: #ffffff;
+  --replay-group-track-outline: #000000;
+  --replay-group-track-alpha: 0.3;
+  --replay-group-track-outline-alpha: 1;
+  --replay-group-badge-idle: #ffffff;
+  --replay-group-badge-text: #141414;
+  --replay-group-badge-border: #141414;
 }
 
 body {

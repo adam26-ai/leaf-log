@@ -23,6 +23,8 @@ export interface XcScore {
 export function readXcScore(value: unknown): XcScore | null {
   if (!value || typeof value !== "object") return null;
   const score = value as XcScore;
-  return score.version === 1 && score.best && Number.isFinite(score.best.distanceM)
-    && ["open", "free-triangle", "fai-triangle"].includes(score.best.shape) ? score : null;
+  const validRoute = (route: XcCandidate) => route && Number.isFinite(route.distanceM) && route.distanceM >= 0
+    && ["open", "free-triangle", "fai-triangle"].includes(route.shape);
+  return score.version === 1 && validRoute(score.best) && Array.isArray(score.candidates)
+    && score.candidates.every(validRoute) ? score : null;
 }

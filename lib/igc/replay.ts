@@ -8,6 +8,7 @@ const VARIO_HALF_WINDOW_S = 4;
 
 /** The /api/flights/[id]/replay response (the replay path + timing context). */
 export interface ReplayResponse extends ReplayPath {
+  gapThresholdS?: number;
   takeoffMs: number;
   offsetMin: number;
 }

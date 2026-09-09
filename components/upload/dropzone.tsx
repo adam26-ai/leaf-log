@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 type UploadResult = {
   filename: string;
@@ -14,6 +15,7 @@ type UploadResult = {
 };
 
 export function Dropzone() {
+  const hydrated = useHydrated();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -87,6 +89,7 @@ export function Dropzone() {
           accept=".igc"
           multiple
           hidden
+          disabled={!hydrated || busy}
           onChange={(e) => e.target.files && upload(e.target.files)}
         />
       </div>
@@ -102,7 +105,7 @@ export function Dropzone() {
               {r.error ? (
                 <span className="text-red-600">{r.error}</span>
               ) : r.deduped ? (
-                <span className="text-gray-500">Already uploaded</span>
+                <span className="text-gray-500">Already uploaded · <a href={`/flights/${r.flightId}`} className="text-leaf-strong underline underline-offset-2">View flight</a></span>
               ) : r.status === "failed" ? (
                 <span className="text-brand-blue-strong">Couldn&apos;t read flight</span>
               ) : (
@@ -116,7 +119,7 @@ export function Dropzone() {
       )}
 
       <div>
-        <Button onClick={() => inputRef.current?.click()} disabled={busy}>
+        <Button onClick={() => inputRef.current?.click()} disabled={!hydrated || busy}>
           Choose file
         </Button>
       </div>

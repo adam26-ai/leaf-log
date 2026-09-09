@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { Palette, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { cn } from "@/lib/utils";
+import { GROUP_REPLAY_COLORS, GROUP_COLOR_CSS, GROUP_REPLAY_ALPHAS, GROUP_ALPHA_CSS, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 
 type PaletteKey =
+  | keyof typeof GROUP_REPLAY_COLORS
   | "accent"
   | "accentStrong"
   | "activeBg"
@@ -28,6 +30,8 @@ type PaletteKey =
 type ReplayPalette = Record<PaletteKey, string>;
 
 type SizeKey =
+  | keyof typeof GROUP_REPLAY_ALPHAS
+  | "groupCardAlpha"
   | "buttonBorder"
   | "buttonIcon"
   | "inactiveButtonBorder"
@@ -52,6 +56,8 @@ interface SavedPreset {
 const STORAGE_KEY = "leaf-dev-replay-palette";
 
 const DEFAULT_SIZES: ReplaySizes = {
+  ...GROUP_REPLAY_ALPHAS,
+  groupCardAlpha: 0.55,
   buttonBorder: 1.5,
   buttonIcon: 2,
   inactiveButtonBorder: 1,
@@ -65,7 +71,7 @@ const DEFAULT_SIZES: ReplaySizes = {
   headerAccent: 5,
 };
 
-const PRESETS: { id: string; label: string; colors: ReplayPalette }[] = [
+const BASE_PRESETS: { id: string; label: string; colors: Omit<ReplayPalette, keyof typeof GROUP_REPLAY_COLORS> }[] = [
   {
     id: "cool-blue-3",
     label: "Site default · Cool Blue 3",
@@ -152,6 +158,16 @@ const PRESETS: { id: string; label: string; colors: ReplayPalette }[] = [
   },
 ];
 
+const PRESETS = BASE_PRESETS.map((preset) => ({ ...preset, colors: { ...preset.colors, ...GROUP_REPLAY_COLORS } }));
+
+const PALETTE_GROUPS: { label: string; keys: PaletteKey[] }[] = [
+  { label: "Metrics & header", keys: ["accentStrong", "metricIconBg", "icon"] },
+  { label: "Map controls", keys: ["activeBg", "activeFg", "activeBorder", "inactiveBg", "inactiveFg", "inactiveBorder"] },
+  { label: "Playback", keys: ["timeline", "timelineDotFill"] },
+  { label: "Profile", keys: ["profileSky", "profileLine", "profileFill", "terrainLine", "terrainFill", "terrainGradient"] },
+  { label: "Friends & pilots", keys: Object.keys(GROUP_REPLAY_COLORS) as PaletteKey[] },
+];
+
 const COLOR_FIELDS: {
   key: PaletteKey;
   label: string;
@@ -162,6 +178,19 @@ const COLOR_FIELDS: {
   numericLabel?: string;
   unit?: string;
 }[] = [
+  { key: "groupPrimary", label: "Primary pilot accent" },
+  { key: "groupCompanion", label: "Companion pilot accent" },
+  { key: "groupCardBg", label: "Pilot card background", sizeKey: "groupCardAlpha", min: 0, max: 1, step: 0.05, numericLabel: "opacity", unit: "α" },
+  { key: "groupCardText", label: "Pilot card text / icons" },
+  { key: "groupCardMuted", label: "Pilot card secondary text" },
+  { key: "groupCardHover", label: "Pilot card hover" },
+  { key: "groupAvatarBg", label: "Avatar background" },
+  { key: "groupAvatarText", label: "Avatar initials" },
+  { key: "groupTrack", label: "Unselected track", sizeKey: "groupTrackAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+  { key: "groupTrackOutline", label: "Unselected track outline", sizeKey: "groupTrackOutlineAlpha", min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+  { key: "groupBadgeIdle", label: "Unselected badge fill" },
+  { key: "groupBadgeText", label: "Pilot badge text" },
+  { key: "groupBadgeBorder", label: "Pilot badge border" },
   { key: "accentStrong", label: "Header accent", sizeKey: "headerAccent", min: 1, max: 10, step: 0.5 },
   { key: "metricIconBg", label: "Metric icon circle" },
   { key: "icon", label: "Metric icon symbol", sizeKey: "metricIcon", min: 0.5, max: 4, step: 0.25 },
@@ -182,6 +211,7 @@ const COLOR_FIELDS: {
 ];
 
 const CSS_NAMES: Record<PaletteKey, string> = {
+  ...GROUP_COLOR_CSS,
   accent: "--replay-accent",
   accentStrong: "--replay-accent-strong",
   activeBg: "--replay-active-bg",
@@ -203,6 +233,8 @@ const CSS_NAMES: Record<PaletteKey, string> = {
 };
 
 const SIZE_CSS_NAMES: Record<SizeKey, string> = {
+  ...GROUP_ALPHA_CSS,
+  groupCardAlpha: "--replay-group-card-alpha",
   buttonBorder: "--replay-button-border-width",
   buttonIcon: "--replay-button-icon-stroke",
   inactiveButtonBorder: "--replay-inactive-button-border-width",
@@ -218,19 +250,23 @@ const SIZE_CSS_NAMES: Record<SizeKey, string> = {
 
 function applyPalette(colors: ReplayPalette) {
   for (const [key, value] of Object.entries(colors) as [PaletteKey, string][]) {
-    document.documentElement.style.setProperty(CSS_NAMES[key], value);
+    // Older presets can contain retired tokens, such as the standalone avatar
+    // selection color. Rings now inherit each pilot's identity color.
+    if (CSS_NAMES[key]) document.documentElement.style.setProperty(CSS_NAMES[key], value);
   }
+  window.dispatchEvent(new Event(REPLAY_PALETTE_EVENT));
 }
 
 function applySizes(sizes: ReplaySizes) {
   for (const [key, value] of Object.entries(sizes) as [SizeKey, number][]) {
     document.documentElement.style.setProperty(
       SIZE_CSS_NAMES[key],
-      key === "terrainFillAlpha" || key === "terrainGradientAlpha"
+      key.endsWith("Alpha")
         ? String(value)
         : `${value}px`,
     );
   }
+  window.dispatchEvent(new Event(REPLAY_PALETTE_EVENT));
 }
 
 export function ReplayPaletteLab({
@@ -241,7 +277,7 @@ export function ReplayPaletteLab({
   onBasemap: (id: BasemapId) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [presetId, setPresetId] = useState("orange");
+  const [presetId, setPresetId] = useState(PRESETS[0].id);
   const [colors, setColors] = useState<ReplayPalette>(PRESETS[0].colors);
   const [sizes, setSizes] = useState<ReplaySizes>(DEFAULT_SIZES);
   const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
@@ -386,7 +422,7 @@ export function ReplayPaletteLab({
   }
 
   return (
-    <aside className="fixed bottom-4 right-4 z-[100] w-[340px] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border border-gray-300 bg-paper/95 p-3 text-ink shadow-pop backdrop-blur-md">
+    <aside className="fixed bottom-4 right-4 z-[100] w-[340px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border border-gray-300 bg-paper/95 p-3 text-ink shadow-pop backdrop-blur-md">
       <div className="mb-3 flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2 font-condensed text-base font-bold">
@@ -399,7 +435,8 @@ export function ReplayPaletteLab({
         </button>
       </div>
 
-      <p className="mb-1 font-condensed text-xs font-bold uppercase tracking-wide text-gray-500">Preset</p>
+      <details name="replay-palette-section" className="border-t border-gray-200 py-2">
+      <summary className="cursor-pointer font-condensed text-sm font-bold">Presets</summary>
       <div className="grid grid-cols-2 gap-1.5">
         {PRESETS.filter((preset) => !hiddenBuiltInIds.includes(preset.id)).map((preset) => (
           <div key={preset.id} className="grid grid-cols-[minmax(0,1fr)_1.75rem] gap-1">
@@ -498,9 +535,15 @@ export function ReplayPaletteLab({
         </button>
       </div>
 
-      <p className="mb-1 mt-3 font-condensed text-xs font-bold uppercase tracking-wide text-gray-500">Fine tune</p>
+      </details>
+      {PALETTE_GROUPS.map((group) => <details key={group.label} name="replay-palette-section" className="border-t border-gray-200 py-2">
+      <summary className="cursor-pointer font-condensed text-sm font-bold">{group.label}</summary>
+      {group.label === "Friends & pilots" && <div className="my-2 flex gap-2">
+        <button type="button" aria-label="Use light pilot card" className="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900" onClick={() => save({ ...colors, groupCardBg: "#ffffff", groupCardText: "#141414", groupCardMuted: "#4b5563", groupCardHover: "#e5e7eb" }, "custom")}>Light card</button>
+        <button type="button" aria-label="Use dark pilot card" className="rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-white" onClick={() => save({ ...colors, groupCardBg: "#141414", groupCardText: "#ffffff", groupCardMuted: "#d1d5db", groupCardHover: "#374151" }, "custom")}>Dark card</button>
+      </div>}
       <div className="flex flex-col divide-y divide-gray-100">
-        {COLOR_FIELDS.map(({ key, label, sizeKey, min, max, step, numericLabel, unit }) => (
+        {COLOR_FIELDS.filter((field) => group.keys.includes(field.key)).map(({ key, label, sizeKey, min, max, step, numericLabel, unit }) => (
           <div key={key} className="grid min-h-9 grid-cols-[minmax(0,1fr)_2rem_5rem] items-center gap-2 py-1 text-[11px] text-gray-700">
             <span className="truncate">{label}</span>
             <input
@@ -538,9 +581,10 @@ export function ReplayPaletteLab({
           </div>
         ))}
       </div>
+      </details>)}
 
-      <div className="mt-3 border-t border-gray-200 pt-3">
-        <p className="mb-1 font-condensed text-xs font-bold uppercase tracking-wide text-gray-500">Live map background</p>
+      <details name="replay-palette-section" className="border-t border-gray-200 py-2">
+        <summary className="cursor-pointer font-condensed text-sm font-bold">Map background</summary>
         <div className="flex flex-wrap gap-1.5">
           {BASEMAPS.map((map) => {
             const disabled = map.needsKey && !hasMapTiler();
@@ -562,7 +606,7 @@ export function ReplayPaletteLab({
             );
           })}
         </div>
-      </div>
+      </details>
 
       <button type="button" onClick={() => save(PRESETS[0].colors, PRESETS[0].id, DEFAULT_SIZES)} className="mt-3 flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-ink">
         <RotateCcw className="h-3.5 w-3.5" /> Reset to Cool Blue 3

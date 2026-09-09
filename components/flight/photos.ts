@@ -1,5 +1,9 @@
 /** A photo as returned by GET /api/flights/[id]/photos (JSON; dates are ISO). */
 export interface FlightPhoto {
+  /** Present when aggregating several flights; standalone galleries use their flightId prop. */
+  flightId?: string;
+  ownerName?: string;
+  isPrimary?: boolean;
   id: string;
   originalFilename: string | null;
   displayWidth: number;

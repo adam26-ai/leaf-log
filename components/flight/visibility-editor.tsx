@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { setVisibility } from "@/app/flights/[id]/visibility-action";
 import { FLIGHT_VISIBILITIES, type FlightVisibility } from "@/lib/flights/visibility";
+import { useHydrated } from "@/lib/use-hydrated";
 
 const LABELS: Record<FlightVisibility, { title: string; hint: string }> = {
   private: {
@@ -27,6 +28,7 @@ export function VisibilityEditor({
   flightId: string;
   visibility: FlightVisibility;
 }) {
+  const hydrated = useHydrated();
   const [current, setCurrent] = useState(visibility);
   const [pending, startTransition] = useTransition();
 
@@ -50,7 +52,7 @@ export function VisibilityEditor({
             key={option}
             type="button"
             onClick={() => choose(option)}
-            disabled={pending}
+            disabled={!hydrated || pending}
             aria-pressed={current === option}
             className={
               "h-9 rounded-sm px-2 font-condensed text-sm font-bold tracking-wide transition-colors disabled:opacity-60 " +

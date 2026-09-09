@@ -5,8 +5,8 @@ import { photoUrl, unpinnedReason, type FlightPhoto } from "./photos";
 
 /**
  * Thumbnail grid + lightbox (prev/next, keyboard). The open photo is controlled
- * via `openId` so a map-pin click can open it too. Selecting a photo also
- * scrubs the replay to its moment (via onSelect). Deleting is a separate
+ * via `openId` so a map-pin click can open it too. Viewing photos leaves
+ * replay timing alone. Deleting is a separate
  * capability (`canDelete`) from viewing — the flight page shows photos
  * read-only; deleting happens on the flight-edit page instead.
  */
@@ -16,7 +16,7 @@ export function PhotoGallery({
   canDelete = false,
   openId = null,
   onOpenChange,
-  onSelect,
+  onPhotoSelect,
   onChanged,
   showHeading = true,
 }: {
@@ -25,7 +25,7 @@ export function PhotoGallery({
   canDelete?: boolean;
   openId?: string | null;
   onOpenChange?: (id: string | null) => void;
-  onSelect?: (tSec: number) => void;
+  onPhotoSelect?: (photo: FlightPhoto) => void;
   onChanged?: () => void;
   showHeading?: boolean;
 }) {
@@ -36,9 +36,11 @@ export function PhotoGallery({
   const step = useCallback(
     (dir: number) => {
       if (openIdx < 0 || photos.length === 0) return;
-      onOpenChange?.(photos[(openIdx + dir + photos.length) % photos.length].id);
+      const photo = photos[(openIdx + dir + photos.length) % photos.length];
+      onOpenChange?.(photo.id);
+      onPhotoSelect?.(photo);
     },
-    [openIdx, photos, onOpenChange],
+    [openIdx, photos, onOpenChange, onPhotoSelect],
   );
 
   useEffect(() => {
@@ -54,7 +56,7 @@ export function PhotoGallery({
 
   function select(p: FlightPhoto) {
     onOpenChange?.(p.id);
-    if (p.tSec != null) onSelect?.(p.tSec);
+    onPhotoSelect?.(p);
   }
 
   async function del(photoId: string) {
@@ -81,12 +83,13 @@ export function PhotoGallery({
             key={p.id}
             type="button"
             onClick={() => select(p)}
-            className="group relative h-20 w-20 overflow-hidden rounded-md border border-gray-200 bg-gray-100"
-            title={p.placementSource === "unpinned" ? `Unpinned — ${unpinnedReason(p)}` : undefined}
+            className="group relative h-20 w-20 overflow-hidden rounded-md border-2 border-gray-200 bg-gray-100"
+            style={p.flightId ? { borderColor: p.isPrimary ? "var(--replay-group-primary)" : "var(--replay-group-companion)" } : undefined}
+            title={[p.ownerName, p.placementSource === "unpinned" ? `Unpinned — ${unpinnedReason(p)}` : null].filter(Boolean).join(" · ") || undefined}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={photoUrl(flightId, p.id, "thumb")}
+              src={photoUrl(p.flightId ?? flightId, p.id, "thumb")}
               alt={p.originalFilename ?? "Flight photo"}
               loading="lazy"
               className="h-full w-full object-cover transition group-hover:opacity-90"
@@ -108,13 +111,13 @@ export function PhotoGallery({
           <div className="relative max-h-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={photoUrl(flightId, open.id, "display")}
+              src={photoUrl(open.flightId ?? flightId, open.id, "display")}
               alt={open.originalFilename ?? "Flight photo"}
               className="max-h-[85vh] w-auto rounded-md"
             />
             <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-2 text-paper">
               <span className="rounded bg-ink/60 px-2 py-0.5 text-xs">
-                {openIdx + 1} / {photos.length}
+                {open.ownerName ? `${open.ownerName} · ` : ""}{openIdx + 1} / {photos.length}
               </span>
               <div className="flex items-center gap-2">
                 {canDelete && (

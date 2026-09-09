@@ -1,8 +1,8 @@
 export const REPLAY_SEEK_EVENT = "leaf-replay-seek";
-export const REPLAY_XC_OVERVIEW_EVENT = "leaf-replay-xc-overview";
+export const REPLAY_XC_TOGGLE_EVENT = "leaf-replay-xc-toggle";
 
-export function showReplayXcOverview() {
-  window.dispatchEvent(new Event(REPLAY_XC_OVERVIEW_EVENT));
+export function toggleReplayXcRoute() {
+  window.dispatchEvent(new Event(REPLAY_XC_TOGGLE_EVENT));
 }
 
 export type ReplayMetric = "max-altitude" | "best-climb" | "max-sink";

@@ -1,3 +1,4 @@
+import { uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -36,7 +37,7 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
 
   // Upload an IGC to get a flight.
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles(IGC_PATH);
+  await uploadFlight(page, IGC_PATH);
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   const flightUrl = page.url();
 
@@ -44,7 +45,9 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   // page itself — upload a JPEG and a tiled HEIC there (exercises
   // heic-convert in the route), then head back to see them in the gallery.
   await page.goto(`${flightUrl}/edit`);
-  await page.locator('input[type="file"]').setInputFiles([JPEG, HEIC]);
+  const photosChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: /Add photos/i }).click();
+  await (await photosChooser).setFiles([JPEG, HEIC]);
   await expect(page.getByText(/added 2 photos/i)).toBeVisible({ timeout: 30_000 });
   await page.goto(flightUrl);
 

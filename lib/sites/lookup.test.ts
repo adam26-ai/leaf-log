@@ -855,11 +855,11 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       const hasBoundaryClause = /"boundaryMinLat"/.test(e.query);
       if (!hasBoundaryClause) return;
       const hasCircleClause = /"lat"\s*>=/.test(e.query);
-      if (/FROM\s+"public"\."Site"\s+WHERE/.test(e.query)) {
+      if (/FROM\s+"[^"]+"\."Site"\s+WHERE/.test(e.query)) {
         siteBoundaryQueries++;
         siteBoundaryQueryAlsoHasCircleClause = hasCircleClause;
       }
-      if (/FROM\s+"public"\."Zone"/.test(e.query)) {
+      if (/FROM\s+"[^"]+"\."Zone"/.test(e.query)) {
         zoneBoundaryQueries++;
         zoneBoundaryQueryAlsoHasCircleClause = hasCircleClause;
       }

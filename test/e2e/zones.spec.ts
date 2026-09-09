@@ -1,3 +1,4 @@
+import { uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -83,9 +84,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
 
   // Unknown site.
   await page.goto("/upload");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "nozone1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 1) });
+  await uploadFlight(page, { name: "nozone1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 1) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
@@ -106,9 +105,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
 
   // A distinct second IGC nearby auto-associates to the site, same as ever.
   await page.goto("/upload");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "nozone2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 2) });
+  await uploadFlight(page, { name: "nozone2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 2) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });
@@ -136,9 +133,7 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
   await page.goto("/upload");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "reopen1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 5, 1) });
+  await uploadFlight(page, { name: "reopen1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 5, 1) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Reopen Ridge ${suffix}`;
