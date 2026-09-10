@@ -19,7 +19,7 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
   }));
   const descriptions = records.map(t => `${medals[t.rank]} — ${TROPHY_LABELS[t.category]}: ${t.valueLabel}${t.reported ? " (reported)" : t.approximate ? " (best found)" : ""}`);
   return <span tabIndex={0} aria-label={descriptions.join("; ")} className="group/trophy relative inline-flex justify-center outline-none">
-    <span data-medal={medals[bestRank].toLowerCase()} className={`inline-flex h-6 items-center gap-1 rounded-full border border-black/20 px-1.5 ${colors[bestRank]}`}>
+    <span data-medal={medals[bestRank].toLowerCase()} className={`inline-flex h-6 w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-black/20 ${colors[bestRank]}`}>
       <Trophy className="h-3.5 w-3.5" />{multiple ? <Plus className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
     </span>
     <span role="tooltip" className="pointer-events-none absolute right-0 bottom-full z-40 mb-2 hidden w-72 max-w-[85vw] overflow-hidden rounded-xl border border-white/10 bg-gray-900 text-left text-xs font-normal text-white shadow-xl group-hover/trophy:block group-focus/trophy:block">

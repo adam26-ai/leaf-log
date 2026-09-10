@@ -12,6 +12,7 @@ import { routeProximityIndex } from "./route-proximity";
 import type { CompanionManifest } from "./group-replay";
 import { isLogbookEntry } from "./recording";
 import { flightStatistics } from "./statistics";
+import { flightTrophies, type FlightTrophy } from "./trophies";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
  * Filter before pagination, geometry reads, or returning any participant metadata.
@@ -485,6 +486,64 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
     select: LIST_SELECT,
   });
   return resolveLocationFields(rows, ownerId);
+}
+
+/** Rank complete personal histories, returning medals only for already-authorized rows.
+ * Private record identities and values never leave this server-side calculation.
+ */
+export async function trophiesForVisibleFlights(flights: { id: string; ownerId: string }[]): Promise<Record<string, FlightTrophy[]>> {
+  if (!flights.length) return {};
+  const history = await prisma.flight.findMany({
+    where: { ownerId: { in: [...new Set(flights.map(flight => flight.ownerId))] } },
+    select: { id: true, ownerId: true, status: true, recordingKind: true, durationS: true, maxAltM: true, launchAltM: true, xcScore: true, metricsVersion: true, xcStatus: true, reportedXcDistanceM: true, reportedXcType: true },
+  });
+  const ranked: Record<string, FlightTrophy[]> = {};
+  for (const ownerId of new Set(flights.map(flight => flight.ownerId))) Object.assign(ranked, flightTrophies(history.filter(flight => flight.ownerId === ownerId)));
+  return Object.fromEntries(flights.map(flight => [flight.id, ranked[flight.id] ?? []]));
+}
+
+/** Lazy logbook filter: accepted friends, readable recordings, positive airtime
+ * overlap, and the same 5km route-proximity check used by companion discovery.
+ * Only own flight IDs are returned; no companion tracks or private metadata.
+ */
+export async function logbookCompanions(viewerId: string) {
+  const graph = await prisma.friendship.findMany({
+    where: { status: "accepted", OR: [{ requesterId: viewerId }, { addresseeId: viewerId }] },
+    select: { requester: { select: { id: true, displayName: true, handle: true } }, addressee: { select: { id: true, displayName: true, handle: true } } },
+  });
+  const friends = graph.map(edge => edge.requester.id === viewerId ? edge.addressee : edge.requester)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  if (!friends.length) return [];
+  const own = await prisma.flight.findMany({ where: { ownerId: viewerId, status: "ready", recordingKind: "igc", takeoffAt: { not: null }, landingAt: { not: null } } });
+  const result = friends.map(friend => ({ key: friend.id, label: `${friend.displayName} (@${friend.handle})`, flightIds: [] as string[] }));
+  if (!own.length) return result;
+  const other = await prisma.flight.findMany({
+    where: { ownerId: { in: friends.map(friend => friend.id) }, status: "ready", recordingKind: "igc", visibility: { in: ["friends", "public"] },
+      takeoffAt: { lt: new Date(Math.max(...own.map(f => f.landingAt!.getTime()))) },
+      landingAt: { gt: new Date(Math.min(...own.map(f => f.takeoffAt!.getTime()))) } },
+    orderBy: { takeoffAt: "asc" },
+  });
+  const artifacts = new Map<string, Awaited<ReturnType<typeof replayArtifactForFlight>>>();
+  async function artifact(flight: Flight) {
+    if (!artifacts.has(flight.id)) artifacts.set(flight.id, await replayArtifactForFlight(flight));
+    return artifacts.get(flight.id);
+  }
+  const matches = new Map(result.map(friend => [friend.key, new Set<string>()]));
+  for (const flight of own) {
+    let proximity: ReturnType<typeof routeProximityIndex> | undefined;
+    for (const candidate of other) {
+      if (candidate.takeoffAt! >= flight.landingAt!) break;
+      if (candidate.landingAt! <= flight.takeoffAt! || candidate.landingAt! <= candidate.takeoffAt! || flight.landingAt! <= flight.takeoffAt! || matches.get(candidate.ownerId)!.has(flight.id)) continue;
+      if (!proximity) {
+        const primary = await artifact(flight);
+        if (!primary) break;
+        proximity = routeProximityIndex(primary.matchingPaths);
+      }
+      const companion = await artifact(candidate);
+      if (companion && proximity(companion.matchingPaths) !== null) matches.get(candidate.ownerId)!.add(flight.id);
+    }
+  }
+  return result.map(friend => ({ ...friend, flightIds: [...matches.get(friend.key)!] }));
 }
 
 /** Only the launch altitude scalar is needed for personal gain trophies. */

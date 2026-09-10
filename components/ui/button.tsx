@@ -9,11 +9,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         // Primary CTA leans on the signature brand-blue.
-        primary: "bg-brand-blue text-ink hover:bg-brand-blue-strong",
+        primary: "bg-brand-blue text-paper hover:bg-brand-blue-strong",
         ink: "bg-ink text-paper hover:bg-ink-soft",
         outline: "border border-gray-300 bg-paper text-ink hover:bg-gray-50",
         ghost: "text-ink hover:bg-gray-100",
-        leaf: "bg-leaf text-paper hover:bg-leaf-strong",
         danger: "bg-red-600 text-paper hover:bg-red-700",
       },
       size: {

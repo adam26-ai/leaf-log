@@ -4,7 +4,6 @@ import { readXcScore } from "@/lib/igc/xc-types";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Sun,
   Camera,
   Video,
   Navigation,
@@ -283,11 +282,6 @@ export function FlightViz({
     return style?.needsKey && !hasMapTiler() ? "monochrome" : defaults.basemap;
   });
   const [cameraMode, setCameraMode] = useState<CameraMode>(defaults.camera);
-  const [showShadow, setShowShadow] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    const saved = localStorage.getItem("leaf-3d-shadow");
-    return saved == null ? true : saved === "true";
-  });
   const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(defaults.track);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
   const [showXc, setShowXc] = useState(false);
@@ -518,17 +512,6 @@ export function FlightViz({
             : "follow",
     );
   }
-  function toggleShadow() {
-    setShowShadow((on) => {
-      const next = !on;
-      try {
-        localStorage.setItem("leaf-3d-shadow", String(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }
   function selectTrackDisplay(next: TrackDisplayMode) {
     setTrackDisplay(next);
   }
@@ -643,7 +626,7 @@ export function FlightViz({
               time={selectedTime}
               playing={playing}
               cameraMode={cameraMode}
-              showShadow={showShadow}
+              showShadow
               trackDisplay={renderedTrackDisplay}
               units={units}
               altitudeMode={altitudeMode}
@@ -673,12 +656,6 @@ export function FlightViz({
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
             <div className="absolute left-[10px] top-[136px] z-20 flex flex-col gap-1 sm:top-1/2 sm:-translate-y-1/2">
-              <MapIconButton
-                icon={Sun}
-                active={showShadow}
-                title="Toggle ground shadow and altitude trails"
-                onClick={toggleShadow}
-              />
               <AltitudeModeControl mode={altitudeMode} onSelect={selectAltitudeMode} />
               <CameraModeControl mode={cameraMode} onCycle={cycleCameraMode} onSelect={selectCameraMode} />
               <BasemapControl basemap={basemap} onCycle={cycleBasemap} onSelect={changeBasemap} />

@@ -6,6 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Undo2, Eraser, Trash2, Save as SaveIcon, Check, X } from "lucide-react";
 import { styleFor } from "./basemaps";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import type { Boundary, Ring } from "@/lib/sites/geo";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import {
@@ -640,14 +641,9 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       {errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
       {showCancel && (
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="self-start rounded border px-3 py-1.5 text-sm disabled:opacity-40"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving} className="self-start">
           Cancel
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet } from "lucide-react";
+import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, ArrowUp } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
-import { TrophyPill } from "./trophy-pill";
+import { ResponsiveTrophies } from "./responsive-trophies";
 import {
   formatDuration,
   formatAltitude,
@@ -43,6 +43,7 @@ export function FlightRow({
   distanceScore = 0,
   previewAutoUpload = false,
   trophies,
+  showAnalysis = false,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -52,11 +53,12 @@ export function FlightRow({
   distanceScore?: number;
   previewAutoUpload?: boolean;
   trophies?: FlightTrophy[];
+  showAnalysis?: boolean;
 }) {
   const { units } = useUnits();
   const visibility =
     flight.visibility === "public"
-      ? { label: "Public", className: "border-white bg-[#d8ff00] text-gray-800" }
+      ? { label: "Public", className: "border-white bg-success-accent text-gray-800" }
       : flight.visibility === "friends"
         ? { label: "Friends", className: "border-brand-blue bg-brand-blue/10 text-brand-blue-strong" }
         : { label: "Private", className: "border-gray-400 bg-white text-gray-600" };
@@ -73,22 +75,22 @@ export function FlightRow({
     return (
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
-        className="grid h-[45px] grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[8rem_minmax(0,1fr)_auto_auto] sm:h-auto sm:grid-cols-[9rem_minmax(0,1fr)_minmax(9rem,0.8fr)_auto] sm:gap-3 sm:px-4 sm:py-1 sm:text-sm">
+        className="grid min-h-[45px] grid-cols-[7.5rem_minmax(0,1fr)_2.75rem] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_auto] sm:grid-cols-[8.5rem_minmax(10rem,1fr)_minmax(2.75rem,1.4fr)_auto] sm:gap-2 sm:px-3 sm:py-1 sm:text-sm">
         <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
-        <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+        <span className="flex min-w-0 items-center gap-2">
+        <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
           <span className="block max-w-full truncate font-condensed text-base font-bold leading-4 text-ink">{site}</span>
           {showLanding && <span title={`Landing: ${landing}`} className="block max-w-full truncate text-xs leading-4 text-gray-600">→ {landing}</span>}
         </span>
-        <span className="flex min-w-0 items-center gap-3 sm:pr-4">
-          <span title="Maximum altitude" className="hidden w-16 shrink-0 whitespace-nowrap tabular-nums text-gray-700 sm:block">{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
-          {trophies && <TrophyPill trophies={trophies} />}
+          <span title="Maximum altitude" className="hidden shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-gray-700 sm:inline-flex"><ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
         </span>
+        <ResponsiveTrophies trophies={trophies ?? []} />
         <span className="hidden items-center gap-1 min-[400px]:flex sm:gap-3">
           <span title={visibility.label} aria-label={visibility.label} className={`inline-flex h-6 w-6 items-center justify-center rounded-full sm:w-[4.5rem] sm:border sm:px-2 ${visibility.className}`}><VisibilityIcon className="h-3.5 w-3.5 sm:hidden" /><span className="hidden sm:inline">{visibility.label}</span></span>
           <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
         </span>
       </Link>
-      {trophies !== undefined && <div className="mt-1 flex justify-end empty:hidden"><AnalysisStatus flight={flight} owner compact /></div>}
+      {showAnalysis && <div className="mt-1 flex justify-end empty:hidden"><AnalysisStatus flight={flight} owner compact /></div>}
       </div>
     );
   }
@@ -111,7 +113,7 @@ export function FlightRow({
         </Link>
       )}
       <Link href={`/flights/${flight.id}`} className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate font-condensed text-lg font-bold text-ink hover:text-leaf-strong">
+        <span className="truncate font-condensed text-lg font-bold text-ink hover:text-brand-blue-strong">
           {formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site"}
         </span>
         <span className="text-sm text-gray-500">
@@ -126,7 +128,8 @@ export function FlightRow({
       ) : (
         <div className="flex items-center gap-4 text-sm text-gray-700 sm:gap-6">
           <span className="tabular-nums">{formatDuration(flight.durationS)}</span>
-          <span className="hidden tabular-nums sm:inline">
+          <span title="Maximum altitude" className="hidden items-center gap-1 tabular-nums sm:inline-flex">
+            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
             {formatAltitude(flight.maxAltM, units)}
           </span>
           {typeof kudoCount === "number" && (

@@ -2,8 +2,9 @@
 
 import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Cable, LoaderCircle } from "lucide-react";
+import { Cable, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SuccessStatus } from "@/components/ui/success-status";
 import { claimDeviceAction } from "@/app/settings/devices/actions";
 
 export function DevicePairingForm() {
@@ -85,10 +86,7 @@ export function DevicePairingForm() {
         </Button>
         {error && <span className="text-sm text-red-600">{error}</span>}
         {connected && (
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-leaf">
-            <Check className="h-4 w-4" />
-            Your Leaf is connected.
-          </span>
+          <SuccessStatus>Your Leaf is connected.</SuccessStatus>
         )}
       </div>
     </form>

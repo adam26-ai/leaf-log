@@ -42,7 +42,7 @@ export function ManualEntryForm({ options, initial, flightId, expectedUpdatedAt,
         <option value="private">Private</option><option value="friends">Friends only</option><option value="public">Public</option>
       </select>
     </label>
-    {duplicates.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+    {duplicates.length > 0 && <div className="rounded-lg border border-emergency-orange/25 bg-emergency-orange-light p-3 text-sm text-emergency-orange">
       <p className="font-medium">This may already be in your logbook</p>
       <ul className="my-2 list-disc pl-5">{duplicates.map(item => <li key={item.id}><Link href={`/flights/${item.id}`} target="_blank" className="underline">{item.date} · {item.site ?? "Unknown site"} · {item.wing ?? "Unknown wing"}</Link></li>)}</ul>
       <button type="button" disabled={pending} onClick={() => void save(true)} className="font-medium underline">These are different flights — add a separate entry</button>

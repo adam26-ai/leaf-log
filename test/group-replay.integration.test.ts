@@ -164,6 +164,23 @@ describe("viewer-scoped companion discovery", () => {
     expect(expanded).toEqual(expect.arrayContaining([ownLong, near]));
     for (const id of [ownFar, beyond, chained]) expect(expanded).not.toContain(id);
   }, 60_000);
+  it("filters own flights by strict overlap, excluding later flights, private sharing, and removed friends", async () => {
+    const matched = () => repo.logbookCompanions(self).then(friends => friends.find(friend => friend.key === alice)?.flightIds ?? []);
+    expect(await matched()).toContain(ownFlight);
+    const original = await prisma.flight.findUniqueOrThrow({ where: { id: aliceFlight } });
+    const primary = await prisma.flight.findUniqueOrThrow({ where: { id: ownFlight } });
+    try {
+      await prisma.flight.update({ where: { id: aliceFlight }, data: { takeoffAt: primary.landingAt, landingAt: new Date(primary.landingAt!.getTime() + 60_000) } });
+      expect(await matched()).not.toContain(ownFlight);
+      await prisma.flight.update({ where: { id: aliceFlight }, data: { takeoffAt: new Date(primary.landingAt!.getTime() - 1) } });
+      expect(await matched()).toContain(ownFlight);
+      await prisma.flight.update({ where: { id: aliceFlight }, data: { visibility: "private" } });
+      expect(await matched()).not.toContain(ownFlight);
+    } finally { await prisma.flight.update({ where: { id: aliceFlight }, data: { takeoffAt: original.takeoffAt, landingAt: original.landingAt, visibility: original.visibility } }); }
+    await prisma.friendship.update({ where: { requesterId_addresseeId: { requesterId: self, addresseeId: alice } }, data: { status: "pending" } });
+    try { expect(await matched()).not.toContain(ownFlight); }
+    finally { await prisma.friendship.update({ where: { requesterId_addresseeId: { requesterId: self, addresseeId: alice } }, data: { status: "accepted" } }); }
+  });
   it("lazily rebuilds a legacy artifact without changing access", async () => {
     await prisma.flightData.update({ where: { flightId: benFlight }, data: { replay: Prisma.JsonNull } });
     const flight = await prisma.flight.findUniqueOrThrow({ where: { id: benFlight } });

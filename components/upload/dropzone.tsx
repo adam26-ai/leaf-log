@@ -105,11 +105,11 @@ export function Dropzone() {
               {r.error ? (
                 <span className="text-red-600">{r.error}</span>
               ) : r.deduped ? (
-                <span className="text-gray-500">Already uploaded · <a href={`/flights/${r.flightId}`} className="text-leaf-strong underline underline-offset-2">View flight</a></span>
+                <span className="text-gray-500">Already uploaded · <a href={`/flights/${r.flightId}`} className="text-brand-blue-strong underline underline-offset-2">View flight</a></span>
               ) : r.status === "failed" ? (
                 <span className="text-brand-blue-strong">Couldn&apos;t read flight</span>
               ) : (
-                <a href={`/flights/${r.flightId}`} className="text-leaf-strong">
+                <a href={`/flights/${r.flightId}`} className="text-brand-blue-strong">
                   View flight →
                 </a>
               )}

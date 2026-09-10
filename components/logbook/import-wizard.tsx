@@ -3,8 +3,9 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Download, FileSpreadsheet, Check, ArrowLeft } from "lucide-react";
+import { Download, FileSpreadsheet, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SuccessMark } from "@/components/ui/success-status";
 import { Card } from "@/components/ui/card";
 import { ENTRY_FIELDS, parseEntry, type EntryDraft, type EntryField } from "@/lib/logbook/entry";
 import { CSV_DEFAULTS, MAX_CSV_BYTES, csvEntries, guessColumns, parseCsv, type ColumnMapping, type CsvOptions, type CsvTable, type ImportRow } from "@/lib/logbook/csv";
@@ -134,7 +135,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     </details>;
   }
   if (result) return <Card className="flex flex-col gap-4 p-6" aria-live="polite">
-    <Check className="h-8 w-8 text-leaf-strong" /><h2 className="font-condensed text-2xl font-bold">{result.alreadyImported ? "This file was already imported" : "Your flights are in your logbook"}</h2>
+    <SuccessMark size="lg" /><h2 className="font-condensed text-2xl font-bold">{result.alreadyImported ? "This file was already imported" : "Your flights are in your logbook"}</h2>
     <p className="text-sm text-gray-600">{result.importedCount} flights imported · {result.skippedCount} skipped.{result.alreadyImported && " No extra copies were added."}</p>
     <div className="flex flex-wrap gap-3"><Button asChild><Link href="/logbook">Open logbook</Link></Button><Button variant="outline" onClick={() => { setStep(0); setResult(null); }}>Import another CSV</Button></div>
   </Card>;
@@ -175,7 +176,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
           const index = page * 25 + localIndex, detail = review?.[index];
           return <div key={row.line} className={`rounded-lg border p-3 ${row.excluded ? "border-gray-200 bg-gray-50" : detail?.errors.length ? "border-red-300" : "border-gray-200"}`}>
             <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Include CSV line ${row.line}`} checked={!row.excluded} disabled={pending} onChange={e => updateRow(index, { excluded: !e.target.checked })} className="mt-1" /><div className="min-w-0 flex-1 text-sm"><p className="font-medium">{row.draft.date || "Date missing"} <span className="font-normal text-gray-500">· line {row.line}</span></p><p className="break-words text-gray-600">{row.draft.takeoffSiteName || "Unknown site"} · {row.draft.glider || "Unknown wing"}</p><p className="text-xs text-gray-500">{row.draft.durationMinutes ? `${row.draft.durationMinutes} min` : "Duration unknown"}{row.draft.xcDistance ? ` · ${row.draft.xcDistance} ${row.draft.distanceUnit} ${XC_TYPE_LABELS[row.draft.xcType as keyof typeof XC_TYPE_LABELS] ?? row.draft.xcType} (reported)` : ""}</p></div><button disabled={pending} onClick={() => setEditing(index)} className="text-sm text-brand-blue-strong underline">Edit</button></div>
-            {!row.excluded && detail && <div className="mt-2 pl-6 text-xs">{detail.errors.map(message => <p key={message} className="text-red-600">{message}</p>)}{detail.warnings.map(message => <p key={message} className="text-gray-500">{message}</p>)}{detail.duplicates.length > 0 && <div className="mt-2 rounded bg-amber-50 p-2 text-amber-900"><p className="font-medium">Possible duplicate of:</p>{detail.duplicates.map(match => <p key={match.id}>{match.id.startsWith("row:") ? match.label : <Link href={`/flights/${match.id}`} target="_blank" className="underline">{match.label}</Link>}</p>)}<label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={row.allowDuplicate} disabled={pending} onChange={e => updateRow(index, { allowDuplicate: e.target.checked })} />This is a different flight; include it</label></div>}</div>}
+            {!row.excluded && detail && <div className="mt-2 pl-6 text-xs">{detail.errors.map(message => <p key={message} className="text-red-600">{message}</p>)}{detail.warnings.map(message => <p key={message} className="text-gray-500">{message}</p>)}{detail.duplicates.length > 0 && <div className="mt-2 rounded border border-emergency-orange/25 bg-emergency-orange-light p-2 text-emergency-orange"><p className="font-medium">Possible duplicate of:</p>{detail.duplicates.map(match => <p key={match.id}>{match.id.startsWith("row:") ? match.label : <Link href={`/flights/${match.id}`} target="_blank" className="underline">{match.label}</Link>}</p>)}<label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={row.allowDuplicate} disabled={pending} onChange={e => updateRow(index, { allowDuplicate: e.target.checked })} />This is a different flight; include it</label></div>}</div>}
           </div>;
         })}</div>
         {rows.length > 25 && <div className="flex items-center justify-between gap-3 text-sm"><Button variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page + 1} of {Math.ceil(rows.length / 25)}</span><Button variant="outline" disabled={(page + 1) * 25 >= rows.length} onClick={() => setPage(page + 1)}>Next</Button></div>}

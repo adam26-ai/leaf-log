@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SuccessStatus } from "@/components/ui/success-status";
 import { updateFlightWing, type NotesState } from "./actions";
 import { useHydrated } from "@/lib/use-hydrated";
 
@@ -37,9 +38,8 @@ export function FlightWingEditor({ flightId, glider, gliders }: {
       </fieldset>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={pending || !hydrated}>{pending ? "Saving…" : "Save wing"}</Button>
-        <span role="status" className={state.error ? "text-sm text-red-600" : "text-sm text-brand-blue-strong"}>
-          {state.error ?? (state.ok ? "Saved." : "")}
-        </span>
+        {state.error && <span role="status" className="text-sm text-red-600">{state.error}</span>}
+        {state.ok && <SuccessStatus>Saved.</SuccessStatus>}
       </div>
     </form>
   );

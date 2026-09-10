@@ -66,7 +66,7 @@ export default async function LogbookPage() {
             </CardBody>
           </Card>
         ) : (
-          <><AnalysisNotice flights={flights} now={renderedAt} /><LogbookList flights={flights} trophies={trophies} /></>
+          <><AnalysisNotice flights={flights} now={renderedAt} /><LogbookList key={profile.id} ownerId={profile.id} flights={flights} trophies={trophies} /></>
 
         )}
       </main>

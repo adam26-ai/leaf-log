@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { listProfileFlightsForViewer, statsFrom } from "@/lib/flights/repo";
+import { listProfileFlightsForViewer, statsFrom, trophiesForVisibleFlights } from "@/lib/flights/repo";
+import { listHighlights } from "@/lib/flights/list-highlights";
 import { getCurrentProfile } from "@/lib/profile";
 import { countFriends, friendStateFor } from "@/lib/social/friends";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -38,6 +39,8 @@ export default async function ProfilePage({
     viewerId ? friendStateFor(viewerId, profile.id) : Promise.resolve("none" as const),
   ]);
   const stats = statsFrom(flights);
+  const trophies = await trophiesForVisibleFlights(flights.map(flight => ({ id: flight.id, ownerId: profile.id })));
+  const { highlightScore, distanceScore } = listHighlights(flights);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -80,7 +83,7 @@ export default async function ProfilePage({
             <ul className="mt-6 flex flex-col gap-2">
               {flights.map((f) => (
                 <li key={f.id}>
-                  <FlightRow flight={f} />
+                  <FlightRow flight={f} compact trophies={trophies[f.id]} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} />
                 </li>
               ))}
             </ul>

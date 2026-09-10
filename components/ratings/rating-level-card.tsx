@@ -1,6 +1,6 @@
-import { CircleCheck } from "lucide-react";
 import { Card, CardBody } from "@/components/ui/card";
 import { AccentBar } from "@/components/ui/accent-bar";
+import { SuccessStatus } from "@/components/ui/success-status";
 import { CriterionRow } from "@/components/ratings/criterion-row";
 import type { RatingCriterion, RatingLevel } from "@/lib/ratings/criteria";
 import type { RatingStats } from "@/lib/ratings/stats";
@@ -57,10 +57,7 @@ export function RatingLevelCard({
         <div className="flex items-center justify-between">
           <h2 className="font-condensed text-xl font-bold text-ink">{LEVEL_NAMES[level]}</h2>
           {levelMet && (
-            <span className="flex items-center gap-1.5 text-sm font-medium text-leaf">
-              <CircleCheck className="h-4 w-4" />
-              Met
-            </span>
+            <SuccessStatus>Met</SuccessStatus>
           )}
         </div>
         <AccentBar className="mt-2" width="2rem" />
