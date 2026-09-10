@@ -20,7 +20,7 @@ export default async function EditFlightPage({ params }: { params: Promise<{ id:
     formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
   const date = formatLocalDate(
     flight.takeoffAt ?? flight.flightDate,
-    flight.localUtcOffsetMinutes,
+    flight.takeoffAt ? flight.localUtcOffsetMinutes : 0,
   );
   const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
@@ -43,7 +43,7 @@ export default async function EditFlightPage({ params }: { params: Promise<{ id:
           </div>
         </div>
         <p className="mt-3 mb-8 font-condensed text-base text-gray-600">
-          <span className="font-bold text-ink">{date} · {timeRange}</span>
+          <span className="font-bold text-ink">{date}{flight.takeoffAt ? ` · ${timeRange}` : ""}</span>
           <span className="mx-2 text-gray-300" aria-hidden="true">|</span>
           {location}
         </p>

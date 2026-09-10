@@ -263,7 +263,6 @@ export function FlightViz({
   canAddPhotos = false,
   takeoffMs,
   offsetMin,
-  pilotName,
   notes,
 }: {
   flightId: string;
@@ -274,8 +273,6 @@ export function FlightViz({
   canAddPhotos?: boolean;
   takeoffMs: number;
   offsetMin: number;
-  /** Shown on the 3D glider marker's pole. */
-  pilotName?: string | null;
   /** Owner-only free-text notes, shown just below the altitude graph. */
   notes?: string | null;
 }) {
@@ -651,7 +648,7 @@ export function FlightViz({
               units={units}
               altitudeMode={altitudeMode}
               photos={photos}
-              pilotName={selected.owner.displayName || pilotName}
+              pilotName={selected.owner.displayName || selected.owner.handle || "Pilot"}
               onManualCameraChange={() => selectCameraMode("fixed")}
               onPhotoOpen={(id) => { const photo = photos.find((p) => p.id === id); if (photo) selectPhoto(photo); }}
               onTerrainProfile={recordTerrain}

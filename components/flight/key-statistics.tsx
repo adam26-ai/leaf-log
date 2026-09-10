@@ -22,6 +22,7 @@ import { XcPendingRefresh } from "./xc-pending-refresh";
 import { XcStatistic } from "./xc-statistic";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { WingIcon } from "@/components/icons/wing-icon";
+import { isLogbookEntry } from "@/lib/flights/recording";
 
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
   const content = (
@@ -67,7 +68,7 @@ export function KeyStatistics({ flight, canCalculateXc = false, friend = false, 
     ["Airtime", Clock, formatDuration(flight.durationS)],
     ["XC distance", Waypoints, ""],
     ["Max altitude", Mountain, formatAltitude(flight.maxAltM, units), "max-altitude"],
-    ["Height gained", ArrowUp, formatAltitude(flight.altGainM, units)],
+    ["Total climbs", ArrowUp, formatAltitude(flight.altGainM, units)],
     ["Best climb", ArrowUpRight, formatVario(flight.maxClimbMs, units), "best-climb"],
     ["Max sink", ArrowDownRight, formatVario(flight.maxSinkMs, units), "max-sink"],
   ];
@@ -79,7 +80,7 @@ export function KeyStatistics({ flight, canCalculateXc = false, friend = false, 
         <XcPendingRefresh pending={analysisPending(flight.xcStatus)} onRefresh={onRefresh} />
         {statistics.map(([label, Icon, value, seek]) => (
           label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} onRefresh={onRefresh} /> :
-          <Stat key={label} label={label} icon={Icon} value={value} seek={seek} />
+          <Stat key={label} label={label} icon={Icon} value={value} seek={isLogbookEntry(flight) ? undefined : seek} />
         ))}
     </div>
   );

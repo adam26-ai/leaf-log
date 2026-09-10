@@ -12,7 +12,7 @@ vi.mock("./derive", () => ({ deriveMetrics: mocks.derive }));
 vi.mock("./track-artifact", () => ({ buildTrackArtifact: () => ({ v: 1 }) }));
 vi.mock("./replay-artifact", () => ({ buildReplayArtifact: () => ({ v: 1 }) }));
 vi.mock("./xc", () => ({ analyzeXc: mocks.score }));
-const flight = { id: "test", xcStatus: "processing", xcStartedAt: new Date(), metricsVersion: 1, xcScore: { saved: true } };
+const flight = { id: "test", igcSha256: "recorded-file-hash", recordingKind: "igc", xcStatus: "processing", xcStartedAt: new Date(), metricsVersion: 1, xcScore: { saved: true } };
 beforeEach(() => {
   vi.resetAllMocks(); mocks.lock.mockResolvedValue([{ locked: true }]);
   mocks.find.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...flight, xcStatus: "queued" });

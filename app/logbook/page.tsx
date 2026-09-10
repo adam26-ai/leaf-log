@@ -46,7 +46,7 @@ export default async function LogbookPage() {
             </p>
           </div>
           <Button asChild size="sm">
-            <Link href="/upload">Upload flight</Link>
+            <Link href="/upload">Add flight</Link>
           </Button>
         </div>
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
@@ -58,10 +58,10 @@ export default async function LogbookPage() {
                 No flights yet
               </p>
               <p className="max-w-md text-gray-600">
-                Upload your first IGC file and watch your flight come to life.
+                Upload an IGC recording or add a flight from your logbook.
               </p>
               <Button asChild size="lg">
-                <Link href="/upload">Upload your first flight</Link>
+                <Link href="/upload">Add your first flight</Link>
               </Button>
             </CardBody>
           </Card>

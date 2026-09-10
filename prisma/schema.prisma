@@ -89,6 +89,7 @@ model Profile {
   siteEndorsements     SiteEndorsement[]    @relation("SiteEndorsements")
   zoneEndorsements     ZoneEndorsement[]    @relation("ZoneEndorsements")
   flights            Flight[]
+  logbookImports     LogbookImport[]
   // SPRINT-009 PR3 — flights this pilot is currently the assigned
   // instructor of record for. See Flight.instructorId.
   instructorFlights  Flight[]      @relation("FlightInstructor")
@@ -182,7 +183,14 @@ model Flight {
   ownerId               String
   owner                 Profile       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   visibility            String        @default("private") // private | friends | public
-  source                String        @default("web_upload") // web_upload | device_push
+  source                String        @default("web_upload") // web_upload | device_push | manual_entry | csv_import
+  recordingKind         String        @default("igc") // igc | logbook
+  reportedXcDistanceM    Int?
+  reportedXcType         String?       // open | fai-triangle | free-triangle
+  logbookImportId        String?
+  logbookImport          LogbookImport? @relation(fields: [logbookImportId], references: [id], onDelete: SetNull)
+  importRow             Int?
+  entryRequestId        String?
   xcStatus              String        @default("unscored") // unscored | queued | processing | ready | partial | empty | failed | unavailable | repair_queued | repairing | improve_queued | improving
   xcQueuedAt            DateTime?
   xcStartedAt           DateTime?
@@ -190,7 +198,7 @@ model Flight {
   metricsVersion        Int           @default(0)
   launchAltM            Int?
   status                String        @default("uploaded") // uploaded | processing | ready | failed
-  igcSha256             String
+  igcSha256             String?
   parserVersion         String        @default("1")
   parseWarnings         Json          @default("[]")
   failureReason         String?
@@ -220,7 +228,7 @@ model Flight {
   localTz               String?
   localUtcOffsetMinutes Int?
   glider                String?
-  pilot                 String?
+  pilot                 String? // IGC metadata or a legacy edited label; pilot identity comes from owner.
   recorder              String?
   // derived metrics
   durationS             Int?
@@ -275,6 +283,8 @@ model Flight {
   updatedAt             DateTime      @updatedAt
 
   @@unique([ownerId, igcSha256])
+  @@unique([ownerId, entryRequestId])
+  @@unique([logbookImportId, importRow])
   @@index([xcStatus, xcQueuedAt])
   @@index([ownerId, flightDate])
   @@index([ownerId, status, flightDate])
@@ -284,6 +294,26 @@ model Flight {
   @@index([takeoffZoneId])
   @@index([landingZoneId])
   @@index([instructorId])
+}
+
+// Import receipts survive undo; snapshots protect entries subsequently edited by the pilot.
+model LogbookImport {
+  id          String   @id @default(cuid())
+  ownerId     String
+  owner       Profile  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  requestId   String
+  fileHash    String
+  filename    String
+  rowCount    Int
+  importedCount Int
+  skippedCount Int
+  snapshot    Json
+  undoneAt    DateTime?
+  createdAt   DateTime @default(now())
+  flights     Flight[]
+
+  @@unique([ownerId, requestId])
+  @@index([ownerId, fileHash])
 }
 
 // SPRINT-009 PR4 — one instructor's private note on one flight. instructorId

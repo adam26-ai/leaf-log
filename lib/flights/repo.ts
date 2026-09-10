@@ -10,6 +10,7 @@ import { kudoCountsFor } from "@/lib/social/kudos";
 import { replayArtifactForFlight } from "./replay-repo";
 import { routeProximityIndex } from "./route-proximity";
 import type { CompanionManifest } from "./group-replay";
+import { isLogbookEntry } from "./recording";
 import { flightStatistics } from "./statistics";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
@@ -19,7 +20,7 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
   const primary = await getFlightForViewer(flightId, viewerId);
   if (!primary) return null;
   const empty = { flights: [], nextCursor: null };
-  if (!viewerId || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
+  if (!viewerId || isLogbookEntry(primary) || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
   const ownerSelect = { id: true, handle: true, displayName: true, avatarUpdatedAt: true } as const;
   // A day is the opened flight's local calendar day, independent of the browser's timezone.
   const localOffsetMs = (primary.localUtcOffsetMinutes ?? 0) * 60_000;
@@ -37,7 +38,7 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
   const pageSize = 32;
   const candidates = await prisma.flight.findMany({
     where: {
-      id: { not: primary.id }, ownerId: { in: eligible }, status: "ready",
+      id: { not: primary.id }, ownerId: { in: eligible }, status: "ready", recordingKind: "igc",
       // Day mode includes full flights launched on this local date. Otherwise,
       // pilots must actually share some flying time, with no gap allowance.
       takeoffAt: dayExpanded
@@ -94,6 +95,9 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
 const LIST_SELECT = {
   id: true,
   source: true,
+  recordingKind: true,
+  reportedXcDistanceM: true,
+  reportedXcType: true,
   xcStatus: true,
   xcError: true,
   xcQueuedAt: true,
@@ -124,7 +128,7 @@ const LIST_SELECT = {
   restrictedLandingField: true,
 } as const;
 
-type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM";
+type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM" | "recordingKind" | "reportedXcDistanceM" | "reportedXcType";
 export type FlightListItem = Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
 
 const FEED_SELECT = {
@@ -224,6 +228,7 @@ function feedCursorWhere(cursor: FeedCursor | null): Prisma.FlightWhereInput {
 }
 
 interface LocationFieldRow {
+  recordingKind?: string;
   takeoffSiteId: string | null;
   takeoffSiteName: string | null;
   takeoffZoneId: string | null;
@@ -373,6 +378,8 @@ async function resolveLocationFields<T extends LocationFieldRow>(
     );
     return {
       ...row,
+      ...(row.recordingKind === "logbook" && row.takeoffSiteId && !takeoff.siteId ? { takeoffLat: null, takeoffLon: null } : {}),
+      ...(row.recordingKind === "logbook" && row.landingSiteId && !landing.siteId ? { landingLat: null, landingLon: null } : {}),
       takeoffSiteId: takeoff.siteId,
       takeoffSiteName: takeoff.siteName,
       takeoffZoneId: takeoff.zoneId,

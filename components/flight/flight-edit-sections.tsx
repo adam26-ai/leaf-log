@@ -7,8 +7,14 @@ import { VisibilityEditor } from "./visibility-editor";
 import { DeleteFlightButton } from "./delete-flight-button";
 import { NotesEditor } from "@/app/flights/[id]/edit/notes-editor";
 import { PhotosSection } from "@/app/flights/[id]/edit/photos-section";
-import { IgcDetailsEditor } from "@/app/flights/[id]/edit/igc-details-editor";
+import { FlightWingEditor } from "@/app/flights/[id]/edit/wing-editor";
+import { RecordingDetails } from "./recording-details";
 import { getIgcDetailsOptions } from "@/lib/flights/igc-details";
+import { isLogbookEntry } from "@/lib/flights/recording";
+import { getEntryOptions } from "@/lib/logbook/options";
+import { flightToEntryDraft } from "@/lib/logbook/flight-draft";
+import { ManualEntryForm } from "@/components/logbook/manual-entry-form";
+import { AttachIgcForm } from "@/components/logbook/attach-igc-form";
 
 function SectionTitle({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
@@ -22,14 +28,20 @@ function SectionTitle({ icon: Icon, children }: { icon: LucideIcon; children: Re
 }
 
 export async function FlightEditSections({ flight }: { flight: Flight }) {
-  const options = await getIgcDetailsOptions(flight.ownerId, flight.id);
+  const options = isLogbookEntry(flight) ? { recording: null, gliders: [] } : await getIgcDetailsOptions(flight.ownerId, flight.id);
+  const entryOptions = isLogbookEntry(flight) ? await getEntryOptions(flight.ownerId) : null;
   const cardClass = "flex flex-col gap-3 border-[var(--replay-inactive-border)] p-5";
   return (
     <div className="flex flex-col gap-4">
+        {entryOptions ? <Card className={cardClass}>
+          <SectionTitle icon={FilePenLine}>Flight details</SectionTitle>
+          <ManualEntryForm options={entryOptions} initial={flightToEntryDraft(flight)} flightId={flight.id} expectedUpdatedAt={flight.updatedAt.toISOString()} defaultVisibility={flight.visibility} />
+        </Card> : <>
         <Card className={cardClass}>
-          <SectionTitle icon={FilePenLine}>IGC details</SectionTitle>
-          <IgcDetailsEditor flightId={flight.id} glider={flight.glider ?? ""} {...options} />
+          <SectionTitle icon={FilePenLine}>Wing</SectionTitle>
+          <FlightWingEditor flightId={flight.id} glider={flight.glider ?? ""} gliders={options.gliders} />
         </Card>
+        {options.recording && <Card className={cardClass}><RecordingDetails details={options.recording} /></Card>}
         <Card className={cardClass}>
           <SectionTitle icon={Eye}>Visibility</SectionTitle>
           <VisibilityEditor flightId={flight.id} visibility={normalizeVisibility(flight.visibility)} />
@@ -38,6 +50,8 @@ export async function FlightEditSections({ flight }: { flight: Flight }) {
           <SectionTitle icon={StickyNote}>Notes</SectionTitle>
           <NotesEditor flightId={flight.id} notes={flight.notes ?? ""} />
         </Card>
+        </>}
+        {entryOptions && <Card className={cardClass}><SectionTitle icon={FilePenLine}>Attach an IGC recording</SectionTitle><AttachIgcForm flightId={flight.id} /></Card>}
         <Card className={cardClass}>
           <SectionTitle icon={Images}>Pictures</SectionTitle>
           <PhotosSection flightId={flight.id} />

@@ -20,7 +20,7 @@ async function reprocess(flightId: string) {
     where: { id: flightId },
     include: { data: true },
   });
-  if (!flight?.data?.rawIgc) throw new Error(`Flight ${flightId} has no raw IGC data`);
+  if (!flight?.data?.rawIgc || !flight.igcSha256) throw new Error(`Flight ${flightId} has no raw IGC data`);
 
   const parsed = parseIgc(new Uint8Array(flight.data.rawIgc));
   const metrics = deriveMetrics(parsed);
@@ -78,7 +78,7 @@ async function main() {
   }
   const ids = flightId
     ? [flightId]
-    : (await prisma.flight.findMany({ select: { id: true }, orderBy: { createdAt: "asc" } })).map((flight) => flight.id);
+    : (await prisma.flight.findMany({ where: { recordingKind: "igc" }, select: { id: true }, orderBy: { createdAt: "asc" } })).map((flight) => flight.id);
   for (const id of ids) await reprocess(id);
 }
 

@@ -1,4 +1,5 @@
 import { readXcScore } from "@/lib/igc/xc-types";
+import { isLogbookEntry, reportedXc, type RecordingFields } from "./recording";
 
 export const METRICS_VERSION = 1;
 export const XC_SCORING_VERSION = 2;
@@ -7,7 +8,7 @@ export const WAITING_STATES = ["queued", "repair_queued", "improve_queued"];
 export const RUNNING_STATES = ["processing", "repairing", "improving"];
 export const analysisPending = (status: string) => [...WAITING_STATES, ...RUNNING_STATES].includes(status);
 
-export interface AnalysisFlight {
+export interface AnalysisFlight extends RecordingFields {
   status: string;
   xcStatus: string;
   xcScore: unknown;
@@ -16,6 +17,8 @@ export interface AnalysisFlight {
 }
 export type AnalysisAction = "calculate" | "retry" | "complete" | "improve" | "repair";
 export function analysisState(flight: AnalysisFlight): { label: string; action: AnalysisAction | null; detail: string; incomplete: boolean } {
+  if (isLogbookEntry(flight)) return { label: reportedXc(flight) ? "Reported XC" : "No track recorded", action: null,
+    detail: "This logbook entry has no IGC track. Reported distances count toward personal bests in their selected category.", incomplete: false };
   const result = flight.xcScore as { scoringVersion?: number; complete?: boolean; emptyReason?: string; completedCategories?: unknown; best?: unknown; candidates?: unknown } | null;
   const score = readXcScore(flight.xcScore);
   if (WAITING_STATES.includes(flight.xcStatus)) return { label: "Waiting", action: null, detail: "Queued for background processing. You can keep browsing.", incomplete: true };

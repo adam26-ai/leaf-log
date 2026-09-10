@@ -14,7 +14,7 @@ const { group } = vi.hoisted(() => {
 vi.mock("./use-group-replay", () => ({ useGroupReplay: () => group }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueMissingFlightAnalysis: vi.fn() }));
-vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ trackDisplay, onPhotoOpen, xcRoute }: { trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)}><button onClick={() => onPhotoOpen("photo")}>Map photo</button></div> }));
+vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ trackDisplay, onPhotoOpen, xcRoute, pilotName }: { trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown; pilotName: string }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)} data-pilot={pilotName}><button onClick={() => onPhotoOpen("photo")}>Map photo</button></div> }));
 vi.mock("./barograph", () => ({ BAROGRAPH_PLOT_LEFT_INSET: 40, BAROGRAPH_PLOT_RIGHT_INSET: 10, Barograph: ({ profiles }: { profiles: { id: string; state: string }[] }) => <div>{profiles.map((profile) => <span key={profile.id} data-testid={`profile-${profile.id}`} data-state={profile.state} />)}</div> }));
 import { FlightViz } from "./flight-viz";
 
@@ -33,6 +33,17 @@ it("offers the day calendar for a single own flight even when no companions are 
   fireEvent.click(screen.getByRole("button", { name: "Relive the day" }));
   expect(group.discover).toHaveBeenLastCalledWith(false, true);
   expect(slider).toHaveAttribute("aria-valuenow", "1");
+});
+it("labels the selected glider with its owner's profile, using the handle when the display name is blank", () => {
+  view();
+  expect(screen.getByTestId("replay")).toHaveAttribute("data-pilot", "Self");
+  cleanup();
+  const original = group.selected;
+  try {
+    group.selected = { ...original, owner: { ...original.owner, handle: "friend", displayName: "" } };
+    view();
+    expect(screen.getByTestId("replay")).toHaveAttribute("data-pilot", "friend");
+  } finally { group.selected = original; }
 });
 it("starts with the scored route hidden and toggles it without seeking or changing pilot", () => {
   view();

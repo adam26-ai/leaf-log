@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Globe, Lock, Users } from "lucide-react";
+import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
 import { TrophyPill } from "./trophy-pill";
 import {
@@ -25,11 +25,12 @@ interface FlightRowOwner {
 
 function UploadSource({ source }: { source: string }) {
   const automatic = source === "device_push";
-  const label = automatic ? "Auto-uploaded from Leaf" : "Manually uploaded";
+  const label = automatic ? "Auto-uploaded from Leaf" : source === "manual_entry" ? "Manual logbook entry" : source === "csv_import" ? "Imported logbook entry" : "Manually uploaded";
+  const Icon = source === "manual_entry" ? NotebookPen : source === "csv_import" ? FileSpreadsheet : Monitor;
   return <span title={label} role="img" aria-label={label} className="grid h-6 w-6 sm:h-8 sm:w-8 shrink-0 place-items-center justify-self-end">
     {automatic
       ? <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-6 w-6 sm:h-8 sm:w-8" />
-      : <Monitor aria-hidden="true" className="h-5 w-5 text-gray-500" />}
+      : <Icon aria-hidden="true" className="h-5 w-5 text-gray-500" />}
   </span>;
 }
 
@@ -73,7 +74,7 @@ export function FlightRow({
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
         className="grid h-[45px] grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[8rem_minmax(0,1fr)_auto_auto] sm:h-auto sm:grid-cols-[9rem_minmax(0,1fr)_minmax(9rem,0.8fr)_auto] sm:gap-3 sm:px-4 sm:py-1 sm:text-sm">
-        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.localUtcOffsetMinutes)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
+        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
         <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
           <span className="block max-w-full truncate font-condensed text-base font-bold leading-4 text-ink">{site}</span>
           {showLanding && <span title={`Landing: ${landing}`} className="block max-w-full truncate text-xs leading-4 text-gray-600">→ {landing}</span>}
@@ -116,7 +117,7 @@ export function FlightRow({
         <span className="text-sm text-gray-500">
           {formatLocalDate(
             flight.takeoffAt ?? flight.flightDate,
-            flight.localUtcOffsetMinutes,
+            flight.takeoffAt ? flight.localUtcOffsetMinutes : 0,
           )}
         </span>
       </Link>

@@ -17,7 +17,7 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
   const records = [...trophies].sort((a, b) => a.rank - b.rank).map(t => ({ ...t,
     valueLabel: t.category === "duration" ? formatDuration(t.value) : t.category === "altitude" || t.category === "launch-gain" ? formatAltitude(t.value, units) : formatDistance(t.value, units),
   }));
-  const descriptions = records.map(t => `${medals[t.rank]} — ${TROPHY_LABELS[t.category]}: ${t.valueLabel}${t.approximate ? " (best found)" : ""}`);
+  const descriptions = records.map(t => `${medals[t.rank]} — ${TROPHY_LABELS[t.category]}: ${t.valueLabel}${t.reported ? " (reported)" : t.approximate ? " (best found)" : ""}`);
   return <span tabIndex={0} aria-label={descriptions.join("; ")} className="group/trophy relative inline-flex justify-center outline-none">
     <span data-medal={medals[bestRank].toLowerCase()} className={`inline-flex h-6 items-center gap-1 rounded-full border border-black/20 px-1.5 ${colors[bestRank]}`}>
       <Trophy className="h-3.5 w-3.5" />{multiple ? <Plus className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
@@ -32,7 +32,7 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
               <Trophy className="h-3.5 w-3.5" /><CategoryIcon className="h-3.5 w-3.5" />
             </span>
             <span className="text-[11px] leading-tight text-gray-300">{TROPHY_LABELS[record.category]}</span>
-            <span className="text-right font-semibold tabular-nums">{record.valueLabel}{record.approximate && <span className="block text-[9px] font-normal text-gray-400">best found</span>}</span>
+            <span className="text-right font-semibold tabular-nums">{record.valueLabel}{record.reported && <span className="block text-[9px] font-normal text-gray-400">reported</span>}{record.approximate && <span className="block text-[9px] font-normal text-gray-400">best found</span>}</span>
           </span>;
         })}
       </span>

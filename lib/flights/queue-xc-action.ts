@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { analysisPending, analysisState, type AnalysisFlight } from "./analysis-state";
 
-const select = { id: true, status: true, xcStatus: true, xcScore: true, metricsVersion: true } as const;
+const select = { id: true, status: true, xcStatus: true, xcScore: true, metricsVersion: true, recordingKind: true } as const;
 async function enqueue(ownerId: string, flight: AnalysisFlight & { id: string }) {
   const action = analysisState(flight).action;
   if (!action) return 0;

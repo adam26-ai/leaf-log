@@ -17,7 +17,7 @@ export function AnalysisNotice({ flights, now }: { flights: (AnalysisFlight & { 
       {(waiting > 0 || running > 0) && <span role="status">{[waiting ? `${waiting} waiting` : "", running ? `${running} calculating` : ""].filter(Boolean).join(" · ")}</span>}
       {unavailable > 0 && <span>{unavailable} {unavailable === 1 ? "flight has" : "flights have"} unavailable data</span>}
     </div>
-    <p className="mt-1 text-[11px] text-gray-500">XC personal bests are based on scored flights. Rankings may change as calculations finish.</p>
+    <p className="mt-1 text-[11px] text-gray-500">XC personal bests include calculated and reported distances. Rankings may change as calculations finish.</p>
     {delayed && <p className="mt-1 text-[11px] text-gray-500">Still waiting for background processing. Work resumes when the server is available.</p>}
   </aside>;
 }

@@ -6,6 +6,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import type { Flight } from "@prisma/client";
 import type { ReactNode } from "react";
+import { isLogbookEntry } from "@/lib/flights/recording";
 
 function FlightArrow({
   flightId,
@@ -70,7 +71,7 @@ export function FlightHeader({
   const zonesOn = zonesEnabled();
   const date = formatLocalDate(
     flight.takeoffAt ?? flight.flightDate,
-    flight.localUtcOffsetMinutes,
+    flight.takeoffAt ? flight.localUtcOffsetMinutes : 0,
   );
   const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
@@ -83,10 +84,10 @@ export function FlightHeader({
             <CalendarDays className="h-4 w-4 text-[var(--replay-accent-strong)]" aria-hidden="true" />
             {date}
           </span>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          {flight.takeoffAt && <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <Clock className="h-4 w-4 text-[var(--replay-accent-strong)]" aria-hidden="true" />
-            {timeRange}
-          </span>
+            {flight.landingAt ? timeRange : formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)}
+          </span>}
         </div>
         <FlightArrow flightId={nextFlightId} direction="next" />
       </div>
@@ -101,7 +102,7 @@ export function FlightHeader({
             initialZoneName={flight.takeoffZoneName}
             siteId={flight.takeoffSiteId}
             zoneId={flight.takeoffZoneId}
-            isOwner={isOwner}
+            isOwner={isOwner && !isLogbookEntry(flight)}
             zonesEnabled={zonesOn}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
@@ -117,7 +118,7 @@ export function FlightHeader({
                 initialZoneName={flight.landingZoneName}
                 siteId={flight.landingSiteId}
                 zoneId={flight.landingZoneId}
-                isOwner={isOwner}
+                isOwner={isOwner && !isLogbookEntry(flight)}
                 zonesEnabled={zonesOn}
                 className="font-condensed text-base font-bold text-gray-500"
               />
