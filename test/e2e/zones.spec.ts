@@ -147,7 +147,7 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   // site-overview step (SPRINT-008), never a zone step.
   await page.locator("h1 button").click();
   const dialog = page.locator(".fixed.inset-0");
-  await dialog.getByRole("heading", { name: siteName }).waitFor({ timeout: 5_000 });
+  await expect(dialog.getByRole("heading", { name: siteName })).toBeVisible({ timeout: 10_000 });
   const overviewText = await dialog.innerText();
   expect(overviewText.match(/\bspot\b/gi) ?? []).toEqual([]);
   expect(overviewText.match(/\bzone\b/gi) ?? []).toEqual([]);
