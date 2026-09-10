@@ -1,3 +1,4 @@
+import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { LoadedReplayFlight } from "./use-group-replay";
@@ -120,7 +121,7 @@ it("shows the selected flight's statistics and seeks that flight's metrics on th
   const own = group.flights[0];
   const ownStats: FlightStatistics = { id: own.id, glider: "Own wing", durationS: 100, maxAltM: 200,
     altGainM: 100, maxClimbMs: 1, maxSinkMs: -1, status: "ready", xcStatus: "unscored",
-    xcError: null, metricsVersion: 1, xcScore: null };
+    xcError: null, metricsVersion: METRICS_VERSION, xcScore: null };
   const pilot = { ...own.owner, id: "friend", handle: "friend", displayName: "Friend" };
   const first = { ...own, id: "friend-first", owner: pilot, takeoffMs: 300000, landingMs: 400000,
     statistics: { ...ownStats, id: "friend-first", glider: "First friend wing", maxAltM: 500 },

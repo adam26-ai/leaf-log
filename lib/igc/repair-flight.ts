@@ -1,13 +1,13 @@
 import { Prisma } from "@prisma/client";
 import { METRICS_VERSION } from "../flights/analysis-state";
 import type { DerivedMetrics, ParsedIgc } from "./types";
+import { recordAltitude } from "./altitude";
 
 export function altitudeMeasurements(parsed: ParsedIgc, metrics: DerivedMetrics | null) {
   const fixes = metrics ? parsed.fixes.slice(metrics.takeoffIndex, metrics.landingIndex + 1) : [];
-  const alt = (fix: typeof fixes[number]) => metrics?.altSource === "baro" ? fix.baroAlt ?? fix.gpsAlt : fix.gpsAlt ?? fix.baroAlt;
-  const launch = fixes[0] ? alt(fixes[0]) : null;
+  const launch = fixes[0] ? recordAltitude(fixes[0]) : null;
   return { metricsVersion: METRICS_VERSION, launchAltM: launch == null ? null : Math.round(launch),
-    maxAltM: fixes.some(fix => alt(fix) != null) ? metrics!.maxAltM : null };
+    maxAltM: fixes.some(fix => recordAltitude(fix) != null) ? metrics!.maxAltM : null };
 }
 
 /** Rebuild derived fields only; preserve the pilot's names, sites and other edits. */

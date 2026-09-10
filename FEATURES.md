@@ -428,6 +428,16 @@ Completed ideas (see git history / PRs for detail):
   data dimensions once the mode-switching plumbing exists: altitude, and (if the "Custom Glider
   Marker Color" or "Auto-Detect Co-Flying Friends" ideas above ship) per-pilot identity coloring.
 
+## Revisit Terrain-Based Altitude Adjustment
+- **Area:** Flight altitude / profile / 3D replay
+- **Description:** Evaluate optional terrain calibration after the static median GPS-minus-baro correction. Currently no terrain offset or pilot-height clamp is applied.
+- **Notes:** Consider a bounded correction (up to 30 m) only with reliable terrain coverage and sustained evidence. Low ground speed alone cannot establish that a paraglider is on the ground. Any future correction must be shared by the profile, 3D geometry, and readouts, documented separately, and excluded from GPS altitude records.
+
+## Verify Leaf Firmware GPS Altitude Reference
+- **Area:** Leaf firmware / IGC import
+- **Description:** Check whether Leaf exports GPS altitude relative to a geoid/mean sea level or the WGS84 ellipsoid, including differences across firmware versions.
+- **Notes:** Also verify whether "sync baro to GPS at takeoff" changes the exported pressure-altitude field or only instrument displays. Until confirmed, use the recorded GPS altitude as supplied; do not add an assumed geoid correction. Document how other IGC recorder types identify their altitude reference.
+
 ## License Rating on Pilot Profile
 - **Area:** Profile / pilot identity
 - **Description:** User profile should include license ratings. For now it will be USHPA, but

@@ -13,6 +13,7 @@ import type { CompanionManifest } from "./group-replay";
 import { isLogbookEntry } from "./recording";
 import { flightStatistics } from "./statistics";
 import { flightTrophies, type FlightTrophy } from "./trophies";
+import { METRICS_VERSION } from "./analysis-state";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
  * Filter before pagination, geometry reads, or returning any participant metadata.
@@ -560,9 +561,10 @@ export async function logbookCompanions(viewerId: string) {
 /** Only the launch altitude scalar is needed for personal gain trophies. */
 export async function ownLaunchAltitudes(ownerId: string): Promise<Record<string, number>> {
   const rows = await prisma.$queryRaw<{ flightId: string; altitude: unknown }[]>`
-    SELECT d."flightId", d.track #> '{baro,0,1}' AS altitude
-    FROM "FlightData" d JOIN "Flight" f ON f.id = d."flightId"
+    SELECT f.id AS "flightId", f."launchAltM" AS altitude
+    FROM "Flight" f
     WHERE f."ownerId" = ${ownerId} AND f.status = 'ready'
+      AND (f."metricsVersion" = ${METRICS_VERSION} OR f."recordingKind" = 'logbook')
   `;
   return Object.fromEntries(rows.flatMap(row => typeof row.altitude === "number" && Number.isFinite(row.altitude) ? [[row.flightId, row.altitude]] : []));
 }

@@ -2,8 +2,10 @@ import type { Fix, DerivedMetrics, ParsedIgc } from "./types";
 import { haversineM } from "@/lib/geo/distance";
 import { detectFlightWindow } from "./detect";
 import { timezoneFromCoords, utcOffsetMinutes } from "@/lib/geo/timezone";
+import { baroGpsOffset, playbackAltitude, recordAltitude } from "./altitude";
+import { calculatedVario } from "./vario";
 
-const CLIMB_WINDOW_S = 3; // smoothing window for vario (raw 1s deltas are noise)
+const GAIN_HALF_WINDOW_S = 3; // altitude smoothing for cumulative gain only
 const GAIN_NOISE_THRESHOLD_M = 1.0; // ignore sub-metre jitter in cumulative gain
 
 /** Choose the altitude source: prefer baro when present on a usable fraction of fixes. */
@@ -19,21 +21,18 @@ function chooseAltSource(fixes: Fix[]): "baro" | "gps" {
   return baro > 0 ? "baro" : "gps";
 }
 
-const altOf = (f: Fix, src: "baro" | "gps"): number | null =>
-  src === "baro" ? (f.baroAlt ?? f.gpsAlt) : (f.gpsAlt ?? f.baroAlt);
-
-/** Centred moving average of altitude (metres) over ~CLIMB_WINDOW_S seconds. */
-function smoothAltitudes(fixes: Fix[], src: "baro" | "gps"): number[] {
-  const alt = fixes.map((f) => altOf(f, src) ?? 0);
+/** Centred altitude smoothing for cumulative gain, never for climb/sink rates. */
+function smoothAltitudes(fixes: Fix[], src: "baro" | "gps", offset: number | null): number[] {
+  const alt = fixes.map((f) => playbackAltitude(f, src, offset) ?? 0);
   const out = new Array(alt.length).fill(0);
   for (let i = 0; i < alt.length; i++) {
     let sum = 0;
     let n = 0;
-    for (let j = i; j >= 0 && fixes[i].t - fixes[j].t <= CLIMB_WINDOW_S; j--) {
+    for (let j = i; j >= 0 && fixes[i].t - fixes[j].t <= GAIN_HALF_WINDOW_S; j--) {
       sum += alt[j];
       n++;
     }
-    for (let j = i + 1; j < alt.length && fixes[j].t - fixes[i].t <= CLIMB_WINDOW_S; j++) {
+    for (let j = i + 1; j < alt.length && fixes[j].t - fixes[i].t <= GAIN_HALF_WINDOW_S; j++) {
       sum += alt[j];
       n++;
     }
@@ -55,12 +54,12 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
   if (window.length < 2) return null;
 
   const altSource = chooseAltSource(fixes);
-  const smoothAlt = smoothAltitudes(fixes, altSource);
+  const smoothAlt = smoothAltitudes(fixes, altSource, baroGpsOffset(window));
 
   // Max altitude over the flight window.
   let maxAltM = -Infinity;
   for (let i = takeoffIndex; i <= landingIndex; i++) {
-    const a = altOf(fixes[i], altSource);
+    const a = recordAltitude(fixes[i]);
     if (a != null && a > maxAltM) maxAltM = a;
   }
   if (!Number.isFinite(maxAltM)) maxAltM = 0;
@@ -73,7 +72,7 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
   }
 
   // Prefer the logger's recorded vario. Older files fall back to a calculated
-  // ~CLIMB_WINDOW_S vertical speed from smoothed altitude.
+  // single four-second altitude difference, shared with replay.
   let maxClimbMs = 0;
   let maxSinkMs = 0;
   const recordedVario = window
@@ -82,12 +81,7 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
   if (recordedVario.length > 0) {
     maxClimbMs = Math.max(0, ...recordedVario);
     maxSinkMs = Math.min(0, ...recordedVario);
-  } else for (let i = takeoffIndex; i <= landingIndex; i++) {
-    let j = i;
-    while (j < landingIndex && fixes[j].t - fixes[i].t < CLIMB_WINDOW_S) j++;
-    const dt = fixes[j].t - fixes[i].t;
-    if (dt <= 0) continue;
-    const vs = (smoothAlt[j] - smoothAlt[i]) / dt;
+  } else for (const vs of calculatedVario(window, altSource, baroGpsOffset(window))) {
     if (vs > maxClimbMs) maxClimbMs = vs;
     if (vs < maxSinkMs) maxSinkMs = vs;
   }

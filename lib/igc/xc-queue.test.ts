@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { processNextXcJob } from "./xc-queue";
+import { METRICS_VERSION } from "../flights/analysis-state";
 const mocks = vi.hoisted(() => ({ lock: vi.fn(), find: vi.fn(), claim: vi.fn(), recover: vi.fn(), update: vi.fn(), data: vi.fn(), score: vi.fn(), saveData: vi.fn(), derive: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ prisma: {
   $transaction: (fn: (tx: unknown) => unknown) => fn({ $queryRaw: mocks.lock,
@@ -12,7 +13,7 @@ vi.mock("./derive", () => ({ deriveMetrics: mocks.derive }));
 vi.mock("./track-artifact", () => ({ buildTrackArtifact: () => ({ v: 1 }) }));
 vi.mock("./replay-artifact", () => ({ buildReplayArtifact: () => ({ v: 1 }) }));
 vi.mock("./xc", () => ({ analyzeXc: mocks.score }));
-const flight = { id: "test", igcSha256: "recorded-file-hash", recordingKind: "igc", xcStatus: "processing", xcStartedAt: new Date(), metricsVersion: 1, xcScore: { saved: true } };
+const flight = { id: "test", igcSha256: "recorded-file-hash", recordingKind: "igc", xcStatus: "processing", xcStartedAt: new Date(), metricsVersion: METRICS_VERSION, xcScore: { saved: true } };
 beforeEach(() => {
   vi.resetAllMocks(); mocks.lock.mockResolvedValue([{ locked: true }]);
   mocks.find.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...flight, xcStatus: "queued" });
@@ -57,7 +58,7 @@ it("repairs derived fields and artifacts without overwriting pilot edits", async
   mocks.claim.mockResolvedValue({ ...flight, metricsVersion: 0, xcStatus: "repairing" });
   await processNextXcJob();
   const repair = mocks.recover.mock.calls[3][0].data;
-  expect(repair.metricsVersion).toBe(1); expect(repair.parserVersion).toBe("2");
+  expect(repair.metricsVersion).toBe(METRICS_VERSION); expect(repair.parserVersion).toBe("2");
   expect(repair).not.toHaveProperty("glider"); expect(repair).not.toHaveProperty("takeoffSiteId");
   expect(mocks.saveData).toHaveBeenCalled();
 });

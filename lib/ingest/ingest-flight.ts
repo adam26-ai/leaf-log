@@ -10,7 +10,7 @@ import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 import { altitudeMeasurements } from "@/lib/igc/repair-flight";
 
-export const PARSER_VERSION = "2";
+export const PARSER_VERSION = "5";
 
 export type IngestSource = "web_upload" | "device_push";
 

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -20,7 +21,7 @@ it("renames and merges exact owner-scoped wings, preserves flight data and rejec
     owners.push(owner.id);
   }
   const create = (ownerId: string, glider: string | null, suffix: string) => prisma.flight.create({ data: {
-    ownerId, glider, igcSha256: suffix, status: "ready", metricsVersion: 1, durationS: 120,
+    ownerId, glider, igcSha256: suffix, status: "ready", metricsVersion: METRICS_VERSION, durationS: 120,
     notes: "Keep notes", visibility: "private", xcStatus: "ready", xcScore: { preserve: true },
   } });
   const a = await create(owners[0], "Ozone Rush4", "a");

@@ -1,7 +1,7 @@
 import { readXcScore } from "@/lib/igc/xc-types";
 import { isLogbookEntry, reportedXc, type RecordingFields } from "./recording";
 
-export const METRICS_VERSION = 1;
+export const METRICS_VERSION = 3;
 export const XC_SCORING_VERSION = 2;
 export const XC_CATEGORIES = ["open", "free-triangle", "fai-triangle"] as const;
 export const WAITING_STATES = ["queued", "repair_queued", "improve_queued"];

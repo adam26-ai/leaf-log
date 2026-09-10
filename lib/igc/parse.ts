@@ -189,9 +189,8 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
       timeMs,
       lat,
       lon,
-      // Treat a stuck/zero baro as "absent" so derivation can fall back to GPS.
-      baroAlt: baroAlt && baroAlt !== 0 ? baroAlt : null,
-      gpsAlt: gpsAlt && gpsAlt !== 0 ? gpsAlt : null,
+      baroAlt,
+      gpsAlt,
       fixAccuracyM: fxa,
       groundSpeedKmh: gsp,
       trueTrackDeg: trt,
@@ -200,6 +199,15 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
       varioMs: variable == null ? null : variable / 10,
       valid: validFlag === "A",
     });
+  }
+
+  // A zero-only channel is commonly an unavailable sensor. Detect that across
+  // the recording, rather than discarding legitimate sea-level crossings and
+  // switching altitude references at each zero-valued fix.
+  for (const source of ["baroAlt", "gpsAlt"] as const) {
+    if (!fixes.some((fix) => fix[source] != null && fix[source] !== 0)) {
+      for (const fix of fixes) fix[source] = null;
+    }
   }
 
   if (badBRecords > 0) {
