@@ -1,4 +1,5 @@
 import type { UnitSystem } from "@/lib/flights/format";
+import { resolveUnits } from "./units";
 
 export type AltitudeScale = {
   domain: [number, number];
@@ -36,7 +37,7 @@ export function buildAltitudeScale(values: number[], units: UnitSystem): Altitud
   if (!Number.isFinite(dataMin)) return { domain: [0, 1], ticks: [0, 1] };
 
   const dataSpan = dataMax - dataMin;
-  const nearZeroDistance = units === "imperial" ? 500 : 200;
+  const nearZeroDistance = resolveUnits(units).altitude === "ft" ? 500 : 200;
   const includeZero =
     dataMin >= 0 && dataMin <= Math.max(nearZeroDistance, dataSpan * 0.25);
 

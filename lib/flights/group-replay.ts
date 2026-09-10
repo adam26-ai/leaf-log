@@ -1,5 +1,6 @@
 import type { ReplayResponse } from "@/lib/igc/replay";
 import { locateSample, type Sample } from "@/lib/igc/interpolate";
+import type { FlightStatistics } from "./statistics";
 
 export interface ReplayPilot {
   id: string;
@@ -14,11 +15,13 @@ export interface CompanionFlight {
   takeoffMs: number;
   landingMs: number;
   xcScore: unknown;
+  statistics?: FlightStatistics;
 }
 
 export interface CompanionManifest {
   flights: CompanionFlight[];
   nextCursor: string | null;
+  dayExpanded?: boolean;
 }
 
 export type ReplayState = "On Launch" | "Flying" | "Landed" | "Recording gap";
@@ -68,6 +71,25 @@ export function groupTimeBounds(flights: Pick<CompanionFlight, "takeoffMs" | "la
     startMs: Math.min(...flights.map((f) => f.takeoffMs)),
     endMs: Math.max(...flights.map((f) => f.landingMs)),
   };
+}
+
+/** Keep each flight separate, and preserve recording gaps when reducing chart points. */
+export function profileSamples(replay: ReplayResponse, originMs: number): [number, number | null][] {
+  const offset = (replay.takeoffMs - originMs) / 1000;
+  const result: [number, number | null][] = [];
+  const stride = Math.max(1, Math.ceil(replay.samples.length / 2000));
+  replay.samples.forEach((point, index, samples) => {
+    const previous = samples[index - 1];
+    if (previous && point[3] - previous[3] > (replay.gapThresholdS ?? 30)) {
+      result.push([previous[3] + offset, previous[2]], [(point[3] + previous[3]) / 2 + offset, null], [point[3] + offset, point[2]]);
+    } else if (index % stride === 0 || index === samples.length - 1) result.push([point[3] + offset, point[2]]);
+  });
+  return result;
+}
+
+export function nextPilotTakeoff<T extends CompanionFlight>(flights: T[], previousId?: string): T | undefined {
+  const ordered = [...flights].sort((a, b) => a.takeoffMs - b.takeoffMs || a.id.localeCompare(b.id));
+  return ordered[(ordered.findIndex((flight) => flight.id === previousId) + 1) % ordered.length];
 }
 
 /** Stable choice between successive flights. An explicit flight wins in overlaps. */

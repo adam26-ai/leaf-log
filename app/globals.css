@@ -63,12 +63,13 @@
   --replay-icon: #d8ff00;
   --replay-metric-icon-bg: #424242;
   --replay-timeline: #0099ff;
-  --replay-profile-line: #0099ff;
-  --replay-profile-fill: #aeff00;
+  --replay-profile-line: #d8ff00;
+  --replay-profile-fill: #d8ff00;
   --replay-terrain-line: #536779;
   --replay-terrain-fill: #a5aeb6;
   --replay-terrain-gradient: #5c5c5c;
-  --replay-profile-sky: #cde6fe;
+  --replay-profile-sky: #99bee1;
+  --replay-profile-grid: #d4d4d4;
   --replay-button-border-width: 1.5px;
   --replay-button-icon-stroke: 2px;
   --replay-inactive-button-border-width: 1px;
@@ -77,7 +78,7 @@
   --replay-timeline-width: 4px;
   --replay-timeline-dot-fill: #ffffff;
   --replay-profile-line-width: 2px;
-  --replay-terrain-line-width: 2.5px;
+  --replay-terrain-line-width: 2px;
   --replay-terrain-fill-alpha: 1;
   --replay-terrain-gradient-alpha: 0.75;
   --replay-header-accent-height: 5px;

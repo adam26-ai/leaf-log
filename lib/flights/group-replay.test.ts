@@ -4,7 +4,7 @@ import { groupReplayFixtures } from "@/test/igc/group-fixtures";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildReplayArtifact, readReplayArtifact } from "@/lib/igc/replay-artifact";
-import { flightForPilot, groupTimeBounds, replayPositionAt, replayStateAt, splitReplaySamples } from "./group-replay";
+import { flightForPilot, groupTimeBounds, nextPilotTakeoff, profileSamples, replayPositionAt, replayStateAt, splitReplaySamples } from "./group-replay";
 import { routeProximityIndex } from "./route-proximity";
 
 const artifacts = groupReplayFixtures().map((bytes) => {
@@ -45,6 +45,22 @@ describe("group replay with the supplied flights", () => {
     const flights = [{ id: "a", takeoffMs: 0, landingMs: 100, owner, xcScore: null }, { id: "b", takeoffMs: 90, landingMs: 200, owner, xcScore: null }];
     expect(flightForPilot(flights, 95, "b").id).toBe("b");
     expect(flightForPilot(flights, 150, "a").id).toBe("b");
+    expect(nextPilotTakeoff([...flights].reverse())?.id).toBe("a");
+    expect(nextPilotTakeoff(flights, "a")?.id).toBe("b");
+    expect(nextPilotTakeoff(flights, "b")?.id).toBe("a");
+    expect(nextPilotTakeoff(flights, "removed")?.id).toBe("a");
+    expect(nextPilotTakeoff([])).toBeUndefined();
+  });
+  it("aligns separate profiles to UTC and preserves recording gaps", () => {
+    const replay = { ...artifacts[0].replay, takeoffMs: 10_000, gapThresholdS: 30, samples: [[0, 0, 100, 0], [0, 0, 110, 10], [0, 0, 200, 100]] as [number, number, number, number][] };
+    expect(profileSamples(replay, 20_000)).toEqual([[-10, 100], [0, 110], [0, 110], [45, null], [90, 200]]);
+  });
+  it("uses the nearest flight before, between, and after a pilot's flights", () => {
+    const owner = { id: "p", displayName: "Pilot", handle: "pilot", avatarUpdatedAt: null };
+    const flights = [{ id: "a", takeoffMs: 100, landingMs: 200, owner, xcScore: null },
+      { id: "b", takeoffMs: 500, landingMs: 600, owner, xcScore: null }];
+    for (const time of [0, 150, 250]) expect(flightForPilot(flights, time, "b").id).toBe("a");
+    for (const time of [450, 550, 700]) expect(flightForPilot(flights, time, "a").id).toBe("b");
   });
   it("rejects stale artifacts after source or derivation changes", () => {
     expect(readReplayArtifact(artifacts[0], "test-hash", "2")).toBe(artifacts[0]);

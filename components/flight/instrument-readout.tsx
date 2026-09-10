@@ -52,7 +52,7 @@ function Cell({
 /**
  * Live instrument panel for the point under the cursor / 3D replay position — a
  * sleek dark glass overlay (altitude / vario / speed). Renders nothing until
- * there's a selected point. Units follow the same Metric/Imperial preference
+ * there's a selected point. Units follow the same saved measurement preferences
  * as the key-statistics card (lib/flights/use-units.ts).
  */
 export function InstrumentReadout({

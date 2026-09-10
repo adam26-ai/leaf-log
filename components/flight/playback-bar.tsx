@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronUp, Pause, PencilLine, Play } from "lucide-react";
+import { CalendarDays, ChevronUp, Pause, PencilLine, Play } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/avatar";
+import type { ReplayPilot } from "@/lib/flights/group-replay";
 
 function clock(tSec: number, takeoffMs: number, offsetMin: number) {
   const d = new Date(takeoffMs + tSec * 1000 + offsetMin * 60_000);
@@ -88,18 +90,55 @@ function PlaybackSpeedPicker({
   );
 }
 
+interface TakeoffMarker { id: string; time: number; own: boolean; label: string; pilot: ReplayPilot }
+
+function TakeoffAvatars({ takeoffs, duration, disabled, onTakeoff }: {
+  takeoffs: TakeoffMarker[];
+  duration: number;
+  disabled: boolean;
+  onTakeoff: (flightId: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!containerRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Stacking preserves the exact time position even for simultaneous launches.
+  const rowEnds: number[] = [];
+  const markers = [...takeoffs].sort((a, b) => a.time - b.time || a.id.localeCompare(b.id)).map((takeoff) => {
+    const fraction = Math.max(0, Math.min(1, takeoff.time / Math.max(1, duration)));
+    const x = fraction * (width || 1000);
+    const availableRow = rowEnds.findIndex((end) => x - end >= 28);
+    const row = availableRow < 0 ? rowEnds.length : availableRow;
+    rowEnds[row] = x;
+    return { ...takeoff, fraction, row };
+  });
+
+  return <div ref={containerRef} role="group" aria-label="Flight takeoffs" className="relative col-start-2 row-start-1"
+    style={{ height: Math.max(0, rowEnds.length * 28 - 4) }}>
+    {markers.map((marker) => <button key={marker.id} type="button" title={marker.label} aria-label={marker.label}
+      data-takeoff-flight={marker.id} disabled={disabled} onClick={() => onTakeoff(marker.id)}
+      className="absolute grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border-2 bg-[var(--replay-group-avatar-bg)] shadow-sm transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-40"
+      style={{ left: `${marker.fraction * 100}%`, bottom: marker.row * 28, borderColor: marker.own ? "var(--replay-group-primary)" : "var(--replay-group-companion)" }}>
+      <Avatar {...marker.pilot} className="h-5 w-5 bg-[var(--replay-group-avatar-bg)] text-[9px] text-[var(--replay-group-avatar-text)]" />
+    </button>)}
+  </div>;
+}
+
 function AlignedTimeSlider({
   time,
   duration,
   disabled,
   onScrub,
-  primaryTime,
 }: {
   time: number;
   duration: number;
   disabled: boolean;
   onScrub: (time: number) => void;
-  primaryTime?: number;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -126,7 +165,7 @@ function AlignedTimeSlider({
       aria-valuemax={Math.round(maximum)}
       aria-valuenow={Math.round(value)}
       className={cn(
-        "relative h-9 touch-none select-none outline-none",
+        "relative col-start-2 row-start-2 h-9 touch-none select-none outline-none",
         disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
       )}
       onPointerDown={(event) => {
@@ -160,7 +199,6 @@ function AlignedTimeSlider({
       }}
     >
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full bg-gray-300" style={{ height: "var(--replay-timeline-width)" }} />
-      {primaryTime != null && <span title="Primary takeoff" className="absolute top-1/2 h-5 w-1 -translate-x-1/2 -translate-y-1/2 bg-[#d8ff00] ring-1 ring-black/40" style={{ left: `${Math.max(0, Math.min(1, primaryTime / maximum)) * 100}%` }} />}
       <div
         className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-[var(--replay-timeline)]"
         style={{ width: `${fraction * 100}%`, height: "var(--replay-timeline-width)" }}
@@ -181,7 +219,11 @@ export function PlaybackTimeline({
   disabled = false,
   onTogglePlay,
   onScrub,
-  primaryTime,
+  takeoffs = [],
+  onTakeoff,
+  dayExpanded = false,
+  discovering = false,
+  onToggleDay,
 }: {
   playing: boolean;
   time: number;
@@ -189,31 +231,41 @@ export function PlaybackTimeline({
   disabled?: boolean;
   onTogglePlay: () => void;
   onScrub: (time: number) => void;
-  primaryTime?: number;
+  takeoffs?: TakeoffMarker[];
+  onTakeoff: (flightId: string) => void;
+  dayExpanded?: boolean;
+  discovering?: boolean;
+  onToggleDay?: () => void;
 }) {
   const Icon = playing ? Pause : Play;
   const label = playing ? "Pause" : "Play";
 
   return (
     <>
+      <TakeoffAvatars takeoffs={takeoffs} duration={duration} disabled={disabled} onTakeoff={onTakeoff} />
       <button
         type="button"
         onClick={onTogglePlay}
         disabled={disabled}
         aria-label={label}
         title={label}
-        className="flex h-9 w-16 items-center justify-center gap-1 rounded-md border [border-width:var(--replay-button-border-width)] border-[var(--replay-active-border)] bg-[var(--replay-active-bg)] font-condensed text-sm font-bold text-[var(--replay-active-fg)] hover:brightness-95 disabled:opacity-50"
+        className="col-start-1 row-start-2 flex h-9 w-16 items-center justify-center gap-1 rounded-md border [border-width:var(--replay-button-border-width)] border-[var(--replay-active-border)] bg-[var(--replay-active-bg)] font-condensed text-sm font-bold text-[var(--replay-active-fg)] hover:brightness-95 disabled:opacity-50"
       >
         <Icon className="h-4 w-4 [stroke-width:var(--replay-button-icon-stroke)]" fill="currentColor" />
         {label}
       </button>
       <AlignedTimeSlider
-        primaryTime={primaryTime}
         time={time}
         duration={duration}
         disabled={disabled}
         onScrub={onScrub}
       />
+      {onToggleDay && <button type="button"
+        title={dayExpanded ? "Return to this flight and overlapping friends" : "Relive the day — show everyone's nearby flights from this day"}
+        aria-label={dayExpanded ? "Return to this flight" : "Relive the day"}
+        aria-pressed={dayExpanded} disabled={disabled || discovering} onClick={onToggleDay}
+        className={cn("col-start-3 row-start-2 ml-1 grid h-9 w-6 place-items-center rounded disabled:opacity-40", dayExpanded ? "bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]" : "text-gray-600 hover:bg-gray-100")}
+      ><CalendarDays className="h-4 w-4" aria-hidden="true" /></button>}
     </>
   );
 }

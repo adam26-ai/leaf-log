@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { normalizeHandle, normalizeDisplayName } from "@/lib/handle";
 import { normalizeVisibility } from "@/lib/flights/visibility";
+import { readCustomUnits } from "@/lib/flights/units";
 
 export type SettingsState = { error?: string; ok?: boolean };
 
@@ -33,8 +34,19 @@ export async function updateProfile(
 
   const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
   const defaultUnits = formData.get("default_units");
-  if (defaultUnits !== "metric" && defaultUnits !== "imperial") {
-    return { error: "Choose Metric or Imperial for default units." };
+  if (defaultUnits !== "metric" && defaultUnits !== "imperial" && defaultUnits !== "custom") {
+    return { error: "Choose Metric, Imperial, or Custom for default units." };
+  }
+
+  let customUnits;
+  try {
+    const submitted = JSON.parse(String(formData.get("custom_units") ?? "null"));
+    customUnits = readCustomUnits(submitted);
+    if ((submitted !== null || defaultUnits === "custom") && !customUnits) {
+      return { error: "Choose a valid unit for altitude, speed, distance, and vertical speed." };
+    }
+  } catch {
+    return { error: "Invalid custom units. Please reload and try again." };
   }
 
   let mapDefaults;
@@ -63,6 +75,7 @@ export async function updateProfile(
         bio: bio || null,
         defaultVisibility,
         defaultUnits,
+        customUnits: customUnits ?? Prisma.DbNull,
         mapDefaults: { ...mapDefaults },
       },
     });

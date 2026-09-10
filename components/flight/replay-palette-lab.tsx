@@ -5,8 +5,10 @@ import { Palette, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { cn } from "@/lib/utils";
 import { GROUP_REPLAY_COLORS, GROUP_COLOR_CSS, GROUP_REPLAY_ALPHAS, GROUP_ALPHA_CSS, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+import { PROFILE_STATES, PROFILE_FIELDS, PROFILE_COLORS, PROFILE_SIZES, PROFILE_SHARED_COLORS, PROFILE_COLOR_CSS, PROFILE_SIZE_CSS, profileKey, restoreProfileColors, restoreProfileSizes, type ProfileColorKey, type ProfileSizeKey } from "./profile-palette";
 
 type PaletteKey =
+  | ProfileColorKey
   | keyof typeof GROUP_REPLAY_COLORS
   | "accent"
   | "accentStrong"
@@ -25,11 +27,13 @@ type PaletteKey =
   | "terrainLine"
   | "terrainFill"
   | "terrainGradient"
+  | "profileGrid"
   | "profileSky";
 
 type ReplayPalette = Record<PaletteKey, string>;
 
 type SizeKey =
+  | ProfileSizeKey
   | keyof typeof GROUP_REPLAY_ALPHAS
   | "groupCardAlpha"
   | "buttonBorder"
@@ -56,6 +60,7 @@ interface SavedPreset {
 const STORAGE_KEY = "leaf-dev-replay-palette";
 
 const DEFAULT_SIZES: ReplaySizes = {
+  ...PROFILE_SIZES,
   ...GROUP_REPLAY_ALPHAS,
   groupCardAlpha: 0.55,
   buttonBorder: 1.5,
@@ -65,13 +70,13 @@ const DEFAULT_SIZES: ReplaySizes = {
   metricIcon: 3.25,
   timeline: 4,
   profileLine: 2,
-  terrainLine: 2.5,
+  terrainLine: PROFILE_SIZES.ownSelectedTerrainLine,
   terrainFillAlpha: 1,
   terrainGradientAlpha: 0.75,
   headerAccent: 5,
 };
 
-const BASE_PRESETS: { id: string; label: string; colors: Omit<ReplayPalette, keyof typeof GROUP_REPLAY_COLORS> }[] = [
+const BASE_PRESETS: { id: string; label: string; colors: Omit<ReplayPalette, keyof typeof GROUP_REPLAY_COLORS | ProfileColorKey | "profileGrid"> }[] = [
   {
     id: "cool-blue-3",
     label: "Site default · Cool Blue 3",
@@ -80,10 +85,10 @@ const BASE_PRESETS: { id: string; label: string; colors: Omit<ReplayPalette, key
       activeFg: "#ffffff", activeBorder: "#d8ff00", icon: "#d8ff00",
       inactiveBg: "#ffffff", inactiveFg: "#536779", inactiveBorder: "#bfd3df",
       metricIconBg: "#424242",
-      timeline: "#0099ff", profileLine: "#0099ff", profileFill: "#aeff00",
+      timeline: "#0099ff", profileLine: PROFILE_COLORS.ownSelectedProfileLine, profileFill: PROFILE_COLORS.ownSelectedProfileFill,
       timelineDotFill: "#ffffff",
-      terrainLine: "#536779", terrainFill: "#a5aeb6", profileSky: "#cde6fe",
-      terrainGradient: "#5c5c5c",
+      terrainLine: PROFILE_COLORS.ownSelectedTerrainLine, terrainFill: PROFILE_COLORS.ownSelectedTerrainFill, profileSky: PROFILE_SHARED_COLORS.profileSky,
+      terrainGradient: PROFILE_COLORS.ownSelectedTerrainGradient,
     },
   },
   {
@@ -158,13 +163,14 @@ const BASE_PRESETS: { id: string; label: string; colors: Omit<ReplayPalette, key
   },
 ];
 
-const PRESETS = BASE_PRESETS.map((preset) => ({ ...preset, colors: { ...preset.colors, ...GROUP_REPLAY_COLORS } }));
+const PRESETS = BASE_PRESETS.map((preset) => ({ ...preset, colors: { ...PROFILE_SHARED_COLORS, ...preset.colors, ...restoreProfileColors(preset.colors), ...GROUP_REPLAY_COLORS } }));
 
 const PALETTE_GROUPS: { label: string; keys: PaletteKey[] }[] = [
   { label: "Metrics & header", keys: ["accentStrong", "metricIconBg", "icon"] },
   { label: "Map controls", keys: ["activeBg", "activeFg", "activeBorder", "inactiveBg", "inactiveFg", "inactiveBorder"] },
   { label: "Playback", keys: ["timeline", "timelineDotFill"] },
-  { label: "Profile", keys: ["profileSky", "profileLine", "profileFill", "terrainLine", "terrainFill", "terrainGradient"] },
+  { label: "Profile", keys: ["profileSky", "profileGrid"] },
+  ...PROFILE_STATES.map(({ id, label }) => ({ label: `Profile · ${label}`, keys: PROFILE_FIELDS.map((field) => profileKey(id, field)) })),
   { label: "Friends & pilots", keys: Object.keys(GROUP_REPLAY_COLORS) as PaletteKey[] },
 ];
 
@@ -178,6 +184,13 @@ const COLOR_FIELDS: {
   numericLabel?: string;
   unit?: string;
 }[] = [
+  ...PROFILE_STATES.flatMap(({ id, label }) => [
+    { key: profileKey(id, "profileLine"), label: `${label}: profile line`, sizeKey: profileKey(id, "profileLine"), min: 0, max: 6, step: 0.25 },
+    { key: profileKey(id, "profileFill"), label: `${label}: profile fill`, sizeKey: profileKey(id, "profileFillAlpha"), min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+    { key: profileKey(id, "terrainLine"), label: `${label}: terrain line`, sizeKey: profileKey(id, "terrainLine"), min: 0, max: 6, step: 0.25 },
+    { key: profileKey(id, "terrainFill"), label: `${label}: terrain background`, sizeKey: profileKey(id, "terrainFillAlpha"), min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+    { key: profileKey(id, "terrainGradient"), label: `${label}: terrain gradient`, sizeKey: profileKey(id, "terrainGradientAlpha"), min: 0, max: 1, step: 0.05, numericLabel: "alpha", unit: "α" },
+  ]),
   { key: "groupPrimary", label: "Primary pilot accent" },
   { key: "groupCompanion", label: "Companion pilot accent" },
   { key: "groupCardBg", label: "Pilot card background", sizeKey: "groupCardAlpha", min: 0, max: 1, step: 0.05, numericLabel: "opacity", unit: "α" },
@@ -203,6 +216,7 @@ const COLOR_FIELDS: {
   { key: "timeline", label: "Timeline", sizeKey: "timeline", min: 1, max: 12, step: 0.5 },
   { key: "timelineDotFill", label: "Timeline dot fill" },
   { key: "profileSky", label: "Profile sky" },
+  { key: "profileGrid", label: "Altitude lines" },
   { key: "profileLine", label: "Profile line", sizeKey: "profileLine", min: 0.5, max: 6, step: 0.25 },
   { key: "profileFill", label: "Profile fill" },
   { key: "terrainLine", label: "Terrain line", sizeKey: "terrainLine", min: 0, max: 6, step: 0.25 },
@@ -211,6 +225,7 @@ const COLOR_FIELDS: {
 ];
 
 const CSS_NAMES: Record<PaletteKey, string> = {
+  ...PROFILE_COLOR_CSS,
   ...GROUP_COLOR_CSS,
   accent: "--replay-accent",
   accentStrong: "--replay-accent-strong",
@@ -230,9 +245,11 @@ const CSS_NAMES: Record<PaletteKey, string> = {
   terrainFill: "--replay-terrain-fill",
   terrainGradient: "--replay-terrain-gradient",
   profileSky: "--replay-profile-sky",
+  profileGrid: "--replay-profile-grid",
 };
 
 const SIZE_CSS_NAMES: Record<SizeKey, string> = {
+  ...PROFILE_SIZE_CSS,
   ...GROUP_ALPHA_CSS,
   groupCardAlpha: "--replay-group-card-alpha",
   buttonBorder: "--replay-button-border-width",
@@ -298,8 +315,8 @@ export function ReplayPaletteLab({
         | null;
       if (saved?.colors) {
         const base = PRESETS.find((preset) => preset.id === saved.presetId)?.colors ?? PRESETS[0].colors;
-        const restored = { ...base, ...saved.colors };
-        const restoredSizes = { ...DEFAULT_SIZES, ...saved.sizes };
+        const restored = { ...base, ...restoreProfileColors(saved.colors) };
+        const restoredSizes = { ...DEFAULT_SIZES, ...restoreProfileSizes(saved.sizes ?? {}) };
         applyPalette(restored);
         applySizes(restoredSizes);
         frame = requestAnimationFrame(() => {
@@ -481,9 +498,9 @@ export function ReplayPaletteLab({
                 type="button"
                 onClick={() =>
                   save(
-                    { ...PRESETS[0].colors, ...preset.colors },
+                    { ...PRESETS[0].colors, ...restoreProfileColors(preset.colors) },
                     preset.id,
-                    { ...DEFAULT_SIZES, ...preset.sizes },
+                    { ...DEFAULT_SIZES, ...restoreProfileSizes(preset.sizes) },
                   )
                 }
                 className={cn(
@@ -545,7 +562,7 @@ export function ReplayPaletteLab({
       <div className="flex flex-col divide-y divide-gray-100">
         {COLOR_FIELDS.filter((field) => group.keys.includes(field.key)).map(({ key, label, sizeKey, min, max, step, numericLabel, unit }) => (
           <div key={key} className="grid min-h-9 grid-cols-[minmax(0,1fr)_2rem_5rem] items-center gap-2 py-1 text-[11px] text-gray-700">
-            <span className="truncate">{label}</span>
+            <span className="truncate" title={label}>{label.includes(": ") ? label.split(": ")[1] : label}</span>
             <input
               aria-label={`${label} color`}
               type="color"

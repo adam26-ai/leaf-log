@@ -1,7 +1,7 @@
 import { UnitToggle } from "@/components/flight/unit-toggle";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Download, Pencil } from "lucide-react";
 import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import {
@@ -14,7 +14,7 @@ import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
-import { KeyStatistics } from "@/components/flight/key-statistics";
+import { flightStatistics } from "@/lib/flights/statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
@@ -91,6 +91,17 @@ export default async function FlightPage({
                   />
                 )}
                 {isOwner && (
+                  <a
+                    href={`/api/flights/${flight.id}/igc`}
+                    download
+                    title="Download original IGC"
+                    aria-label="Download original IGC"
+                    className="inline-flex items-center text-gray-600 hover:text-ink"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  </a>
+                )}
+                {isOwner && (
                   <Link
                     href={`/flights/${flight.id}/edit`}
                     title="Edit flight"
@@ -117,25 +128,19 @@ export default async function FlightPage({
             </CardBody>
           </Card>
         ) : (
-          <>
-            <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
-              <KeyStatistics flight={flight} canCalculateXc={isOwner} />
-            </div>
-            <div className="mt-2">
-              <FlightViz
-                viewerId={viewerId}
-                primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName ?? flight.pilot ?? "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
-                xcScore={flight.xcScore}
-                key={flight.id}
-                flightId={flight.id}
-                canAddPhotos={isOwner}
-                takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
-                offsetMin={flight.localUtcOffsetMinutes ?? 0}
-                pilotName={flight.pilot || owner?.displayName}
-                notes={flight.notes}
-              />
-            </div>
-          </>
+          <FlightViz
+            viewerId={viewerId}
+            primaryStatistics={flightStatistics(flight)}
+            primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName ?? flight.pilot ?? "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
+            xcScore={flight.xcScore}
+            key={flight.id}
+            flightId={flight.id}
+            canAddPhotos={isOwner}
+            takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
+            offsetMin={flight.localUtcOffsetMinutes ?? 0}
+            pilotName={flight.pilot || owner?.displayName}
+            notes={flight.notes}
+          />
         )}
 
         {(instructorNotes.length > 0 || isViewerCurrentInstructor) && (

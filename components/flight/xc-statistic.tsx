@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { CircleAlert, Info, LoaderCircle, Triangle, TriangleRight, Waypoints, X } from "lucide-react";
-import type { Flight } from "@prisma/client";
+import type { FlightStatistics } from "@/lib/flights/statistics";
 import { analysisPending, analysisState } from "@/lib/flights/analysis-state";
 import { formatDistance } from "@/lib/flights/format";
 import { toggleReplayXcRoute } from "@/lib/flights/replay-events";
@@ -11,8 +11,8 @@ import { readXcScore } from "@/lib/igc/xc-types";
 import { CalculateXcButton } from "./calculate-xc-button";
 
 /** Keep every state inside the same two lines as the other replay metrics. */
-export function XcStatistic({ flight, owner }: { flight: Flight; owner: boolean }) {
-  const [units] = useUnits();
+export function XcStatistic({ flight, owner, onRefresh }: { flight: FlightStatistics; owner: boolean; onRefresh?: () => void }) {
+  const { units } = useUnits();
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -51,7 +51,7 @@ export function XcStatistic({ flight, owner }: { flight: Flight; owner: boolean 
         </span>
         <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">{formatDistance(xc.best.distanceM, units)}</span>
       </button> : state.action && owner
-        ? <CalculateXcButton flightId={flight.id} label={state.label} inline />
+        ? <CalculateXcButton flightId={flight.id} label={state.label} onQueued={onRefresh} inline />
         : <span className="font-condensed text-base font-bold text-ink">—</span>}
       {showDetails && <button ref={trigger} type="button" aria-label={`XC details: ${state.label}`}
         aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}
@@ -71,7 +71,7 @@ export function XcStatistic({ flight, owner }: { flight: Flight; owner: boolean 
           className="grid h-6 w-6 shrink-0 place-items-center rounded-full hover:bg-gray-100"><X aria-hidden="true" className="h-3.5 w-3.5" /></button>
       </div>
       <p>{state.detail}</p>
-      {state.action && owner && <div className="mt-2"><CalculateXcButton flightId={flight.id} label={state.action === "improve" ? "Improve XC" : state.label} /></div>}
+      {state.action && owner && <div className="mt-2"><CalculateXcButton flightId={flight.id} label={state.action === "improve" ? "Improve XC" : state.label} onQueued={onRefresh} /></div>}
     </div>}
   </div>;
 }

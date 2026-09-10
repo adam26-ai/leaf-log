@@ -10,36 +10,49 @@ import { kudoCountsFor } from "@/lib/social/kudos";
 import { replayArtifactForFlight } from "./replay-repo";
 import { routeProximityIndex } from "./route-proximity";
 import type { CompanionManifest } from "./group-replay";
+import { flightStatistics } from "./statistics";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
  * Filter before pagination, geometry reads, or returning any participant metadata.
  */
-export async function listReplayCompanions(flightId: string, viewerId: string | null, offset = 0): Promise<CompanionManifest | null> {
+export async function listReplayCompanions(flightId: string, viewerId: string | null, offset = 0, expandDay = false): Promise<CompanionManifest | null> {
   const primary = await getFlightForViewer(flightId, viewerId);
   if (!primary) return null;
   const empty = { flights: [], nextCursor: null };
   if (!viewerId || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
+  const ownerSelect = { id: true, handle: true, displayName: true, avatarUpdatedAt: true } as const;
+  // A day is the opened flight's local calendar day, independent of the browser's timezone.
+  const localOffsetMs = (primary.localUtcOffsetMinutes ?? 0) * 60_000;
+  const dayStart = Math.floor((primary.takeoffAt.getTime() + localOffsetMs) / 86_400_000) * 86_400_000 - localOffsetMs;
+  const dayExpanded = expandDay && viewerId === primary.ownerId;
+  const startMs = primary.takeoffAt.getTime();
+  const endMs = primary.landingAt.getTime();
   const graph = await prisma.friendship.findMany({
     where: { status: "accepted", OR: [{ requesterId: primary.ownerId }, { addresseeId: primary.ownerId }, { requesterId: viewerId }, { addresseeId: viewerId }] },
     select: { requesterId: true, addresseeId: true },
   });
   const friendsOf = (id: string) => graph.flatMap((f) => f.requesterId === id ? [f.addresseeId] : f.addresseeId === id ? [f.requesterId] : []);
-  const eligible = [...new Set([primary.ownerId, viewerId, ...friendsOf(primary.ownerId)])];
+  const eligible = [...new Set([viewerId, ...friendsOf(primary.ownerId)])].filter((id) => dayExpanded || id !== primary.ownerId);
   const directFriends = friendsOf(viewerId);
   const pageSize = 32;
   const candidates = await prisma.flight.findMany({
     where: {
       id: { not: primary.id }, ownerId: { in: eligible }, status: "ready",
-      takeoffAt: { lte: new Date(primary.landingAt.getTime() + 3_600_000) },
-      landingAt: { gte: new Date(primary.takeoffAt.getTime() - 3_600_000) },
+      // Day mode includes full flights launched on this local date. Otherwise,
+      // pilots must actually share some flying time, with no gap allowance.
+      takeoffAt: dayExpanded
+        ? { gte: new Date(dayStart), lt: new Date(dayStart + 86_400_000) }
+        : { lt: primary.landingAt },
+      landingAt: dayExpanded ? { not: null } : { gt: primary.takeoffAt },
       OR: [{ ownerId: viewerId }, { visibility: "public" }, { visibility: "friends", ownerId: { in: directFriends } }],
     },
-    include: { owner: { select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true } } },
+    include: { owner: { select: ownerSelect } },
     orderBy: [{ takeoffAt: "asc" }, { id: "asc" }], skip: offset, take: pageSize + 1,
   });
+  // Every flight, including our own, stays within 5 km of the opened route.
+  // Discovered routes never widen the search into other sites.
   const artifact = await replayArtifactForFlight(primary);
-  if (!artifact) return empty;
-  const proximity = routeProximityIndex(artifact.matchingPaths);
+  const proximity = routeProximityIndex(artifact?.matchingPaths ?? []);
   const matches = [];
   for (const flight of candidates.slice(0, pageSize)) {
     if (!flight.takeoffAt || !flight.landingAt || flight.landingAt < flight.takeoffAt) continue;
@@ -47,7 +60,7 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
     if (!other) continue;
     const distance = proximity(other.matchingPaths);
     if (distance == null) continue;
-    const overlap = Math.max(0, Math.min(primary.landingAt!.getTime(), flight.landingAt.getTime()) - Math.max(primary.takeoffAt!.getTime(), flight.takeoffAt.getTime()));
+    const overlap = Math.max(0, Math.min(endMs, flight.landingAt.getTime()) - Math.max(startMs, flight.takeoffAt.getTime()));
     matches.push({ flight, distance, overlap });
   }
   matches.sort((a, b) => b.overlap - a.overlap || a.distance - b.distance || a.flight.id.localeCompare(b.flight.id));
@@ -55,8 +68,10 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
     flights: matches.map(({ flight }) => ({
       id: flight.id, owner: { ...flight.owner, avatarUpdatedAt: flight.owner.avatarUpdatedAt?.toISOString() ?? null },
       takeoffMs: flight.takeoffAt!.getTime(), landingMs: flight.landingAt!.getTime(), xcScore: flight.xcScore,
+      statistics: flightStatistics(flight),
     })),
     nextCursor: candidates.length > pageSize ? String(offset + pageSize) : null,
+    dayExpanded,
   };
 }
 

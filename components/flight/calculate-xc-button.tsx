@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Waypoints } from "lucide-react";
 import { queueFlightXc, queueMissingFlightAnalysis } from "@/lib/flights/queue-xc-action";
 
-export function CalculateXcButton({ flightId, kind, label = "Calculate XC", subtle = false, inline = false }: { flightId?: string; kind?: "xc" | "repair"; label?: string; subtle?: boolean; inline?: boolean }) {
+export function CalculateXcButton({ flightId, kind, label = "Calculate XC", subtle = false, inline = false, onQueued }: { flightId?: string; kind?: "xc" | "repair"; label?: string; subtle?: boolean; inline?: boolean; onQueued?: () => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>();
   const router = useRouter();
@@ -15,6 +15,7 @@ export function CalculateXcButton({ flightId, kind, label = "Calculate XC", subt
       try {
         const result = kind ? await queueMissingFlightAnalysis(kind) : await queueFlightXc(flightId!);
         if (result.error) setError(result.error);
+        else if (onQueued) onQueued();
         else router.refresh();
       } catch { setError("Couldn't queue scoring. Try again."); }
       finally { setPending(false); }

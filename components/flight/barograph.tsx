@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useId, useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -10,7 +10,9 @@ import {
   CartesianGrid,
 } from "recharts";
 import type { UnitSystem } from "@/lib/flights/format";
+import { resolveUnits } from "@/lib/flights/units";
 import { buildAltitudeScale } from "@/lib/flights/altitude-scale";
+import { PROFILE_SHARED_COLORS, profileColor, profileSize, type ProfileState } from "./profile-palette";
 import {
   terrainElevationAt,
   type TerrainProfilePoint,
@@ -102,48 +104,59 @@ const CHART_LEFT_MARGIN = 28;
 export const BAROGRAPH_PLOT_LEFT_INSET = Y_AXIS_WIDTH + CHART_LEFT_MARGIN;
 export const BAROGRAPH_PLOT_RIGHT_INSET = 12;
 
+export interface ProfileFlight {
+  id: string;
+  baro: [number, number | null][];
+  terrain?: TerrainProfilePoint[];
+  state: ProfileState;
+}
+
 export function Barograph({
-  baro,
-  terrain,
+  profiles,
+  selectedFlightId,
   takeoffMs,
   offsetMin,
-  altSource,
   units,
   activeTime = null,
   onScrubTime,
   timeDomain,
 }: {
-  baro: [number, number | null][];
+  profiles: ProfileFlight[];
+  selectedFlightId?: string;
   timeDomain?: [number, number];
-  terrain?: TerrainProfilePoint[];
   takeoffMs: number;
   offsetMin: number;
-  altSource: "baro" | "gps";
   units: UnitSystem;
   /** Linked-cursor time (s from takeoff) — draws a reference line. */
   activeTime?: number | null;
   onScrubTime?: (t: number) => void;
 }) {
-  const data = useMemo(
-    () =>
-      baro.map(([t, alt]) => {
+  const chartId = useId().replace(/:/g, "");
+  const altitudeUnit = resolveUnits(units).altitude;
+  const profileData = useMemo(
+    () => profiles.map((profile) => ({ ...profile, data:
+      profile.baro.map(([t, alt]) => {
+        const terrain = profile.terrain;
         const groundM = terrainElevationAt(terrain ?? [], t);
         return {
           t,
-          alt: alt == null ? undefined : units === "imperial" ? alt * FEET_PER_METER : alt,
+          alt: alt == null ? undefined : altitudeUnit === "ft" ? alt * FEET_PER_METER : alt,
           ground:
             groundM == null || alt == null
               ? undefined
-              : units === "imperial"
+              : altitudeUnit === "ft"
                 ? groundM * FEET_PER_METER
                 : groundM,
         };
       }),
-    [baro, terrain, units],
+    })).filter((profile) => profile.data.length > 0).sort((a, b) => Number(a.state.endsWith("Selected")) - Number(b.state.endsWith("Selected"))),
+    [profiles, altitudeUnit],
   );
-  const altitudeUnit = units === "imperial" ? "ft" : "m";
-  const tMin = timeDomain?.[0] ?? data[0]?.t ?? 0;
-  const tMax = timeDomain?.[1] ?? data[data.length - 1]?.t ?? 1;
+  const allData = useMemo(() => profileData.flatMap((profile) => profile.data).sort((a, b) => a.t - b.t), [profileData]);
+  const data = useMemo(() => profileData.find((profile) => profile.id === selectedFlightId)?.data ?? [], [profileData, selectedFlightId]);
+  const selectedStyle = profiles.find((profile) => profile.id === selectedFlightId)?.state ?? "ownSelected";
+  const tMin = timeDomain?.[0] ?? allData[0]?.t ?? 0;
+  const tMax = timeDomain?.[1] ?? allData[allData.length - 1]?.t ?? 1;
   const timeTicks = useMemo(
     () => clockAlignedTicks(tMin, tMax, takeoffMs, offsetMin),
     [tMin, tMax, takeoffMs, offsetMin],
@@ -151,12 +164,12 @@ export function Barograph({
   const altitudeScale = useMemo(
     () => {
       const scale = buildAltitudeScale(
-        data.flatMap(({ alt, ground }) => [alt, ground].filter((v): v is number => v != null)),
-        units,
+        allData.flatMap(({ alt, ground }) => [alt, ground].filter((v): v is number => v != null)),
+        altitudeUnit === "ft" ? "imperial" : "metric",
       );
-      const flightMax = Math.max(...data.map(({ alt }) => alt ?? -Infinity));
+      const flightMax = allData.reduce((maximum, { alt }) => Math.max(maximum, alt ?? -Infinity), -Infinity);
       const span = scale.domain[1] - scale.domain[0];
-      const headroom = Math.max(span * 0.04, units === "imperial" ? 100 : 30);
+      const headroom = Math.max(span * 0.04, altitudeUnit === "ft" ? 100 : 30);
       return {
         ...scale,
         domain: [
@@ -165,7 +178,7 @@ export function Barograph({
         ] as [number, number],
       };
     },
-    [data, units],
+    [allData, altitudeUnit],
   );
 
   // The chart doesn't depend on activeTime (the cursor is a lightweight overlay),
@@ -175,7 +188,7 @@ export function Barograph({
       <ResponsiveContainer width="100%" height="100%" minHeight={135}>
         <AreaChart
           accessibilityLayer={false}
-          data={data}
+          data={allData}
           margin={{
             top: 8,
             right: BAROGRAPH_PLOT_RIGHT_INSET,
@@ -184,24 +197,18 @@ export function Barograph({
           }}
         >
           <defs>
-            <linearGradient id="baroFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--replay-profile-fill)" stopOpacity={0.35} />
-              <stop offset="100%" stopColor="var(--replay-profile-fill)" stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="terrainGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop
-                offset="0%"
-                stopColor="var(--replay-terrain-gradient)"
-                stopOpacity="var(--replay-terrain-gradient-alpha)"
-              />
-              <stop
-                offset="100%"
-                stopColor="var(--replay-terrain-gradient)"
-                stopOpacity={0}
-              />
-            </linearGradient>
+            {profileData.map(({ id, state }, index) => <Fragment key={id}>
+              <linearGradient id={`${chartId}-profile-${index}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={profileColor(state, "profileFill")} stopOpacity={profileSize(state, "profileFillAlpha")} />
+                <stop offset="100%" stopColor={profileColor(state, "profileFill")} stopOpacity={`calc(${profileSize(state, "profileFillAlpha")} * 0.057)`} />
+              </linearGradient>
+              <linearGradient id={`${chartId}-terrain-${index}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={profileColor(state, "terrainGradient")} stopOpacity={profileSize(state, "terrainGradientAlpha")} />
+                <stop offset="100%" stopColor={profileColor(state, "terrainGradient")} stopOpacity={0} />
+              </linearGradient>
+            </Fragment>)}
           </defs>
-          <CartesianGrid stroke="#ededed" vertical={false} />
+          <CartesianGrid stroke={`var(--replay-profile-grid, ${PROFILE_SHARED_COLORS.profileGrid})`} vertical={false} />
           <XAxis
             dataKey="t"
             type="number"
@@ -226,56 +233,20 @@ export function Barograph({
             width={Y_AXIS_WIDTH}
             tickFormatter={(v) => `${Math.round(Number(v)).toLocaleString()}${altitudeUnit}`}
           />
-          <Area
-            type="monotone"
-            dataKey="alt"
-            name={altSource === "baro" ? "Baro altitude" : "GPS altitude"}
-            stroke="none"
-            fill="url(#baroFill)"
-            isAnimationActive={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="ground"
-            name="Terrain"
-            stroke="none"
-            fill="var(--replay-terrain-fill)"
-            fillOpacity="var(--replay-terrain-fill-alpha)"
-            isAnimationActive={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="ground"
-            name="Terrain gradient"
-            tooltipType="none"
-            stroke="none"
-            fill="url(#terrainGradient)"
-            isAnimationActive={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="ground"
-            name="Terrain outline"
-            tooltipType="none"
-            stroke="var(--replay-terrain-line)"
-            strokeWidth="var(--replay-terrain-line-width)"
-            fill="none"
-            isAnimationActive={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="alt"
-            name="Flight profile outline"
-            tooltipType="none"
-            stroke="var(--replay-profile-line)"
-            strokeWidth="var(--replay-profile-line-width)"
-            fill="none"
-            isAnimationActive={false}
-          />
+          {profileData.map(({ id, state, data }, index) => {
+            const zIndex = state.endsWith("Selected") ? 200 : 100;
+            return <Fragment key={id}>
+              <Area zIndex={zIndex} data={data} type="monotone" dataKey="alt" name="Flight altitude" stroke="none" fill={`url(#${chartId}-profile-${index})`} isAnimationActive={false} />
+              <Area zIndex={zIndex} data={data} type="monotone" dataKey="ground" name="Terrain" stroke="none" fill={profileColor(state, "terrainFill")} fillOpacity={profileSize(state, "terrainFillAlpha")} isAnimationActive={false} />
+              <Area zIndex={zIndex} data={data} type="monotone" dataKey="ground" name="Terrain gradient" stroke="none" fill={`url(#${chartId}-terrain-${index})`} isAnimationActive={false} />
+              <Area zIndex={zIndex} data={data} type="monotone" dataKey="ground" name="Terrain outline" stroke={profileColor(state, "terrainLine")} strokeWidth={profileSize(state, "terrainLine")} fill="none" isAnimationActive={false} />
+              <Area zIndex={zIndex} className={`profile-flight-${id} profile-state-${state}`} data={data} type="monotone" dataKey="alt" name="Flight profile outline" stroke={profileColor(state, "profileLine")} strokeWidth={profileSize(state, "profileLine")} fill="none" isAnimationActive={false} />
+            </Fragment>;
+          })}
         </AreaChart>
       </ResponsiveContainer>
     ),
-    [data, takeoffMs, offsetMin, altSource, altitudeUnit, altitudeScale, timeTicks, tMin, tMax],
+    [allData, profileData, chartId, takeoffMs, offsetMin, altitudeUnit, altitudeScale, timeTicks, tMin, tMax],
   );
 
   const frac =
@@ -345,6 +316,7 @@ export function Barograph({
         <div
           className="pointer-events-none absolute z-30 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--replay-profile-line)] shadow-sm"
           style={{
+            backgroundColor: profileColor(selectedStyle, "profileLine"),
             left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
             top: verticalPosition(activeValues.alt),
           }}
@@ -360,6 +332,7 @@ export function Barograph({
         <div
           className="pointer-events-none absolute z-30 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--replay-terrain-line)] shadow-sm"
           style={{
+            backgroundColor: profileColor(selectedStyle, "terrainLine"),
             left: `calc(${BAROGRAPH_PLOT_LEFT_INSET}px + (100% - ${BAROGRAPH_PLOT_LEFT_INSET + BAROGRAPH_PLOT_RIGHT_INSET}px) * ${frac})`,
             top: verticalPosition(activeValues.ground),
           }}
