@@ -93,7 +93,9 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   const newName = `${siteName} (renamed)`;
-  await bPage.locator("h1 button").click();
+  const siteButton = bPage.locator("h1 button");
+  await expect(siteButton).toBeEnabled({ timeout: 10_000 });
+  await siteButton.click();
   await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
   await bPage.getByRole("button", { name: "Rename", exact: true }).click();
   const nameInput = bPage.locator("input[maxlength='60']");
