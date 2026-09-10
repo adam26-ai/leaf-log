@@ -35,6 +35,7 @@ export function SettingsForm({
   bio,
   defaultVisibility,
   defaultUnits,
+  customUnits,
   mapDefaults,
   avatarUpdatedAt,
   afterProfile,
@@ -44,6 +45,7 @@ export function SettingsForm({
   bio: string;
   defaultVisibility: string;
   defaultUnits: string;
+  customUnits?: unknown;
   mapDefaults: unknown;
   avatarUpdatedAt: Date | string | null;
   afterProfile?: ReactNode;
@@ -163,7 +165,7 @@ export function SettingsForm({
       {afterProfile}
       <Card className="flex flex-col gap-5 p-6">
       <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
-      <MapDefaultsFields units={defaultUnits} defaults={mapDefaults} onChange={changed} />
+      <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
 
       <fieldset className="flex flex-col gap-2">
         <legend className="font-condensed text-sm font-bold tracking-wide text-ink">

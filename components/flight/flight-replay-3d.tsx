@@ -361,7 +361,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const photosRef = useRef(photos);
   const onPhotoOpenRef = useRef(onPhotoOpen);
   const onTerrainProfileRef = useRef(onTerrainProfile);
-  const terrainProfilePublishedRef = useRef(false);
+  const terrainProfilesPublishedRef = useRef(new Set<string>());
   const onManualCameraChangeRef = useRef(onManualCameraChange);
   const pilotNameRef = useRef(pilotName);
   const unitsRef = useRef(units);
@@ -405,7 +405,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     offsetRef.current = terrainOffsets.current.get(flightId) ?? 0;
     anchoredRef.current = terrainOffsets.current.has(flightId);
     groundElevationCacheRef.current.clear();
-    terrainProfilePublishedRef.current = false;
+    terrainProfilesPublishedRef.current.delete(flightId);
     displayedTrackCacheRef.current = new WeakMap();
     chaseBearingRef.current = null;
     const map = mapRef.current;
@@ -1533,7 +1533,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     if (!containerRef.current || !hasData) return;
     anchoredRef.current = false;
-    terrainProfilePublishedRef.current = false;
+    terrainProfilesPublishedRef.current.clear();
     shadowSampleCountRef.current = -1;
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -1620,39 +1620,43 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         map.triggerRepaint();
       };
       const publishTerrainProfile = () => {
-        if (terrainProfilePublishedRef.current || !dataRef.current) return;
+        if (!dataRef.current) return;
         if (!map.isSourceLoaded("dem")) return;
+        const flights = new Map(companionRef.current.map((flight) => [flight.id, flight.replay]));
+        flights.set(identityRef.current.flightId, dataRef.current);
+        for (const [id, replay] of flights) {
+          if (terrainProfilesPublishedRef.current.has(id)) continue;
+          const samples = replay.samples;
+          if (samples.length === 0) continue;
+          const stride = Math.max(
+            1,
+            Math.ceil((samples.length - 1) / Math.max(1, MAX_TERRAIN_PROFILE_POINTS - 1)),
+          );
+          const sampleIndexes: number[] = [];
+          for (let index = 0; index < samples.length; index += stride) sampleIndexes.push(index);
+          if (sampleIndexes.at(-1) !== samples.length - 1) sampleIndexes.push(samples.length - 1);
 
-        const samples = dataRef.current.samples;
-        if (samples.length === 0) return;
-        const stride = Math.max(
-          1,
-          Math.ceil((samples.length - 1) / Math.max(1, MAX_TERRAIN_PROFILE_POINTS - 1)),
-        );
-        const sampleIndexes: number[] = [];
-        for (let index = 0; index < samples.length; index += stride) sampleIndexes.push(index);
-        if (sampleIndexes.at(-1) !== samples.length - 1) sampleIndexes.push(samples.length - 1);
-
-        const profile: TerrainProfilePoint[] = [];
-        for (const index of sampleIndexes) {
-          const sample = samples[index];
-          let elevation: number | null = null;
-          try {
-            elevation = map.queryTerrainElevation([sample[0], sample[1]]);
-          } catch {
-            elevation = null;
+          const profile: TerrainProfilePoint[] = [];
+          for (const index of sampleIndexes) {
+            const sample = samples[index];
+            let elevation: number | null = null;
+            try {
+              elevation = map.queryTerrainElevation([sample[0], sample[1]]);
+            } catch {
+              elevation = null;
+            }
+            if (elevation == null || !Number.isFinite(elevation)) continue;
+            const rawElevation = elevation / TERRAIN_EXAGGERATION;
+            if (rawElevation < -500 || rawElevation > 9_000) continue;
+            profile.push([sample[3], rawElevation]);
           }
-          if (elevation == null || !Number.isFinite(elevation)) continue;
-          const rawElevation = elevation / TERRAIN_EXAGGERATION;
-          if (rawElevation < -500 || rawElevation > 9_000) continue;
-          profile.push([sample[3], rawElevation]);
-        }
 
-        // Wait for another idle cycle if the DEM is not yet available along
-        // the complete route; gaps would imply false terrain ramps.
-        if (profile.length !== sampleIndexes.length) return;
-        terrainProfilePublishedRef.current = true;
-        onTerrainProfileRef.current?.(identityRef.current.flightId, profile);
+          // Wait for another idle cycle if the DEM is not yet available along
+          // the complete route; gaps would imply false terrain ramps.
+          if (profile.length !== sampleIndexes.length) continue;
+          terrainProfilesPublishedRef.current.add(id);
+          onTerrainProfileRef.current?.(id, profile);
+        }
       };
       map.on("idle", anchorToTerrain);
       map.on("idle", publishTerrainProfile);

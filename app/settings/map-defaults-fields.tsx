@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
-import { Ruler, Mountain, Camera, Map as MapIcon, PencilLine, type LucideIcon } from "lucide-react";
+import { Mountain, Camera, Map as MapIcon, PencilLine, type LucideIcon } from "lucide-react";
 import { BASEMAPS, hasMapTiler } from "@/components/flight/basemaps";
 import { CAMERA_MODES, PLAYBACK_SPEEDS, readMapDefaults } from "@/lib/flights/map-defaults";
+import { UnitsFields } from "./units-fields";
 
-export function MapDefaultsFields({ units, defaults, onChange }: { units: string; defaults: unknown; onChange?: () => void }) {
-  const [metric, setMetric] = useState(units !== "imperial");
+export function MapDefaultsFields({ units, customUnits, defaults, onChange }: { units: string; customUnits?: unknown; defaults: unknown; onChange?: () => void }) {
   const [value, setValue] = useState(() => readMapDefaults(defaults));
   const maps = BASEMAPS.filter(b => !b.needsKey || hasMapTiler());
   function control(Icon: LucideIcon, label: string, active: boolean, onClick: () => void) {
@@ -19,9 +19,8 @@ export function MapDefaultsFields({ units, defaults, onChange }: { units: string
   return <fieldset className="flex flex-col gap-3">
     <legend className="font-condensed text-sm font-bold tracking-wide text-ink">Map defaults</legend>
     <p className="text-xs text-gray-500">Starting settings for flight replay on every device. Click an icon to cycle its options.</p>
-    <input type="hidden" name="default_units" value={metric ? "metric" : "imperial"} />
     <input type="hidden" name="map_defaults" value={JSON.stringify(value)} />
-    {control(Ruler, metric ? "Metric (m, km/h, m/s)" : "Imperial (ft, mph, ft/min)", metric, () => setMetric(!metric))}
+    <UnitsFields defaultUnits={units} customUnits={customUnits} />
     {control(Mountain, value.altitude === "agl" ? "Pilot altitude: AGL — above ground" : "Pilot altitude: MSL — mean sea level", value.altitude === "agl", () => setValue({...value, altitude: value.altitude === "agl" ? "asl" : "agl"}))}
     {control(Camera, `Camera: ${value.camera[0].toUpperCase()}${value.camera.slice(1)}`, value.camera !== "fixed", () => setValue({...value, camera: CAMERA_MODES[(CAMERA_MODES.indexOf(value.camera) + 1) % CAMERA_MODES.length]}))}
     {control(MapIcon, `Map: ${BASEMAPS.find(b => b.id === value.basemap)?.label}`, false, () => setValue({...value, basemap: maps[(maps.findIndex(b => b.id === value.basemap) + 1) % maps.length].id}))}

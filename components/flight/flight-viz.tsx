@@ -21,12 +21,15 @@ import {
 } from "lucide-react";
 import { useGroupReplay } from "./use-group-replay";
 import { ReplayPilots } from "./replay-pilots";
-import { flightForPilot, replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
+import { KeyStatistics } from "./key-statistics";
+import type { FlightStatistics } from "@/lib/flights/statistics";
+import { nextPilotTakeoff, profileSamples, replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import {
   BAROGRAPH_PLOT_LEFT_INSET,
   BAROGRAPH_PLOT_RIGHT_INSET,
   Barograph,
+  type ProfileFlight,
 } from "./barograph";
 import {
   FlightReplay3D,
@@ -253,6 +256,7 @@ function BasemapControl({
  */
 export function FlightViz({
   xcScore,
+  primaryStatistics,
   primaryPilot,
   viewerId,
   flightId,
@@ -266,6 +270,7 @@ export function FlightViz({
   primaryPilot: ReplayPilot;
   viewerId: string | null;
   xcScore?: unknown;
+  primaryStatistics?: FlightStatistics;
   canAddPhotos?: boolean;
   takeoffMs: number;
   offsetMin: number;
@@ -288,7 +293,7 @@ export function FlightViz({
   });
   const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(defaults.track);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
-  const [showXc, setShowXc] = useState(true);
+  const [showXc, setShowXc] = useState(false);
   const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(defaults.altitude);
 
   // Shared replay timeline (seconds from takeoff).
@@ -306,15 +311,18 @@ export function FlightViz({
   const [photoDropActive, setPhotoDropActive] = useState(false);
   const [photoUploadState, setPhotoUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const timeRef = useRef(0);
+  const takeoffCycleRef = useRef<Record<string, string>>({});
   const replayRef = useRef<FlightReplay3DHandle>(null);
   // Same Metric/Imperial preference as the key-statistics card, kept live in
   // sync across both components (see lib/flights/use-units.ts).
-  const [units] = useUnits();
+  const { units } = useUnits();
 
-  const primary = useMemo(() => ({ id: flightId, owner: primaryPilot, takeoffMs, landingMs: takeoffMs, xcScore }), [flightId, primaryPilot, takeoffMs, xcScore]);
+  const primary = useMemo(() => ({ id: flightId, owner: primaryPilot, takeoffMs, landingMs: takeoffMs, xcScore, statistics: primaryStatistics }), [flightId, primaryPilot, takeoffMs, xcScore, primaryStatistics]);
   const group = useGroupReplay(primary, viewerId, takeoffMs + time * 1000);
   const replay = group.primaryReplay;
   const selected = group.selected;
+  const discover = group.discover;
+  const refreshCompanionStatistics = useCallback(() => { void discover(); }, [discover]);
   const selectedReplay = selected?.replay ?? replay;
   const selectedOffset = selected ? (selected.takeoffMs - takeoffMs) / 1000 : 0;
   const selectedTime = time - selectedOffset;
@@ -325,18 +333,16 @@ export function FlightViz({
     const stamp = (p: FlightPhoto) => p.takenAt ? Date.parse(p.takenAt) : Infinity;
     return stamp(a) - stamp(b) || a.id.localeCompare(b.id);
   }), [group.visibleFlights, flightId]);
-  const baro = useMemo<[number, number | null][]>(() => {
-    if (!selectedReplay) return [];
-    const result: [number, number | null][] = [];
-    const stride = Math.max(1, Math.ceil(selectedReplay.samples.length / 2000));
-    selectedReplay.samples.forEach((p, i, samples) => {
-      if (i > 0 && p[3] - samples[i - 1][3] > (selectedReplay.gapThresholdS ?? 30)) {
-        result.push([samples[i - 1][3] + selectedOffset, samples[i - 1][2]], [(p[3] + samples[i - 1][3]) / 2 + selectedOffset, null], [p[3] + selectedOffset, p[2]]);
-      } else if (i % stride === 0 || i === samples.length - 1) result.push([p[3] + selectedOffset, p[2]]);
-    });
-    return result;
-  }, [selectedReplay, selectedOffset]);
-  const terrainProfile = useMemo(() => (terrainByFlight[selected?.id ?? flightId] ?? []).map(([t, alt]) => [t + selectedOffset, alt] as TerrainProfilePoint), [terrainByFlight, selected?.id, flightId, selectedOffset]);
+  const profiles = useMemo<ProfileFlight[]>(() => group.visibleFlights.map((flight) => {
+    const own = flight.owner.id === primaryPilot.id;
+    const chosen = flight.owner.id === selected?.owner.id;
+    return {
+      id: flight.id,
+      state: own ? chosen ? "ownSelected" : "ownUnselected" : chosen ? "friendSelected" : "friendUnselected",
+      baro: profileSamples(flight.replay, takeoffMs),
+      terrain: (terrainByFlight[flight.id] ?? []).map(([t, alt]) => [t + (flight.takeoffMs - takeoffMs) / 1000, alt] as TerrainProfilePoint),
+    };
+  }), [group.visibleFlights, selected?.owner.id, primaryPilot.id, takeoffMs, terrainByFlight]);
   const recordTerrain = useCallback((id: string, profile: TerrainProfilePoint[]) => setTerrainByFlight((old) => ({ ...old, [id]: profile })), []);
   const loadPhotos = group.reloadPhotos;
   const choosePilot = group.select;
@@ -422,9 +428,25 @@ export function FlightViz({
     setTime(t);
     setActive(true);
   }, []);
+  useEffect(() => {
+    if (!replay) return;
+    const clamped = Math.max(startS, Math.min(endS, timeRef.current));
+    if (clamped === timeRef.current) return;
+    const frame = requestAnimationFrame(() => applyTime(clamped));
+    return () => cancelAnimationFrame(frame);
+  }, [startS, endS, replay, applyTime]);
   function scrubTo(t: number) {
     setHasPlaybackStarted(true);
     applyTime(t);
+  }
+  function jumpToTakeoff(id: string) {
+    const flight = group.flights.find((f) => f.id === id) ?? group.candidates.find((f) => f.id === id);
+    if (!flight) return;
+    takeoffCycleRef.current[flight.owner.id] = flight.id;
+    setPlaying(false);
+    setOpenPhotoId(null);
+    selectPilot(flight.owner, flight.id);
+    applyTime((flight.takeoffMs - takeoffMs) / 1000);
   }
   const togglePlay = useCallback(() => {
     setActive(true);
@@ -451,21 +473,21 @@ export function FlightViz({
 
   useEffect(() => {
     function seekToMetric(event: Event) {
-      if (!replay?.samples.length) return;
+      if (!selectedReplay?.samples.length || !selected) return;
       const metric = (event as CustomEvent<ReplayMetric>).detail;
-      let selected = 0;
-      for (let index = 1; index < replay.samples.length; index++) {
+      let sampleIndex = 0;
+      for (let index = 1; index < selectedReplay.samples.length; index++) {
         if (
-          (metric === "max-altitude" && replay.samples[index][2] > replay.samples[selected][2]) ||
-          (metric === "best-climb" && replay.vario[index] > replay.vario[selected]) ||
-          (metric === "max-sink" && replay.vario[index] < replay.vario[selected])
+          (metric === "max-altitude" && selectedReplay.samples[index][2] > selectedReplay.samples[sampleIndex][2]) ||
+          (metric === "best-climb" && selectedReplay.vario[index] > selectedReplay.vario[sampleIndex]) ||
+          (metric === "max-sink" && selectedReplay.vario[index] < selectedReplay.vario[sampleIndex])
         ) {
-          selected = index;
+          sampleIndex = index;
         }
       }
       setPlaying(false);
-      selectPilot(primaryPilot, flightId);
-      applyTime(replay.samples[selected][3]);
+      selectPilot(selected.owner, selected.id);
+      applyTime(selectedOffset + selectedReplay.samples[sampleIndex][3]);
       requestAnimationFrame(() => replayRef.current?.centerOnPilot());
     }
     const toggleXcRoute = () => setShowXc((shown) => !shown);
@@ -475,7 +497,7 @@ export function FlightViz({
       window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
       window.removeEventListener(REPLAY_XC_TOGGLE_EVENT, toggleXcRoute);
     };
-  }, [applyTime, replay, primaryPilot, flightId, selectPilot]);
+  }, [applyTime, selected, selectedReplay, selectedOffset, selectPilot]);
   function changeBasemap(id: BasemapId) {
     setBasemap(id);
   }
@@ -543,18 +565,32 @@ export function FlightViz({
     };
   }, [selectedReplay]);
 
+  const displayedStatistics = selected?.statistics ?? (!selected || selected.id === flightId ? primaryStatistics : undefined);
+  const statisticsOwnerId = selected?.owner.id ?? primaryPilot.id;
+  const statistics = displayedStatistics && (
+    <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+      <KeyStatistics flight={displayedStatistics} canCalculateXc={statisticsOwnerId === viewerId}
+        friend={statisticsOwnerId !== viewerId}
+        onRefresh={displayedStatistics.id !== flightId ? refreshCompanionStatistics : undefined} />
+    </div>
+  );
+
   if (group.failures.includes(flightId)) {
     return (
+      <>{statistics}
       <Card className="flex h-[420px] items-center justify-center text-gray-500">
         <button type="button" onClick={group.retry}>Replay unavailable. Retry</button>
       </Card>
+      </>
     );
   }
   if (!replay || !selected || !selectedReplay) {
     return (
+      <>{statistics}
       <Card className="flex h-[420px] items-center justify-center text-gray-400">
         Loading flight…
       </Card>
+      </>
     );
   }
 
@@ -564,7 +600,8 @@ export function FlightViz({
     trackDisplay === "elapsed" && hasPlaybackStarted ? "elapsed" : "full";
 
   return (
-    <div className="flex flex-col gap-6">
+    <>{statistics}
+    <div className="mt-2 flex flex-col gap-6">
       {process.env.NODE_ENV === "development" && (
         <ReplayPaletteLab basemap={basemap} onBasemap={changeBasemap} />
       )}
@@ -619,17 +656,13 @@ export function FlightViz({
               onPhotoOpen={(id) => { const photo = photos.find((p) => p.id === id); if (photo) selectPhoto(photo); }}
               onTerrainProfile={recordTerrain}
             />
-            <ReplayPilots group={group} primaryOwnerId={primaryPilot.id} viewerId={viewerId} offsetMin={offsetMin}
+            <ReplayPilots group={group} primaryOwnerId={primaryPilot.id} viewerId={viewerId}
               onTakeoff={(pilot) => {
                 const flights = group.candidates.filter((f) => f.owner.id === pilot.id)
                   .map((f) => group.flights.find((loaded) => loaded.id === f.id) ?? f);
-                const flight = selected?.owner.id === pilot.id ? selected
-                  : flights.find((f) => f.id === flightId) ?? flightForPilot(flights, takeoffMs + timeRef.current * 1000);
+                const flight = nextPilotTakeoff(flights, takeoffCycleRef.current[pilot.id]);
                 if (!flight) return;
-                setPlaying(false);
-                setOpenPhotoId(null);
-                selectPilot(pilot, flight.id);
-                applyTime((flight.takeoffMs - takeoffMs) / 1000);
+                jumpToTakeoff(flight.id);
               }}
               onSelect={selectPilot} onToggle={(id) => {
                 const changingSelection = group.selected?.owner.id === id && group.isVisible(id);
@@ -711,7 +744,21 @@ export function FlightViz({
             disabled={!replay}
             onTogglePlay={togglePlay}
             onScrub={(t) => scrubTo(t + startS)}
-            primaryTime={-startS}
+            takeoffs={group.candidates.map((candidate) => {
+              const flight = group.flights.find((loaded) => loaded.id === candidate.id) ?? candidate;
+              const clock = new Date(flight.takeoffMs + offsetMin * 60_000).toISOString().slice(11, 19);
+              return {
+                id: flight.id,
+                time: (flight.takeoffMs - group.bounds.startMs) / 1000,
+                own: flight.owner.id === primaryPilot.id,
+                pilot: flight.owner,
+                label: `Jump to ${flight.owner.displayName}'s takeoff at ${clock}`,
+              };
+            })}
+            onTakeoff={jumpToTakeoff}
+            dayExpanded={group.dayExpanded}
+            discovering={group.discovering}
+            onToggleDay={viewerId === primaryPilot.id ? () => { takeoffCycleRef.current = {}; void group.discover(false, !group.dayExpanded); } : undefined}
           />
         </div>
 
@@ -719,12 +766,11 @@ export function FlightViz({
         <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <Card className="px-4 py-2">
             <Barograph
-              baro={baro}
+              profiles={profiles}
+              selectedFlightId={selected?.id}
               timeDomain={[startS, endS]}
-              terrain={terrainProfile}
               takeoffMs={takeoffMs}
               offsetMin={offsetMin}
-              altSource={selectedReplay.altSource}
               units={units}
               activeTime={active ? time : null}
               onScrubTime={scrubTo}
@@ -756,5 +802,6 @@ export function FlightViz({
         </Card>
       )}
     </div>
+    </>
   );
 }

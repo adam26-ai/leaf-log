@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ReplayPaletteLab } from "./replay-palette-lab";
 import { readGroupReplayColors, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
+import { PROFILE_STATES, PROFILE_COLOR_CSS, PROFILE_SIZE_CSS, profileKey } from "./profile-palette";
 
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "development");
@@ -55,4 +56,24 @@ it("publishes independent track alpha changes after CSS updates and persists the
     expect(JSON.parse(localStorage.getItem("leaf-dev-replay-palette")!).sizes).toMatchObject({ groupTrackAlpha: 0, groupTrackOutlineAlpha: 0.35 });
     await waitFor(() => expect(fetch).toHaveBeenCalled());
   } finally { window.removeEventListener(REPLAY_PALETTE_EVENT, listener); }
+});
+
+it("keeps four profile palettes independent, including transparent fills and legacy selected colors", async () => {
+  localStorage.setItem("leaf-dev-replay-palette", JSON.stringify({ colors: { profileLine: "#123456" }, sizes: { terrainLine: 4 } }));
+  render(<ReplayPaletteLab basemap="monochrome" onBasemap={vi.fn()} />);
+  await waitFor(() => expect(document.documentElement.style.getPropertyValue(PROFILE_COLOR_CSS.ownSelectedProfileLine)).toBe("#123456"));
+  expect(document.documentElement.style.getPropertyValue(PROFILE_SIZE_CSS.ownSelectedTerrainLine)).toBe("4px");
+  fireEvent.click(screen.getByRole("button", { name: "Palette lab" }));
+  await waitFor(() => expect(screen.getByLabelText("Our own — selected: profile line color")).toHaveValue("#123456"));
+  for (const { id, label } of PROFILE_STATES) {
+    fireEvent.click(screen.getByText(`Profile · ${label}`));
+    fireEvent.change(screen.getByLabelText(`${label}: profile fill alpha`), { target: { value: "0" } });
+    expect(document.documentElement.style.getPropertyValue(PROFILE_SIZE_CSS[profileKey(id, "profileFillAlpha")])).toBe("0");
+    fireEvent.change(screen.getByLabelText(`${label}: profile fill color`), { target: { value: "#ff00ff" } });
+    expect(document.documentElement.style.getPropertyValue(PROFILE_COLOR_CSS[profileKey(id, "profileFill")])).toBe("#ff00ff");
+  }
+  expect(document.documentElement.style.getPropertyValue(PROFILE_COLOR_CSS.ownSelectedProfileLine)).toBe("#123456");
+  expect(document.documentElement.style.getPropertyValue(PROFILE_COLOR_CSS.friendSelectedProfileLine)).toBe("#0099ff");
+  const saved = JSON.parse(localStorage.getItem("leaf-dev-replay-palette")!);
+  expect(saved.sizes.friendUnselectedProfileFillAlpha).toBe(0);
 });

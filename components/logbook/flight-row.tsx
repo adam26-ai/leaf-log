@@ -52,7 +52,7 @@ export function FlightRow({
   previewAutoUpload?: boolean;
   trophies?: FlightTrophy[];
 }) {
-  const [units] = useUnits();
+  const { units } = useUnits();
   const visibility =
     flight.visibility === "public"
       ? { label: "Public", className: "border-white bg-[#d8ff00] text-gray-800" }

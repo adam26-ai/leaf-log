@@ -25,13 +25,12 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
   const [photoFailures, setPhotoFailures] = useState<string[]>([]);
   const [discoveryError, setDiscoveryError] = useState(false);
   const [discovering, setDiscovering] = useState(false);
-  const [selection, setSelection] = useState({ pilotId: primary.owner.id, flightId: primaryId, automatic: false });
+  const [selection, setSelection] = useState({ pilotId: primary.owner.id, flightId: primaryId });
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
   const [retryVersion, setRetryVersion] = useState(0);
   const discoveryAbort = useRef<AbortController | null>(null);
-  const pageCount = useRef(1);
 
-  const discover = useCallback(async (more = false) => {
+  const discover = useCallback(async (more = false, expandDay = manifest.dayExpanded ?? false) => {
     if (!viewerId) return;
     discoveryAbort.current?.abort();
     const controller = new AbortController();
@@ -41,15 +40,18 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
     try {
       let cursor = more ? manifest.nextCursor : null;
       const gathered: CompanionFlight[] = more ? [...manifest.flights] : [];
-      const pages = more ? 1 : pageCount.current;
-      for (let page = 0; page < pages; page++) {
-        const result = await json<CompanionManifest>(`/api/flights/${primaryId}/companions${cursor ? `?cursor=${cursor}` : ""}`, controller.signal);
+      let dayExpanded = false;
+      do {
+        const params = new URLSearchParams();
+        if (cursor) params.set("cursor", cursor);
+        if (expandDay) params.set("day", "1");
+        const result = await json<CompanionManifest>(`/api/flights/${primaryId}/companions${params.size ? `?${params}` : ""}`, controller.signal);
         gathered.push(...result.flights);
+        dayExpanded = result.dayExpanded ?? false;
         cursor = result.nextCursor;
-        if (!cursor) break;
-      }
-      if (more) pageCount.current++;
-      setManifest({ flights: [...new Map(gathered.map((f) => [f.id, f])).values()], nextCursor: cursor });
+      } while (cursor && !controller.signal.aborted);
+      if (controller.signal.aborted) return;
+      setManifest({ flights: [...new Map(gathered.map((f) => [f.id, f])).values()], nextCursor: cursor, dayExpanded });
       // The manifest reauthorizes companions. Keep valid tracks mounted so a
       // refresh cannot momentarily switch the selected pilot or reset the camera.
       if (!more) {
@@ -76,7 +78,7 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
     return owners.sort((a, b) => Number(b.id === primary.owner.id) - Number(a.id === primary.owner.id)
       || Number(b.id === viewerId) - Number(a.id === viewerId));
   }, [candidates, primary.owner.id, viewerId]);
-  const isVisible = useCallback((pilotId: string) => visibility[pilotId] ?? pilots.findIndex((p) => p.id === pilotId) < 6, [visibility, pilots]);
+  const isVisible = useCallback((pilotId: string) => visibility[pilotId] ?? (manifest.dayExpanded || pilots.findIndex((p) => p.id === pilotId) < 6), [visibility, pilots, manifest.dayExpanded]);
   const wantedIds = candidates.filter((f) => isVisible(f.owner.id) || f.id === primaryId).map((f) => f.id).join(",");
 
   useEffect(() => {
@@ -110,12 +112,12 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
   const visibleFlights = useMemo(() => flights.filter((f) => isVisible(f.owner.id)), [flights, isVisible]);
   const pilotFlights = visibleFlights.filter((f) => f.owner.id === selection.pilotId);
   const selected = pilotFlights.length
-    ? (selection.automatic ? flightForPilot(pilotFlights, timeMs, selection.flightId) : pilotFlights.find((f) => f.id === selection.flightId) ?? flightForPilot(pilotFlights, timeMs))
+    ? flightForPilot(pilotFlights, timeMs, selection.flightId)
     : visibleFlights.find((f) => f.id === primaryId) ?? visibleFlights[0];
 
   const select = useCallback((pilot: ReplayPilot, flightId?: string) => {
     setVisibility((old) => ({ ...old, [pilot.id]: true }));
-    setSelection({ pilotId: pilot.id, flightId: flightId === "auto" ? "" : flightId ?? (pilot.id === primary.owner.id ? primaryId : ""), automatic: flightId === "auto" || (!flightId && pilot.id !== primary.owner.id) });
+    setSelection({ pilotId: pilot.id, flightId: flightId ?? (pilot.id === primary.owner.id ? primaryId : "") });
   }, [primary.owner.id, primaryId]);
   const toggle = useCallback((pilotId: string) => {
     const shown = isVisible(pilotId);
@@ -142,5 +144,6 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
   const bounds = groupTimeBounds(timelineFlights);
   return { flights, visibleFlights, selected, pilots, candidates, isVisible, select, toggle, failures, photoFailures,
     primaryReplay: payloads[primaryId]?.replay ?? null, bounds, discover, discovering, discoveryError,
+    dayExpanded: manifest.dayExpanded ?? false,
     nextCursor: manifest.nextCursor, retry, reloadPhotos };
 }

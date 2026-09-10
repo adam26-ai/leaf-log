@@ -49,6 +49,7 @@ export default async function SettingsPage() {
               bio={profile.bio ?? ""}
               defaultVisibility={profile.defaultVisibility}
               defaultUnits={profile.defaultUnits}
+              customUnits={profile.customUnits}
               mapDefaults={profile.mapDefaults}
               afterProfile={<WingEditor wings={wings} />}
             />

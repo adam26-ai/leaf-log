@@ -4,14 +4,13 @@ import { Avatar } from "@/components/avatar";
 import type { useGroupReplay } from "./use-group-replay";
 import type { ReplayPilot } from "@/lib/flights/group-replay";
 
-export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onToggle, onTakeoff, offsetMin }: {
+export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onToggle, onTakeoff }: {
   group: ReturnType<typeof useGroupReplay>;
   primaryOwnerId: string;
   viewerId: string | null;
   onSelect: (pilot: ReplayPilot, flightId?: string) => void;
   onToggle: (pilotId: string) => void;
   onTakeoff: (pilot: ReplayPilot) => void;
-  offsetMin: number;
 }) {
   if (!group.pilots.some((pilot) => pilot.id !== primaryOwnerId)) {
     return viewerId ? <button type="button" aria-label="Refresh friends" disabled={group.discovering}
@@ -52,11 +51,6 @@ export function ReplayPilots({ group, primaryOwnerId, viewerId, onSelect, onTogg
         <span className="line-clamp-2 w-full text-center text-[11px] leading-tight font-medium [overflow-wrap:anywhere]" title={pilot.displayName}>{pilot.displayName}{pilot.id === viewerId ? " · You" : ""}</span>
         {pilot.id === primaryOwnerId && <span className="text-[10px] text-[var(--replay-group-card-muted)]">Primary flight</span>}
         {loading && <span className="text-[10px] text-[var(--replay-group-card-muted)]">{failed ? "Unavailable" : "Loading…"}</span>}
-        {flights.length > 1 && <select aria-label={`${pilot.displayName} flight`} className="w-full max-w-[125px] rounded border bg-[var(--replay-group-card-bg)] text-[10px]" value={selected ? group.selected!.id : "auto"}
-          onChange={(event) => onSelect(pilot, event.target.value)}>
-          <option value="auto">Follow pilot</option>
-          {flights.map((f) => <option key={f.id} value={f.id}>{new Date(f.takeoffMs + offsetMin * 60_000).toISOString().slice(11, 16)} takeoff</option>)}
-        </select>}
       </div>;
     })}
     {viewerId && <button type="button" aria-label="Refresh friends" disabled={group.discovering} onClick={() => void group.discover()} className="flex items-center justify-center gap-1 rounded py-2 text-[11px] hover:bg-[var(--replay-group-card-hover)]"><RefreshCw className={`h-3 w-3 ${group.discovering ? "animate-spin" : ""}`} />Refresh friends</button>}

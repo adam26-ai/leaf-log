@@ -1,0 +1,50 @@
+{
+  "shared": {
+    "profileSky": "#99bee1",
+    "profileGrid": "#d4d4d4"
+  },
+  "colors": {
+    "ownSelectedProfileLine": "#d8ff00",
+    "ownSelectedProfileFill": "#d8ff00",
+    "ownSelectedTerrainLine": "#536779",
+    "ownSelectedTerrainFill": "#a5aeb6",
+    "ownSelectedTerrainGradient": "#5c5c5c",
+    "ownUnselectedProfileLine": "#d8ff00",
+    "ownUnselectedProfileFill": "#d8ff00",
+    "ownUnselectedTerrainLine": "#91a1b1",
+    "ownUnselectedTerrainFill": "#a5aeb6",
+    "ownUnselectedTerrainGradient": "#5c5c5c",
+    "friendSelectedProfileLine": "#0099ff",
+    "friendSelectedProfileFill": "#0099ff",
+    "friendSelectedTerrainLine": "#536779",
+    "friendSelectedTerrainFill": "#a5aeb6",
+    "friendSelectedTerrainGradient": "#5c5c5c",
+    "friendUnselectedProfileLine": "#0099ff",
+    "friendUnselectedProfileFill": "#0099ff",
+    "friendUnselectedTerrainLine": "#91a1b1",
+    "friendUnselectedTerrainFill": "#a5aeb6",
+    "friendUnselectedTerrainGradient": "#5c5c5c"
+  },
+  "sizes": {
+    "ownSelectedProfileLine": 2,
+    "ownSelectedProfileFillAlpha": 0.35,
+    "ownSelectedTerrainLine": 2,
+    "ownSelectedTerrainFillAlpha": 1,
+    "ownSelectedTerrainGradientAlpha": 0.75,
+    "ownUnselectedProfileLine": 0.75,
+    "ownUnselectedProfileFillAlpha": 0.2,
+    "ownUnselectedTerrainLine": 0.75,
+    "ownUnselectedTerrainFillAlpha": 0,
+    "ownUnselectedTerrainGradientAlpha": 0.25,
+    "friendSelectedProfileLine": 2,
+    "friendSelectedProfileFillAlpha": 0.35,
+    "friendSelectedTerrainLine": 2,
+    "friendSelectedTerrainFillAlpha": 1,
+    "friendSelectedTerrainGradientAlpha": 0.75,
+    "friendUnselectedProfileLine": 0.75,
+    "friendUnselectedProfileFillAlpha": 0.2,
+    "friendUnselectedTerrainLine": 0.75,
+    "friendUnselectedTerrainFillAlpha": 0,
+    "friendUnselectedTerrainGradientAlpha": 0.25
+  }
+}

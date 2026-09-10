@@ -9,7 +9,7 @@ const medals = { 1: "Gold", 2: "Silver", 3: "Bronze" };
 const colors = { 1: "bg-[#f5cd57] text-[#563b00]", 2: "bg-[#dce2e8] text-[#394452]", 3: "bg-[#c99362] text-[#40240e]" };
 
 export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
-  const [units] = useUnits();
+  const { units } = useUnits();
   if (!trophies.length) return null;
   const first = trophies[0], multiple = trophies.length > 1;
   const bestRank = trophies.reduce((best, trophy) => trophy.rank < best ? trophy.rank : best, first.rank);

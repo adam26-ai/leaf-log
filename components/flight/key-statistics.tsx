@@ -15,7 +15,8 @@ import {
   formatVario,
 } from "@/lib/flights/format";
 import { useUnits } from "@/lib/flights/use-units";
-import type { Flight } from "@prisma/client";
+import type { CSSProperties } from "react";
+import type { FlightStatistics } from "@/lib/flights/statistics";
 import { seekReplayToMetric, type ReplayMetric } from "@/lib/flights/replay-events";
 import { XcPendingRefresh } from "./xc-pending-refresh";
 import { XcStatistic } from "./xc-statistic";
@@ -54,8 +55,13 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
 }
 
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */
-export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flight; canCalculateXc?: boolean }) {
-  const [units] = useUnits();
+export function KeyStatistics({ flight, canCalculateXc = false, friend = false, onRefresh }: {
+  flight: FlightStatistics;
+  canCalculateXc?: boolean;
+  friend?: boolean;
+  onRefresh?: () => void;
+}) {
+  const { units } = useUnits();
   const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
     ["Wing", WingIcon, flight.glider ?? "—"],
     ["Airtime", Clock, formatDuration(flight.durationS)],
@@ -67,10 +73,12 @@ export function KeyStatistics({ flight, canCalculateXc = false }: { flight: Flig
   ];
 
   return (
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-7">
-        <XcPendingRefresh pending={analysisPending(flight.xcStatus)} />
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 lg:grid-cols-7"
+        data-statistics-flight={flight.id} data-statistics-pilot={friend ? "friend" : "own"}
+        style={friend ? { "--replay-icon": "var(--replay-group-companion)" } as CSSProperties : undefined}>
+        <XcPendingRefresh pending={analysisPending(flight.xcStatus)} onRefresh={onRefresh} />
         {statistics.map(([label, Icon, value, seek]) => (
-          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} /> :
+          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} onRefresh={onRefresh} /> :
           <Stat key={label} label={label} icon={Icon} value={value} seek={seek} />
         ))}
     </div>

@@ -1,13 +1,15 @@
 /** Human formatting for flight metrics — beginner-friendly, plain language. */
 
-type DateInput = Date | string | null | undefined;
+import { resolveUnits, type UnitSystem } from "./units";
+export type { UnitSystem } from "./units";
 
-export type UnitSystem = "metric" | "imperial";
+type DateInput = Date | string | null | undefined;
 
 const METERS_PER_FOOT = 0.3048;
 const METERS_PER_MILE = 1609.344;
 const FPM_PER_MS = 196.850394;
 const MPH_PER_KMH = 0.621371;
+const METERS_PER_NAUTICAL_MILE = 1852;
 
 function toMs(d: DateInput): number | null {
   if (d == null) return null;
@@ -25,13 +27,15 @@ export function formatDuration(seconds: number | null): string {
 
 export function formatAltitude(m: number | null, system: UnitSystem = "metric"): string {
   if (m == null) return "—";
-  if (system === "imperial") return `${Math.round(m / METERS_PER_FOOT).toLocaleString()} ft`;
+  if (resolveUnits(system).altitude === "ft") return `${Math.round(m / METERS_PER_FOOT).toLocaleString()} ft`;
   return `${m.toLocaleString()} m`;
 }
 
 export function formatDistance(m: number | null, system: UnitSystem = "metric"): string {
   if (m == null) return "—";
-  if (system === "imperial") {
+  const unit = resolveUnits(system).distance;
+  if (unit === "nautical-miles") return `${(m / METERS_PER_NAUTICAL_MILE).toFixed(1)} nmi`;
+  if (unit === "miles") {
     const feet = m / METERS_PER_FOOT;
     if (feet < 528) return `${Math.round(feet)} ft`; // under 0.1 mi
     return `${(m / METERS_PER_MILE).toFixed(1)} mi`;
@@ -51,13 +55,17 @@ export function formatBearing(deg: number): string {
 export function formatVario(ms: number | null, system: UnitSystem = "metric"): string {
   if (ms == null) return "—";
   const sign = ms > 0 ? "+" : "";
-  if (system === "imperial") return `${sign}${Math.round(ms * FPM_PER_MS).toLocaleString()} fpm`;
+  const unit = resolveUnits(system).vario;
+  if (unit === "ft/min") return `${sign}${Math.round(ms * FPM_PER_MS).toLocaleString()} fpm`;
+  if (unit === "knots") return `${sign}${(ms * 3600 / METERS_PER_NAUTICAL_MILE).toFixed(1)} kt`;
   return `${sign}${ms.toFixed(1)} m/s`;
 }
 
 export function formatSpeed(kmh: number | null, system: UnitSystem = "metric"): string {
   if (kmh == null) return "—";
-  if (system === "imperial") return `${Math.round(kmh * MPH_PER_KMH).toLocaleString()} mph`;
+  const unit = resolveUnits(system).speed;
+  if (unit === "mph") return `${Math.round(kmh * MPH_PER_KMH).toLocaleString()} mph`;
+  if (unit === "knots") return `${Math.round(kmh * 1000 / METERS_PER_NAUTICAL_MILE).toLocaleString()} kt`;
   return `${Math.round(kmh).toLocaleString()} km/h`;
 }
 
