@@ -29,22 +29,33 @@ A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ### Windows quick start
 
-Start Docker Desktop, then run this from the project folder in PowerShell:
+Run this from the project folder in PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-local.ps1
 ```
 
 The launcher uses installed dependencies, creates `.env.local` if needed with a
-random auth secret, starts Postgres, applies existing migrations, and serves the
-app at **http://localhost:3000**. It uses Node from PATH or the Node runtime bundled
-with Codex on this machine. On a fresh checkout, install dependencies with
-`pnpm install` first. The launcher requires the local database settings from
-`.env.example` and an empty `RESEND_API_KEY`.
+random auth secret, starts Docker Desktop and Postgres, applies existing
+migrations, and serves the app at the local `AUTH_URL`. Loopback URLs bind only
+to `127.0.0.1`; private-LAN URLs bind to all interfaces for phone testing. It
+uses Node from PATH or the Node runtime bundled with Codex on this machine. On a
+fresh checkout, install dependencies with `pnpm install` first. The launcher
+requires the local database settings from `.env.example` and an empty
+`RESEND_API_KEY`.
+
+On affected Windows 11 builds, a Docker Desktop shutdown can leave
+inaccessible AF_UNIX socket reparse points behind. When Docker fails with that
+specific signature, the launcher stops the failed startup, preserves the two
+runtime directories with `.stale-<timestamp>` names, and retries once. It never
+deletes Docker images, containers, volumes, or project data. Other Docker
+startup failures are reported without automatic recovery.
 
 Keep that terminal running; saved code changes appear automatically in the
-browser. Press **Ctrl+C** to stop the website. `docker compose stop` stops the
-database while keeping its data; running the launcher again resumes it.
+browser. Press **Ctrl+C** to stop the website; Docker Desktop stays running so
+the next launch is fast. Pass `-StopDockerWhenDone` to request Docker Desktop's
+supported stop sequence after the website exits. `docker compose stop` stops
+the database while keeping its data; running the launcher again resumes it.
 
 The local database starts empty and persists in Docker's `leaf-log-db` volume.
 Create a local account from the sign-in page using any test email address. After
