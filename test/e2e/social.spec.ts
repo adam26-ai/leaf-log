@@ -72,6 +72,10 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   // Sites are fully community-driven (no curated seed), so the shared
   // fixture's flight reads "Unknown site" until someone names it.
   await expect(page.getByRole("link", { name: /unknown site/i })).toBeVisible();
+  await expect(page.getByLabel("Flight trophies")).toBeVisible();
+  await page.goto(`/@${bHandle}`);
+  await expect(page.getByLabel("Flight trophies")).toBeVisible();
+  await expect(page.getByTitle("Maximum altitude")).toBeVisible();
 
   await page.goto(flightUrl);
   await expect(page.getByText("Airtime")).toBeVisible();

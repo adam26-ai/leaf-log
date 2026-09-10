@@ -15,11 +15,14 @@ import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { flightStatistics } from "@/lib/flights/statistics";
+import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
 import { InstructorNoteCard } from "@/components/flight/instructor-note-card";
 import { Card, CardBody } from "@/components/ui/card";
+import { isLogbookEntry } from "@/lib/flights/recording";
+import { EntryDetail } from "@/components/logbook/entry-detail";
 
 export default async function FlightPage({
   params,
@@ -128,19 +131,25 @@ export default async function FlightPage({
             </CardBody>
           </Card>
         ) : (
+          isLogbookEntry(flight) ? <>
+            <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+              <KeyStatistics flight={flight} canCalculateXc={isOwner} />
+            </div>
+            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} lat={flight.takeoffLat} lon={flight.takeoffLon} siteName={flight.takeoffSiteName} notes={flight.notes} owner={isOwner} /></div>
+          </> : (
           <FlightViz
             viewerId={viewerId}
             primaryStatistics={flightStatistics(flight)}
-            primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName ?? flight.pilot ?? "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
+            primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName || owner?.handle || "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
             xcScore={flight.xcScore}
             key={flight.id}
             flightId={flight.id}
             canAddPhotos={isOwner}
             takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
             offsetMin={flight.localUtcOffsetMinutes ?? 0}
-            pilotName={flight.pilot || owner?.displayName}
             notes={flight.notes}
           />
+          )
         )}
 
         {(instructorNotes.length > 0 || isViewerCurrentInstructor) && (

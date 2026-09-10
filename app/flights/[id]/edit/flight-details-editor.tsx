@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
+import { SuccessStatus } from "@/components/ui/success-status";
 import {
   OCCUPANCIES,
   OCCUPANCY_LABELS,
@@ -118,7 +119,7 @@ export function FlightDetailsEditor({
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save flight details"}
         </Button>
-        {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
+        {state.ok && <SuccessStatus>Saved.</SuccessStatus>}
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
       </div>
     </form>

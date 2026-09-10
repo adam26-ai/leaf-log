@@ -3,7 +3,7 @@ import { buildReplayPath, type ReplayResponse } from "./replay";
 import { recordingGapSeconds } from "@/lib/flights/group-replay";
 import type { GeoPoint } from "@/lib/flights/route-proximity";
 
-export const REPLAY_ARTIFACT_VERSION = 1;
+export const REPLAY_ARTIFACT_VERSION = 4;
 export interface ReplayArtifact {
   version: number;
   sourceHash: string;

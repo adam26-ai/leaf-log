@@ -18,13 +18,13 @@ export function SkillTagsSummary({ stats }: { stats: RatingStats }) {
         <h2 className="font-condensed text-xl font-bold text-ink">Self-reported flight tags</h2>
         <AccentBar className="mt-2" width="2rem" />
         <p className="mt-3 text-sm text-gray-600">
-          Flight type, Launch type, and Landing tags you&apos;ve logged on individual flights.
-          These are your own record-keeping — none of USHPA&apos;s Special Skills count as
+          Flight type, launch type, and landing tags you&apos;ve logged on individual flights.
+          These are your own records — none of USHPA&apos;s Special Skills count as
           verified until an instructor signs off on them.
         </p>
         {tagged.length === 0 ? (
           <p className="mt-4 text-sm text-gray-400">
-            No flights tagged yet — add Flight type, Launch type, or Landing details from a
+            No flights tagged yet — add flight type, launch type, or landing details from a
             flight&apos;s edit page.
           </p>
         ) : (

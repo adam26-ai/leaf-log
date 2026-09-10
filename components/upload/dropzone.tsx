@@ -27,7 +27,7 @@ export function Dropzone() {
       f.name.toLowerCase().endsWith(".igc"),
     );
     if (list.length === 0) {
-      setResults([{ filename: "—", error: "Please choose .igc files" }]);
+      setResults([{ filename: "—", error: "Please choose .igc files." }]);
       return;
     }
     setBusy(true);
@@ -39,7 +39,7 @@ export function Dropzone() {
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
       const rs: UploadResult[] = data.results ?? [
-        { filename: "—", error: data.error ?? "Upload failed" },
+        { filename: "—", error: data.error ?? "Upload failed." },
       ];
       setResults(rs);
 
@@ -50,7 +50,7 @@ export function Dropzone() {
         router.refresh();
       }
     } catch {
-      setResults([{ filename: "—", error: "Upload failed — please try again" }]);
+      setResults([{ filename: "—", error: "Upload failed. Please try again." }]);
     } finally {
       setBusy(false);
     }
@@ -81,7 +81,7 @@ export function Dropzone() {
           {busy ? "Uploading…" : "Drop your IGC file here"}
         </p>
         <p className="text-gray-600">
-          or click to choose a file from your device
+          Or click to choose a file from your device.
         </p>
         <input
           ref={inputRef}
@@ -105,11 +105,11 @@ export function Dropzone() {
               {r.error ? (
                 <span className="text-red-600">{r.error}</span>
               ) : r.deduped ? (
-                <span className="text-gray-500">Already uploaded · <a href={`/flights/${r.flightId}`} className="text-leaf-strong underline underline-offset-2">View flight</a></span>
+                <span className="text-gray-500">Already uploaded · <a href={`/flights/${r.flightId}`} className="text-brand-blue-strong underline underline-offset-2">View flight</a></span>
               ) : r.status === "failed" ? (
                 <span className="text-brand-blue-strong">Couldn&apos;t read flight</span>
               ) : (
-                <a href={`/flights/${r.flightId}`} className="text-leaf-strong">
+                <a href={`/flights/${r.flightId}`} className="text-brand-blue-strong">
                   View flight →
                 </a>
               )}

@@ -324,7 +324,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const preparedTracks = useRef(new WeakMap<ReplayData, TimedTrackDatum[]>());
-  const terrainOffsets = useRef(new Map<string, number>());
   const timeRef = useRef(time);
   const basemapRef = useRef(basemap);
   const cameraModeRef = useRef(cameraMode);
@@ -350,11 +349,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const trackedZoomAnimationRef = useRef<number | null>(null);
   const manualCameraInteractionRef = useRef<"rotate" | "pan" | null>(null);
   const preserveCameraOnFixedRef = useRef(false);
-  // Vertical offset (m) that snaps takeoff altitude to the terrain (corrects the
-  // IGC baro/GPS reference vs the DEM's sea-level reference).
-  const offsetRef = useRef(0);
-  const anchoredRef = useRef(false);
-  const anchorTimerRef = useRef<number | null>(null);
   const styleRefreshTimerRef = useRef<number | null>(null);
   const groundElevationCacheRef = useRef(new Map<number, number>());
   const shadowSampleCountRef = useRef(-1);
@@ -402,8 +396,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     timeRef.current = time;
     identityRef.current = { flightId, primaryFlightId };
     trackRef.current = tracksFor(data);
-    offsetRef.current = terrainOffsets.current.get(flightId) ?? 0;
-    anchoredRef.current = terrainOffsets.current.has(flightId);
     groundElevationCacheRef.current.clear();
     terrainProfilesPublishedRef.current.delete(flightId);
     displayedTrackCacheRef.current = new WeakMap();
@@ -431,10 +423,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return (d.vario[i - 1] ?? 0) + ((d.vario[i] ?? 0) - (d.vario[i - 1] ?? 0)) * f;
   }
 
-  // Map a raw IGC altitude to the scene's vertical space (takeoff anchor offset,
-  // then terrain exaggeration so the track stays consistent with the mesh).
+  // Replay altitudes already include the shared GPS/baro calibration.
   function zOf(alt: number) {
-    return (alt + offsetRef.current) * TERRAIN_EXAGGERATION;
+    return alt * TERRAIN_EXAGGERATION;
   }
 
   /**
@@ -495,20 +486,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return value;
   }
 
-  /**
-   * The glider marker's anchor height at a 3D point — whichever is HIGHER of
-   * the flight path itself or the real terrain there. The recorded track can
-   * dip below the terrain surface (GPS/baro noise, DEM resolution), and
-   * anchoring to it alone in that case would bury the marker in/behind the
-   * terrain mesh. The camera's own look-at elevation uses this too — anchor
-   * the marker up here but leave the camera looking at the raw altitude, and
-   * a big enough gap between the two can push the marker outside the
-   * camera's view frustum entirely.
-   */
+  // Keep the marker and camera at the same altitude as the recorded path.
   function markerAnchorZ(pos: [number, number, number]): number {
-    const ground = groundElevationAt(pos[0], pos[1]);
-    const flightZ = zOf(pos[2]);
-    return ground != null ? Math.max(flightZ, ground) : flightZ;
+    return zOf(pos[2]);
   }
 
   /**
@@ -599,15 +579,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     return next;
   }
 
-  // Controls centre immediately; playback feeds a spring toward the glider's
-  // look-at point while preserving the user's zoom. Uses the SAME
-  // ground-clamped anchor height the marker itself renders at (markerAnchorZ)
-  // — looking at the raw flight altitude while the marker renders higher (or
-  // vice versa) can separate the two enough that the marker falls outside
-  // the camera's view frustum entirely. Follow leaves pitch/bearing as the
-  // user set them; chase also eases bearing to the damped track heading and
-  // holds a steep pitch. Needs setCenterClampedToGround(false) so the centre
-  // can sit above the terrain.
+  // Controls centre immediately; playback follows the calibrated marker height.
+  // Follow preserves pitch/bearing; chase also eases bearing toward the track.
+  // setCenterClampedToGround(false) lets the camera target follow flight altitude.
   function centerOnGlider(
     t: number,
     chase = false,
@@ -839,9 +813,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const f = companions.find((f) => f.id === ph.flightId);
       if (!f) return [];
       const q = ph.tSec != null ? replayPositionAt(f.replay, ph.tSec) : [ph.lon!, ph.lat!, ph.altM ?? 0];
-      const offset = offsetFor(f);
       return [{ id: ph.id, flightId: f.id, name: f.owner.displayName, primary: f.id === identities.primaryFlightId,
-        tSec: ph.tSec ?? -1, position: [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number] }];
+        tSec: ph.tSec ?? -1, position: [q[0], q[1], zOf(q[2])] as [number, number, number] }];
     });
 
     // The ground elevation directly under the glider's current position.
@@ -934,26 +907,21 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     }
 
     // Stack the connector, live altitude, vertical SVG name banner, and
-    // white-on-black glider above one ground-clamped anchor.
+    // white-on-black glider above the calibrated flight position.
     type LabelDatum = { text: string; position: [number, number, number] };
     const nameText = pilotNameRef.current ? displayedPilotName(pilotNameRef.current) : null;
     const colors = groupColorsRef.current;
     const identityColor = primary ? colors.groupPrimary : colors.groupCompanion;
     const nameBanner = verticalNameBanner(nameText, identityColor, colors.groupBadgeText, colors.groupBadgeBorder, displayedBadgeHeight());
-    const anchorZ = ground != null ? Math.max(zOf(pos[2]), ground) : zOf(pos[2]);
+    const anchorZ = zOf(pos[2]);
     const anchorPos: [number, number, number] = [pos[0], pos[1], anchorZ];
     const markerScale = markerPerspectiveScale(anchorPos);
     const markerPixels = (pixels: number) => pixels * markerScale;
-    // The "ASL" readout should match wherever the marker is actually drawn —
-    // when the ground clamp above wins, invert zOf() to recover the raw
-    // (real-world) altitude that ground elevation corresponds to, so the
-    // number never contradicts what the marker's own height is showing.
-    const displayAltAsl =
-      anchorZ > zOf(pos[2]) ? anchorZ / TERRAIN_EXAGGERATION - offsetRef.current : pos[2];
+    // ASL and AGL use the same calibrated altitude as the profile and path.
     const isAgl = altitudeModeRef.current === "agl";
     const displayAlt = isAgl && ground != null
-      ? Math.max(0, (anchorZ - ground) / TERRAIN_EXAGGERATION)
-      : displayAltAsl;
+      ? (anchorZ - ground) / TERRAIN_EXAGGERATION
+      : pos[2];
     // depthTest: false on every piece of the marker so it always paints in
     // front of the flight path (and terrain) from the camera's viewpoint,
     // rather than being cut into by whichever geometry the depth buffer says
@@ -1074,7 +1042,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           capRounded: true,
           jointRounded: true,
           updateTriggers: {
-            getPath: offsetRef.current,
             getColor: d,
           },
         }),
@@ -1094,7 +1061,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           getSize: 30,
           sizeBasis: "width",
           sizeUnits: "pixels",
-          updateTriggers: { getPosition: offsetRef.current, getIcon: [colors.groupPrimary, colors.groupCompanion] },
+          updateTriggers: { getIcon: [colors.groupPrimary, colors.groupCompanion] },
           onHover: (info) => {
             const o = info.object as PhotoIcon | null;
             if (o) {
@@ -1114,18 +1081,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         ...poleLayers,
       ],
     });
-  }
-
-  function offsetFor(flight: LoadedReplayFlight): number {
-    const cached = terrainOffsets.current.get(flight.id);
-    if (cached != null) return cached;
-    const start = flight.replay.samples[0];
-    const ground = start ? groundElevationAt(start[0], start[1]) : null;
-    if (ground == null) return 0;
-    const offset = ground / TERRAIN_EXAGGERATION - start[2];
-    const safe = Math.abs(offset) <= 400 ? offset : 0;
-    terrainOffsets.current.set(flight.id, safe);
-    return safe;
   }
 
   function sharedBadgeHeight(): number {
@@ -1157,14 +1112,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     for (const flight of all) {
       if (flight.id === selectedId) continue;
       const local = (nowMs - flight.takeoffMs) / 1000;
-      const offset = offsetFor(flight);
       const paths = tracksFor(flight.replay).map((path) => displayedTrackAt(path, local)).filter((p) => p.path.length >= 2);
       const pathProps = {
         data: paths,
-        getPath: (p: MultiColorPathDatum) => p.path.map((q) => [q[0], q[1], (q[2] + offset) * TERRAIN_EXAGGERATION] as [number, number, number]),
+        getPath: (p: MultiColorPathDatum) => p.path.map((q) => [q[0], q[1], zOf(q[2])] as [number, number, number]),
         widthUnits: "pixels" as const, billboard: true,
         capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: !translucent },
-        updateTriggers: { getPath: offset },
       };
       (translucent ? translucentTracks : opaqueTracks).push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
         getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline),
@@ -1174,8 +1127,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
       const state = replayStateAt(flight.replay, local);
       const point = replayPositionAt(flight.replay, local);
-      const ground = groundElevationAt(point[0], point[1]);
-      const anchor: [number, number, number] = [point[0], point[1], Math.max((point[2] + offset) * TERRAIN_EXAGGERATION, ground ?? -Infinity)];
+      const anchor: [number, number, number] = [point[0], point[1], zOf(point[2])];
       const primary = flight.id === identityRef.current.primaryFlightId;
       const banner = verticalNameBanner(displayedPilotName(flight.owner.displayName), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder, displayedBadgeHeight())!;
       layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
@@ -1532,7 +1484,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // Build the map once we have data.
   useEffect(() => {
     if (!containerRef.current || !hasData) return;
-    anchoredRef.current = false;
     terrainProfilesPublishedRef.current.clear();
     shadowSampleCountRef.current = -1;
     const map = new maplibregl.Map({
@@ -1586,42 +1537,16 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         centerOnGlider(timeRef.current, cameraModeRef.current === "chase");
       }
 
-      // Once terrain tiles are loaded, snap the takeoff to the ground so the
-      // whole track sits correctly on the terrain (corrects baro/GPS-vs-DEM
-      // reference). Retries on each idle until the DEM is queryable.
-      const anchorToTerrain = () => {
-        if (anchoredRef.current || !dataRef.current) return;
-        const s0 = dataRef.current.samples[0];
-        // queryTerrainElevation returns the EXAGGERATED elevation — divide it
-        // back out to recover the raw ground elevation. It returns 0 (not null)
-        // before the DEM tile at this point is cached, so treat 0/non-finite as
-        // "not ready yet" and retry on the next idle — otherwise we'd anchor to a
-        // bogus 0 m ground and sink the whole track underground.
-        let exaggerated: number | null = null;
-        try {
-          exaggerated = map.queryTerrainElevation([s0[0], s0[1]]);
-        } catch {
-          exaggerated = null;
-        }
-        if (exaggerated == null || !Number.isFinite(exaggerated) || exaggerated === 0) {
-          return;
-        }
-        const rawGround = exaggerated / TERRAIN_EXAGGERATION;
-        const off = rawGround - s0[2];
-        if (Math.abs(off) <= 400) offsetRef.current = off;
-        terrainOffsets.current.set(identityRef.current.flightId, offsetRef.current); // sanity clamp
-        anchoredRef.current = true;
-        // The first shadow is added before the DEM tiles are queryable. Recreate
-        // its source once terrain is ready so MapLibre drapes it onto the ground
-        // immediately, without waiting for playback or a basemap change.
-        removeShadow(map);
-        syncShadow();
-        renderLayers(timeRef.current);
-        map.triggerRepaint();
-      };
+      // Refresh the footprint once its terrain tiles are available.
+      let shadowTerrainReady = false;
       const publishTerrainProfile = () => {
         if (!dataRef.current) return;
         if (!map.isSourceLoaded("dem")) return;
+        if (!shadowTerrainReady) {
+          shadowTerrainReady = true;
+          removeShadow(map);
+          syncShadow();
+        }
         const flights = new Map(companionRef.current.map((flight) => [flight.id, flight.replay]));
         flights.set(identityRef.current.flightId, dataRef.current);
         for (const [id, replay] of flights) {
@@ -1658,25 +1583,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           onTerrainProfileRef.current?.(id, profile);
         }
       };
-      map.on("idle", anchorToTerrain);
       map.on("idle", publishTerrainProfile);
-      anchorToTerrain();
       publishTerrainProfile();
-      // 'idle' can fire before the DEM at takeoff is queryable, so also poll for
-      // a few seconds until the elevation reads (then stop).
-      let tries = 0;
-      anchorTimerRef.current = window.setInterval(() => {
-        if (anchoredRef.current || tries++ > 40) {
-          if (anchorTimerRef.current) window.clearInterval(anchorTimerRef.current);
-          anchorTimerRef.current = null;
-          return;
-        }
-        anchorToTerrain();
-      }, 250);
     });
 
     return () => {
-      if (anchorTimerRef.current) window.clearInterval(anchorTimerRef.current);
       if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
       overlayRef.current = null;
       mapRef.current = null;

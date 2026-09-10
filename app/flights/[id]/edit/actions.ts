@@ -10,24 +10,21 @@ export type NotesState = { error?: string; ok?: boolean };
 
 const MAX_NOTES = 2000;
 
-export async function updateIgcDetails(
+export async function updateFlightWing(
   flightId: string,
   _prev: NotesState,
   formData: FormData,
 ): Promise<NotesState> {
   const userId = await getCurrentUserId();
   if (!userId) return { error: "Not signed in." };
-  const pilot = formData.get("pilot");
   const glider = formData.get("glider");
-  if (typeof pilot !== "string" || typeof glider !== "string" ||
-      pilot.trim().length > 200 || glider.trim().length > 200 ||
-      /[\r\n\x00]/.test(pilot + glider)) {
-    return { error: "Enter pilot and glider names of 200 characters or fewer, on one line." };
+  if (typeof glider !== "string" || glider.trim().length > 200 || /[\r\n\x00]/.test(glider)) {
+    return { error: "Enter a wing name of 200 characters or fewer, on one line." };
   }
   const result = await prisma.flight.updateMany({
     where: { id: flightId, ownerId: userId },
-    // Empty pilot is an intentional correction, distinct from an unimported header.
-    data: { pilot: pilot.trim(), glider: glider.trim() || null },
+    // Historical pilot labels and the original IGC are never changed by wing edits.
+    data: { glider: glider.trim() || null },
   });
   if (!result.count) return { error: "Flight not found." };
   revalidatePath("/", "layout");

@@ -1,3 +1,4 @@
+import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { FlightStatistics } from "@/lib/flights/statistics";
@@ -9,7 +10,7 @@ import { KeyStatistics } from "./key-statistics";
 
 const flight: FlightStatistics = { id: "own-second", glider: "Wing", durationS: 600, maxAltM: 500,
   altGainM: 300, maxClimbMs: 3, maxSinkMs: -2, status: "ready", xcStatus: "unscored",
-  xcError: null, xcScore: null, metricsVersion: 1 };
+  xcError: null, xcScore: null, metricsVersion: METRICS_VERSION };
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 it("queues XC for the displayed own flight and refreshes its replay statistics", async () => {

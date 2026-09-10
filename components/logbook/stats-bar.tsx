@@ -4,6 +4,7 @@ export interface LogbookStats {
   totalSeconds: number;
   flightCount: number;
   siteCount: number;
+  unknownDurationCount?: number;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -29,6 +30,7 @@ export function StatsBar({ stats }: { stats: LogbookStats }) {
         <Stat label="Sites" value={String(stats.siteCount)} />
       </div>
       <AccentBar width="3rem" />
+      {Boolean(stats.unknownDurationCount) && <p className="text-xs text-gray-500">Airtime excludes {stats.unknownDurationCount} {stats.unknownDurationCount === 1 ? "flight" : "flights"} with unknown duration.</p>}
     </div>
   );
 }

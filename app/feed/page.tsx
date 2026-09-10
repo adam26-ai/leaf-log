@@ -5,7 +5,7 @@ import { listHighlights } from "@/lib/flights/list-highlights";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { requireProfile } from "@/lib/profile";
-import { listFeedForViewer } from "@/lib/flights/repo";
+import { listFeedForViewer, trophiesForVisibleFlights } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export default async function FeedPage({
     cursor: firstParam(cursor),
   });
   const { highlightScore, distanceScore } = listHighlights(feed.rows);
+  const trophies = await trophiesForVisibleFlights(feed.rows);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -63,10 +64,11 @@ export default async function FeedPage({
                     </Link>
                     <span className="flex items-center gap-1 text-xs text-gray-500" title="Kudos"><ThumbsUp className="h-3.5 w-3.5" />{flight.kudoCount}</span>
                   </div>
-                  <div className="overflow-x-auto pb-1">
+                  <div className="pb-1">
                   <FlightRow
                     flight={flight}
                     compact
+                    trophies={trophies[flight.id]}
                     highlightScore={highlightScore(flight)}
                     distanceScore={distanceScore(flight)}
                   />

@@ -22,7 +22,7 @@ export async function processNextXcJob() {
         data: { xcStatus: WAITING_STATES[i], xcStartedAt: null } });
     }
     if (await tx.flight.findFirst({ where: { xcStatus: { in: RUNNING_STATES } }, select: { id: true } })) return null;
-    const queued = await tx.flight.findFirst({ where: { xcStatus: { in: WAITING_STATES } },
+    const queued = await tx.flight.findFirst({ where: { recordingKind: "igc", xcStatus: { in: WAITING_STATES } },
       orderBy: [{ xcQueuedAt: "asc" }, { id: "asc" }] });
     if (!queued) return null;
     return tx.flight.update({ where: { id: queued.id }, data: {
@@ -33,11 +33,12 @@ export async function processNextXcJob() {
   const lease = { id: flight.id, xcStatus: flight.xcStatus, xcStartedAt: flight.xcStartedAt };
   try {
     const data = await prisma.flightData.findUnique({ where: { flightId: flight.id }, select: { rawIgc: true } });
-    if (!data?.rawIgc.length) {
+    if (!data?.rawIgc.length || !flight.igcSha256) {
       await prisma.flight.updateMany({ where: lease, data: { xcStatus: "unavailable", xcStartedAt: null,
         xcError: "The original IGC file is missing, so this flight cannot be calculated." } });
       return true;
     }
+    const sourceHash = flight.igcSha256;
     const parsed = parseIgc(new Uint8Array(data.rawIgc));
     const metrics = deriveMetrics(parsed);
     let previous: unknown = flight.xcScore;
@@ -49,7 +50,7 @@ export async function processNextXcJob() {
         if (!updated.count) return false;
         await tx.flightData.update({ where: { flightId: flight.id }, data: {
           track: metrics ? buildTrackArtifact(parsed.fixes, metrics) as unknown as Prisma.InputJsonValue : Prisma.JsonNull,
-          replay: metrics ? buildReplayArtifact(parsed, metrics, flight.igcSha256, PARSER_VERSION) as unknown as Prisma.InputJsonValue : Prisma.JsonNull,
+          replay: metrics ? buildReplayArtifact(parsed, metrics, sourceHash, PARSER_VERSION) as unknown as Prisma.InputJsonValue : Prisma.JsonNull,
         } });
         return true;
       });

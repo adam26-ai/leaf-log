@@ -1,12 +1,12 @@
 import type { FlightListItem } from "./repo";
-import { readXcScore } from "@/lib/igc/xc-types";
+import { flightXcResults } from "./recording";
 
 /** Relative highlights for the flights displayed in a list. */
 export function listHighlights(flights: FlightListItem[]) {
   const ready = flights.filter(f => f.status === "ready");
   const maxDuration = Math.max(0, ...ready.map(f => f.durationS ?? 0));
   const maxGain = Math.max(0, ...ready.map(f => f.altGainM ?? 0));
-  const distance = (f: FlightListItem) => readXcScore(f.xcScore)?.best.distanceM ?? f.straightDistM ?? 0;
+  const distance = (f: FlightListItem) => flightXcResults(f)[0]?.distanceM ?? f.straightDistM ?? 0;
   const maxDistance = Math.max(0, ...ready.map(distance));
   return {
     distanceScore: (f: FlightListItem) => f.status === "ready" && maxDistance > 0 ? Math.max(0, distance(f)) / maxDistance : 0,

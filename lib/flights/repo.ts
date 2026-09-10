@@ -10,7 +10,10 @@ import { kudoCountsFor } from "@/lib/social/kudos";
 import { replayArtifactForFlight } from "./replay-repo";
 import { routeProximityIndex } from "./route-proximity";
 import type { CompanionManifest } from "./group-replay";
+import { isLogbookEntry } from "./recording";
 import { flightStatistics } from "./statistics";
+import { flightTrophies, type FlightTrophy } from "./trophies";
+import { METRICS_VERSION } from "./analysis-state";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
  * Filter before pagination, geometry reads, or returning any participant metadata.
@@ -19,7 +22,7 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
   const primary = await getFlightForViewer(flightId, viewerId);
   if (!primary) return null;
   const empty = { flights: [], nextCursor: null };
-  if (!viewerId || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
+  if (!viewerId || isLogbookEntry(primary) || !primary.takeoffAt || !primary.landingAt || primary.status !== "ready") return empty;
   const ownerSelect = { id: true, handle: true, displayName: true, avatarUpdatedAt: true } as const;
   // A day is the opened flight's local calendar day, independent of the browser's timezone.
   const localOffsetMs = (primary.localUtcOffsetMinutes ?? 0) * 60_000;
@@ -37,7 +40,7 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
   const pageSize = 32;
   const candidates = await prisma.flight.findMany({
     where: {
-      id: { not: primary.id }, ownerId: { in: eligible }, status: "ready",
+      id: { not: primary.id }, ownerId: { in: eligible }, status: "ready", recordingKind: "igc",
       // Day mode includes full flights launched on this local date. Otherwise,
       // pilots must actually share some flying time, with no gap allowance.
       takeoffAt: dayExpanded
@@ -94,6 +97,9 @@ export async function listReplayCompanions(flightId: string, viewerId: string | 
 const LIST_SELECT = {
   id: true,
   source: true,
+  recordingKind: true,
+  reportedXcDistanceM: true,
+  reportedXcType: true,
   xcStatus: true,
   xcError: true,
   xcQueuedAt: true,
@@ -124,7 +130,7 @@ const LIST_SELECT = {
   restrictedLandingField: true,
 } as const;
 
-type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM";
+type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM" | "recordingKind" | "reportedXcDistanceM" | "reportedXcType";
 export type FlightListItem = Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
 
 const FEED_SELECT = {
@@ -224,6 +230,7 @@ function feedCursorWhere(cursor: FeedCursor | null): Prisma.FlightWhereInput {
 }
 
 interface LocationFieldRow {
+  recordingKind?: string;
   takeoffSiteId: string | null;
   takeoffSiteName: string | null;
   takeoffZoneId: string | null;
@@ -373,6 +380,8 @@ async function resolveLocationFields<T extends LocationFieldRow>(
     );
     return {
       ...row,
+      ...(row.recordingKind === "logbook" && row.takeoffSiteId && !takeoff.siteId ? { takeoffLat: null, takeoffLon: null } : {}),
+      ...(row.recordingKind === "logbook" && row.landingSiteId && !landing.siteId ? { landingLat: null, landingLon: null } : {}),
       takeoffSiteId: takeoff.siteId,
       takeoffSiteName: takeoff.siteName,
       takeoffZoneId: takeoff.zoneId,
@@ -480,12 +489,82 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
   return resolveLocationFields(rows, ownerId);
 }
 
+/** Export every status, with live authorized location names and no heavy payloads. */
+export async function listOwnFlightsForExport(ownerId: string, afterId?: string) {
+  const rows = await prisma.flight.findMany({
+    where: { ownerId, ...(afterId ? { id: { gt: afterId } } : {}) },
+    orderBy: { id: "asc" },
+    take: 250,
+    include: { data: { select: { flightId: true } } },
+  });
+  return resolveLocationFields(rows, ownerId);
+}
+
+/** Rank complete personal histories, returning medals only for already-authorized rows.
+ * Private record identities and values never leave this server-side calculation.
+ */
+export async function trophiesForVisibleFlights(flights: { id: string; ownerId: string }[]): Promise<Record<string, FlightTrophy[]>> {
+  if (!flights.length) return {};
+  const history = await prisma.flight.findMany({
+    where: { ownerId: { in: [...new Set(flights.map(flight => flight.ownerId))] } },
+    select: { id: true, ownerId: true, status: true, recordingKind: true, durationS: true, maxAltM: true, launchAltM: true, xcScore: true, metricsVersion: true, xcStatus: true, reportedXcDistanceM: true, reportedXcType: true },
+  });
+  const ranked: Record<string, FlightTrophy[]> = {};
+  for (const ownerId of new Set(flights.map(flight => flight.ownerId))) Object.assign(ranked, flightTrophies(history.filter(flight => flight.ownerId === ownerId)));
+  return Object.fromEntries(flights.map(flight => [flight.id, ranked[flight.id] ?? []]));
+}
+
+/** Logbook companion discovery: accepted friends, readable recordings, positive airtime
+ * overlap, and the same 5km route-proximity check used by companion discovery.
+ * Only own flight IDs are returned; no companion tracks or private metadata.
+ */
+export async function logbookCompanions(viewerId: string) {
+  const graph = await prisma.friendship.findMany({
+    where: { status: "accepted", OR: [{ requesterId: viewerId }, { addresseeId: viewerId }] },
+    select: { requester: { select: { id: true, displayName: true, handle: true } }, addressee: { select: { id: true, displayName: true, handle: true } } },
+  });
+  const friends = graph.map(edge => edge.requester.id === viewerId ? edge.addressee : edge.requester)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  if (!friends.length) return [];
+  const own = await prisma.flight.findMany({ where: { ownerId: viewerId, status: "ready", recordingKind: "igc", takeoffAt: { not: null }, landingAt: { not: null } } });
+  const result = friends.map(friend => ({ key: friend.id, label: `${friend.displayName} (@${friend.handle})`, flightIds: [] as string[] }));
+  if (!own.length) return result;
+  const other = await prisma.flight.findMany({
+    where: { ownerId: { in: friends.map(friend => friend.id) }, status: "ready", recordingKind: "igc", visibility: { in: ["friends", "public"] },
+      takeoffAt: { lt: new Date(Math.max(...own.map(f => f.landingAt!.getTime()))) },
+      landingAt: { gt: new Date(Math.min(...own.map(f => f.takeoffAt!.getTime()))) } },
+    orderBy: { takeoffAt: "asc" },
+  });
+  const artifacts = new Map<string, Awaited<ReturnType<typeof replayArtifactForFlight>>>();
+  async function artifact(flight: Flight) {
+    if (!artifacts.has(flight.id)) artifacts.set(flight.id, await replayArtifactForFlight(flight));
+    return artifacts.get(flight.id);
+  }
+  const matches = new Map(result.map(friend => [friend.key, new Set<string>()]));
+  for (const flight of own) {
+    let proximity: ReturnType<typeof routeProximityIndex> | undefined;
+    for (const candidate of other) {
+      if (candidate.takeoffAt! >= flight.landingAt!) break;
+      if (candidate.landingAt! <= flight.takeoffAt! || candidate.landingAt! <= candidate.takeoffAt! || flight.landingAt! <= flight.takeoffAt! || matches.get(candidate.ownerId)!.has(flight.id)) continue;
+      if (!proximity) {
+        const primary = await artifact(flight);
+        if (!primary) break;
+        proximity = routeProximityIndex(primary.matchingPaths);
+      }
+      const companion = await artifact(candidate);
+      if (companion && proximity(companion.matchingPaths) !== null) matches.get(candidate.ownerId)!.add(flight.id);
+    }
+  }
+  return result.map(friend => ({ ...friend, flightIds: [...matches.get(friend.key)!] }));
+}
+
 /** Only the launch altitude scalar is needed for personal gain trophies. */
 export async function ownLaunchAltitudes(ownerId: string): Promise<Record<string, number>> {
   const rows = await prisma.$queryRaw<{ flightId: string; altitude: unknown }[]>`
-    SELECT d."flightId", d.track #> '{baro,0,1}' AS altitude
-    FROM "FlightData" d JOIN "Flight" f ON f.id = d."flightId"
+    SELECT f.id AS "flightId", f."launchAltM" AS altitude
+    FROM "Flight" f
     WHERE f."ownerId" = ${ownerId} AND f.status = 'ready'
+      AND (f."metricsVersion" = ${METRICS_VERSION} OR f."recordingKind" = 'logbook')
   `;
   return Object.fromEntries(rows.flatMap(row => typeof row.altitude === "number" && Number.isFinite(row.altitude) ? [[row.flightId, row.altitude]] : []));
 }

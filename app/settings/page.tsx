@@ -26,7 +26,7 @@ export default async function SettingsPage() {
           <Link href="/settings/devices" className="group block">
             <Card className="p-6 transition-colors group-hover:border-brand-blue">
               <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#444444] text-[#d8ff00]">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-success-surface text-success-accent">
                   <Plug className="h-5 w-5" />
                 </div>
                 <div>

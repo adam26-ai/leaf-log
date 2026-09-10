@@ -3,7 +3,7 @@ import { config } from "dotenv";
 config({ path: ".env.local", quiet: true });
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { makeRealisticFlight } from "./igc/make-igc";
-import { analysisState } from "@/lib/flights/analysis-state";
+import { analysisState, METRICS_VERSION } from "@/lib/flights/analysis-state";
 
 let ownerId: string | undefined;
 let prisma: typeof import("@/lib/prisma").prisma;
@@ -31,12 +31,12 @@ it("recovers an interrupted legacy repair and persists usable artifacts and XC c
   const worked = await Promise.all([processNextXcJob(), processNextXcJob()]);
   expect(worked.filter(Boolean)).toHaveLength(1);
   const saved = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id }, include: { data: true } });
-  expect(saved.metricsVersion).toBe(1);
+  expect(saved.metricsVersion).toBe(METRICS_VERSION);
   expect(saved.launchAltM).not.toBeNull();
   expect(saved.durationS).toBeGreaterThan(0);
   expect(saved.glider).toBe("Pilot's edited wing"); expect(saved.notes).toBe("Keep this note");
   expect(saved.data?.track).toMatchObject({ v: 1 });
-  expect(saved.data?.replay).not.toBeNull();
+  expect(saved.data?.replay).toMatchObject({ replay: { baroOffsetM: 5 } });
   expect(saved.xcScore).toMatchObject({ scoringVersion: 2, completedCategories: expect.arrayContaining(["open"]) });
   expect(saved.xcStartedAt).toBeNull();
   expect(["Best found", "Calculated", "Complete XC", "No eligible route"]).toContain(analysisState(saved).label);

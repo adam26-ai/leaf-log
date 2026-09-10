@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { BookOpen, Rss, Upload, Users } from "lucide-react";
+import { BookOpen, Rss, Plus, Users } from "lucide-react";
 import { AvatarMenu } from "@/components/avatar-menu";
 import type { Profile } from "@/lib/profile";
 
@@ -8,7 +8,7 @@ const navItems = [
   { href: "/logbook", label: "Logbook", icon: BookOpen },
   { href: "/feed", label: "Feed", icon: Rss },
   { href: "/friends", label: "Friends", icon: Users },
-  { href: "/upload", label: "Upload", icon: Upload },
+  { href: "/upload", label: "Add flight", icon: Plus },
 ];
 
 function NavWordmark() {

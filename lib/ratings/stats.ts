@@ -1,5 +1,6 @@
 import { siteKey, type FlightListItem } from "@/lib/flights/repo";
 import { SKILL_TAG_KEYS, type SkillTagKey } from "@/lib/ratings/skill-tags";
+import { isLogbookEntry } from "@/lib/flights/recording";
 
 /**
  * Sibling to `statsFrom` (lib/flights/repo.ts), not an extension of it — ratings
@@ -36,7 +37,7 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
 
   const totalAirtimeSeconds = ready.reduce((s, f) => s + (f.durationS ?? 0), 0);
   const soloAirtimeSeconds = ready.reduce(
-    (s, f) => s + (f.occupancy === "tandem" ? 0 : (f.durationS ?? 0)),
+    (s, f) => s + (f.occupancy === "tandem" || (isLogbookEntry(f) && f.occupancy !== "solo") ? 0 : (f.durationS ?? 0)),
     0,
   );
 
@@ -76,7 +77,7 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
     flyingDayCount,
     totalAirtimeSeconds,
     soloAirtimeSeconds,
-    soloAirtimeIsExact: true,
+    soloAirtimeIsExact: !ready.some(f => f.durationS === null || (isLogbookEntry(f) && !f.occupancy)),
     siteCount,
     gliderCount,
     skillTagCounts,

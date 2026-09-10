@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
-import { analysisState, XC_CATEGORIES } from "./analysis-state";
+import { analysisState, METRICS_VERSION, XC_CATEGORIES } from "./analysis-state";
 import { storedXcAnalysis, completedXcCategories, mergeXcResults } from "../igc/xc-result";
 import type { XcCandidate, XcScore } from "../igc/xc-types";
 
-const flight = { status: "ready", xcStatus: "ready", metricsVersion: 1, xcScore: null };
+const flight = { status: "ready", xcStatus: "ready", metricsVersion: METRICS_VERSION, xcScore: null };
 const empty = storedXcAnalysis({ score: null, completedCategories: [...XC_CATEGORIES], complete: true, emptyReason: "no_eligible_route" });
 it("distinguishes an evaluated empty result from legacy, corrupt and unfinished results", () => {
   expect(analysisState(flight).action).toBe("calculate");

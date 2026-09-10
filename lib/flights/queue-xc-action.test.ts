@@ -1,10 +1,11 @@
+import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import { beforeEach, expect, it, vi } from "vitest";
 import { queueFlightXc, queueMissingFlightAnalysis } from "./queue-xc-action";
 const mocks = vi.hoisted(() => ({ user: vi.fn(), update: vi.fn(), find: vi.fn(), list: vi.fn() }));
 vi.mock("@/lib/profile", () => ({ getCurrentUserId: mocks.user }));
 vi.mock("@/lib/prisma", () => ({ prisma: { flight: { updateMany: mocks.update, findFirst: mocks.find, findMany: mocks.list } } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-const flight = { id: "f", status: "ready", xcStatus: "unscored", metricsVersion: 1, xcScore: null };
+const flight = { id: "f", status: "ready", xcStatus: "unscored", metricsVersion: METRICS_VERSION, xcScore: null };
 beforeEach(() => { vi.resetAllMocks(); mocks.user.mockResolvedValue("owner"); mocks.find.mockResolvedValue(flight); mocks.update.mockResolvedValue({ count: 1 }); });
 it("rejects anonymous requests without reading or writing flights", async () => {
   mocks.user.mockResolvedValue(null);
@@ -16,7 +17,7 @@ it("rejects anonymous requests without reading or writing flights", async () => 
 it("scopes both the read and conditional update to the owner", async () => {
   expect(await queueFlightXc("f")).toEqual({});
   expect(mocks.find.mock.calls[0][0].where).toEqual({ id: "f", ownerId: "owner" });
-  expect(mocks.update.mock.calls[0][0].where).toEqual({ id: "f", ownerId: "owner", xcStatus: "unscored", metricsVersion: 1 });
+  expect(mocks.update.mock.calls[0][0].where).toEqual({ id: "f", ownerId: "owner", xcStatus: "unscored", metricsVersion: METRICS_VERSION });
   expect(mocks.update.mock.calls[0][0].data).not.toHaveProperty("xcScore");
 });
 it("treats an already running owned flight as success without requeueing", async () => {

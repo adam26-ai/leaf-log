@@ -42,7 +42,6 @@ export function FriendButton({
     return (
       <Button
         size="sm"
-        variant="leaf"
         disabled={!hydrated || pending}
         onClick={() => run("outgoing", () => sendFriendRequest(targetHandle))}
       >
@@ -82,7 +81,6 @@ export function FriendButton({
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          variant="leaf"
           disabled={!hydrated || pending}
           onClick={() => run("friends", () => acceptFriendRequest(targetHandle))}
         >

@@ -2,8 +2,9 @@
 
 import { FormEvent, useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, Cable, LoaderCircle } from "lucide-react";
+import { Cable, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SuccessMark } from "@/components/ui/success-status";
 import { claimDeviceAction } from "@/app/settings/devices/actions";
 
 /** One-tap "Connect this Leaf" confirm for the /activate landing (signed-in pilot). */
@@ -34,9 +35,7 @@ export function ActivateConfirm({
   if (connected) {
     return (
       <div className="flex flex-col items-center gap-4 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-leaf/15 text-leaf-strong">
-          <Check className="h-6 w-6" />
-        </div>
+        <SuccessMark size="lg" />
         <div className="flex flex-col gap-1">
           <p className="font-condensed text-lg font-bold text-ink">
             Your Leaf is connected

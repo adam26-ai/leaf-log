@@ -33,6 +33,7 @@ import { BoundaryEditor, type BoundaryEditorHandle } from "@/components/flight/b
 import { LocationCommunityDialog } from "@/components/flight/location-community-dialog";
 import { SiteAreaMap } from "@/components/flight/site-area-map";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 /**
  * Click-to-edit control for a flight's takeoff/landing site+zone label.
@@ -80,6 +81,7 @@ export function SiteNameControl({
   const [zoneName, setZoneName] = useState(initialZoneName);
   const [open, setOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
+  const hydrated = useHydrated();
   // The zone is a detail of the site, not a co-equal heading — rendered at a
   // fraction of the site's own font size (em-based, so it scales whether
   // this is the big flight-header h1 or the small landing-line span) and
@@ -102,6 +104,7 @@ export function SiteNameControl({
         <As>
           <button
             type="button"
+            disabled={!hydrated}
             onClick={() => setCommunityOpen(true)}
             className={cn(
               className,
@@ -133,6 +136,7 @@ export function SiteNameControl({
       <As>
         <button
           type="button"
+          disabled={!hydrated}
           onClick={() => setOpen(true)}
           className={cn(
             className,
