@@ -1,8 +1,10 @@
 # Manual flights and CSV logbook import
 
-Pilots can use **Add flight** for an IGC upload or one manual entry. **Settings → Logbook → Import an existing logbook** offers a CSV template, example, import review, and import history.
+Pilots can use **Add flight** for an IGC upload or one manual entry. **Settings → Logbook → Import** offers a CSV template, example, import review, and import history.
 
 Use one CSV row per flight. Date is required; other values can remain blank. Unknown duration still counts as a flight but adds no airtime, and the logbook identifies incomplete airtime totals. Reported XC distance needs a category: Open distance, FAI triangle, or Free triangle. It participates in personal bests for that category and carries a “reported” label. It does not create XC points or route geometry.
+
+Under **Site location → Choose on map**, choose **Flying site** (blue pin) or **Landing** (orange pin), then click to set that location. Both pins stay on the map, and each selection updates only its own coordinates. Search for a city, landmark, or flying site to move the map nearby before clicking the exact location. Search also includes the known sites visible to that pilot. Selecting a search result does not change the entry's coordinates or site name. Worldwide place search uses the existing `NEXT_PUBLIC_MAPTILER_KEY` through the browser's [MapTiler geocoding API](https://docs.maptiler.com/cloud/api/geocoding/); without a key, known-site search still works. Provider results are used only for map navigation and are not saved.
 
 The template uses YYYY-MM-DD dates and durations in minutes. Import can also interpret numeric month/day/year or day/month/year dates, decimal hours, seconds, and hours:minutes[:seconds]. Altitude, distance, and vertical speed have explicit unit choices, with optional per-row unit columns. Altitudes are above mean sea level. A takeoff time requires a time zone or UTC offset; ambiguous daylight-saving times require an explicit offset. Date-only entries never acquire a fabricated midnight takeoff.
 
@@ -19,7 +21,7 @@ Imports save atomically. Retries use a request ID, and an already-imported file 
 
 ## Exporting a logbook
 
-**Export logbook** is available on the logbook page and in **Settings → Logbook**. Choose **Download CSV** for all of the signed-in pilot's flights, including manual/imported entries, private flights, and flights still processing or failed. Current logbook filters do not limit exports.
+**Import** and **Export** are available side by side in **Settings → Logbook**. Choose **Export → Download CSV** for all of the signed-in pilot's flights, including manual/imported entries, private flights, and flights still processing or failed. Current logbook filters do not limit exports.
 
 The UTF-8 CSV uses the import template's columns and explicit metric units, plus flight IDs, visibility/source/status, UTC timestamps, exact duration in seconds, track/straight distances, recorded XC results, and flight/launch tags. Reported XC remains separate from recorded XC. Unknown values stay blank. Spreadsheet formula prefixes in text fields are escaped with an apostrophe. CSV import limits still apply when reimporting an export; export-only columns are ignored by the importer.
 

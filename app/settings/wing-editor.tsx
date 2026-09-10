@@ -47,7 +47,7 @@ export function WingEditor({ wings }: { wings: WingSummary[] }) {
   }}>
     <h2 className="flex items-center gap-2 font-condensed text-lg font-bold text-ink"><WingIcon aria-hidden="true" className="h-5 w-5" />Wings</h2>
     <p className="mt-1 text-sm text-gray-600">Select one wing to rename it, or several to merge them under one name.</p>
-    {!wings.length ? <p className="mt-4 text-sm text-gray-500">Wings will appear here after you upload flights.</p> : <fieldset disabled={saving} className="mt-4 min-w-0 space-y-4">
+    {!wings.length ? <p className="mt-4 text-sm text-gray-500">Wings will appear here after you add flights.</p> : <fieldset disabled={saving} className="mt-4 min-w-0 space-y-4">
       <legend className="sr-only">Edit logbook wings</legend>
       <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
         {wings.map(wing => <label key={JSON.stringify(wing.name)} className={`flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-0 hover:bg-gray-50 ${mergeSelection ? "has-[:checked]:bg-emergency-orange-light" : "has-[:checked]:bg-brand-blue/5"}`}>
@@ -72,7 +72,7 @@ export function WingEditor({ wings }: { wings: WingSummary[] }) {
           {merging && <p className="mt-1">These wings will appear as one wing in your logbook{existingTarget ? `, together with ${existingTarget.count} existing ${existingTarget.count === 1 ? "flight" : "flights"} named “${name}”` : ""}.</p>}
         </div>}
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" onClick={save} disabled={!name || !affected || saving} className={mergeSelection ? "bg-emergency-orange text-white hover:bg-emergency-orange-strong" : undefined} aria-describedby={name && affected ? `${id}-warning` : undefined}>{saving ? "Saving…" : mergeSelection ? "Merge Wings" : "Rename Wing"}</Button>
+          <Button type="button" size="sm" onClick={save} disabled={!name || !affected || saving} className={mergeSelection ? "bg-emergency-orange text-white hover:bg-emergency-orange-strong" : undefined} aria-describedby={name && affected ? `${id}-warning` : undefined}>{saving ? "Saving…" : mergeSelection ? "Merge wings" : "Rename wing"}</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => { setSelected([]); setTarget(""); setMessage(""); }}>Cancel</Button>
         </div>
       </div>}

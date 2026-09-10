@@ -16,7 +16,7 @@ it("requires its dedicated Save and keeps wing edits out of profile autosaving",
   render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null}
     avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} />} />);
   fireEvent.click(screen.getByRole("checkbox", { name: /Ozone Rush4/ }));
-  expect(screen.getByRole("button", { name: "Rename Wing" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Rename wing" })).toBeDisabled();
   expect(screen.getByText("Rename:")).toHaveClass("text-brand-blue-strong");
   fireEvent.change(screen.getByLabelText("Rename wing to:"), { target: { value: "Ozone Rush 4" } });
   fireEvent.click(screen.getByRole("checkbox", { name: /Rush 4, 3 flights/ }));
@@ -26,7 +26,7 @@ it("requires its dedicated Save and keeps wing edits out of profile autosaving",
   fireEvent.keyDown(screen.getByLabelText("Merged wing name:"), { key: "Enter" });
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
   expect(updateProfile).not.toHaveBeenCalled(); expect(saveWingNames).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Merge Wings" })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Merge wings" })); });
   expect(saveWingNames).toHaveBeenCalledWith({ sources: wings.slice(0, 2), target: "Ozone Rush 4" });
   expect(screen.getByText("Saved “Ozone Rush 4” for 5 flights.")).toHaveAttribute("role", "status");
   expect(updateProfile).not.toHaveBeenCalled();
@@ -37,6 +37,6 @@ it("previews a merge into an existing name and allows cancellation without savin
   fireEvent.change(screen.getByLabelText("Rename wing to:"), { target: { value: "Ozone Rush4" } });
   expect(screen.getByText(/together with 2 existing flights/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(screen.queryByRole("button", { name: "Rename Wing" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Rename wing" })).not.toBeInTheDocument();
   expect(saveWingNames).not.toHaveBeenCalled();
 });

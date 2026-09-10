@@ -10,7 +10,7 @@ it.each([
   const trophies: FlightTrophy[] = ranks.map((rank, index) => ({ rank, category: index ? "altitude" : "duration", value: index ? 1500 : 3600, approximate: false }));
   const { container } = render(<TrophyPill trophies={trophies} />);
   expect(container.querySelector("[data-medal]")).toHaveAttribute("data-medal", medal);
-  expect(screen.getByText("Personal Bests")).toBeInTheDocument();
+  expect(screen.getByText("Personal bests")).toBeInTheDocument();
   expect(screen.getByText("1h 00m")).toBeInTheDocument();
   expect(screen.getByText("1,500 m")).toBeInTheDocument();
 });

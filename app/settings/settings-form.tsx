@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExportLogbook } from "@/components/logbook/export-logbook";
 import { AvatarUploader } from "./avatar-uploader";
@@ -167,8 +169,12 @@ export function SettingsForm({
       {afterProfile}
       <Card className="flex flex-col gap-5 p-6">
       <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
-      <div className="flex justify-end"><ExportLogbook /></div>
-      <Link href="/settings/import" className="rounded-lg border border-gray-200 p-4 text-sm hover:border-brand-blue"><span className="block font-medium text-ink">Import an existing logbook</span><span className="mt-1 block text-xs text-gray-500">Download a CSV template, review your earlier flights, and bring them into Leaf Log.</span></Link>
+      <div className="grid grid-cols-2 gap-3">
+        <Button asChild variant="outline">
+          <Link href="/settings/import" aria-label="Import logbook"><Upload className="h-4 w-4" aria-hidden="true" />Import</Link>
+        </Button>
+        <ExportLogbook />
+      </div>
       <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
 
       <fieldset className="flex flex-col gap-2">
@@ -176,7 +182,7 @@ export function SettingsForm({
           Default privacy for new flights
         </legend>
         <span className="text-xs text-gray-500">
-          New uploads start at this visibility. You can change any flight later.
+          New flights start at this visibility. You can change any flight later.
         </span>
         <div className="mt-1 flex flex-col gap-2">
           {FLIGHT_VISIBILITIES.map((value) => (

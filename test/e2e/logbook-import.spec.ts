@@ -36,6 +36,8 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     await page.getByRole("button", { name: "Select Dates" }).click();
     await page.getByLabel("From", { exact: true }).fill("2099-01-01");
     await expect(page.getByText("No flights match these filters.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export logbook", exact: true })).toHaveCount(0);
+    await page.goto("/settings");
     await page.getByRole("button", { name: "Export logbook", exact: true }).click();
     const csvDownload = page.waitForEvent("download");
     await page.getByRole("link", { name: /Download CSV/ }).click();
@@ -54,6 +56,10 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     await expect(zipLink).toBeInViewport();
     for (const width of [320, 480, 639, 640, 768, 390]) {
       await page.setViewportSize({ width, height: 844 });
+      const importBox = await page.getByRole("link", { name: "Import logbook", exact: true }).boundingBox();
+      const exportBox = await page.getByRole("button", { name: "Export logbook", exact: true }).boundingBox();
+      expect(Math.abs(importBox!.y - exportBox!.y)).toBeLessThan(1);
+      expect(importBox!.x + importBox!.width).toBeLessThan(exportBox!.x);
       const box = await zipLink.boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.x + box!.width).toBeLessThanOrEqual(width);
@@ -83,6 +89,87 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
   } finally {
     await db.$disconnect();
   }
+});
+
+test("manual location search moves the map before choosing exact coordinates, including on mobile", async ({ page }) => {
+  await signUp(page);
+  await page.route("https://tiles.openfreemap.org/styles/liberty", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
+  let searches = 0;
+  await page.route("https://api.maptiler.com/geocoding/**", route => {
+    searches++;
+    return route.fulfill({ json: { features: [{ id: "annecy", place_name: "Annecy, Haute-Savoie, France", center: [6.13, 45.9], bbox: [6.06, 45.85, 6.17, 45.95] }] } });
+  });
+  await page.goto("/upload");
+  const introduction = page.locator("main > p");
+  await expect(introduction).toHaveText("Drop an .igc file from your Leaf (or any flight recorder). We'll parse it and build your flight page. Flights are private until you choose to share them.");
+  await expect(introduction.locator("code, span")).toHaveCount(0);
+  await expect(page.getByLabel("Flight date", { exact: true })).toBeEnabled();
+  await page.getByLabel("Flight date", { exact: true }).fill("2024-07-12");
+  await page.getByLabel("Flying site name", { exact: true }).fill("Memory Hill");
+  await page.getByText("Site location", { exact: true }).click();
+  await page.getByRole("button", { name: "Choose on map", exact: true }).click();
+  const search = page.getByRole("searchbox", { name: "Find a place" });
+  await search.fill("Annecy France");
+  expect(searches).toBe(0);
+  await search.press("Enter");
+  const result = page.getByRole("button", { name: "Annecy, Haute-Savoie, France", exact: true });
+  await expect(result).toBeVisible();
+  expect(searches).toBe(1);
+  await expect(page).toHaveURL(/\/upload$/);
+  for (const width of [320, 390, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await search.scrollIntoViewIfNeeded();
+    await expect(search).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Search", exact: true })).toBeInViewport();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await search.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "test-results/manual-place-search-mobile.png" });
+  await result.click();
+  const latitude = page.getByLabel("Site latitude", { exact: true });
+  const longitude = page.getByLabel("Site longitude", { exact: true });
+  await expect(latitude).toHaveValue("");
+  await expect(longitude).toHaveValue("");
+  await expect(page.getByLabel("Flying site name", { exact: true })).toHaveValue("Memory Hill");
+  const canvas = page.getByLabel("Flight site map", { exact: true }).locator("canvas");
+  // Let the 350 ms camera movement finish before picking (a click interrupts it).
+  await page.waitForTimeout(500);
+  await canvas.click();
+  expect(Number(await latitude.inputValue())).toBeCloseTo(45.9, 1);
+  expect(Number(await longitude.inputValue())).toBeCloseTo(6.115, 1);
+  await expect(page).toHaveURL(/\/upload$/);
+  const flyingLat = await latitude.inputValue();
+  const flyingLon = await longitude.inputValue();
+  await page.getByRole("button", { name: "Landing", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Landing", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await search.fill("Annecy France");
+  await search.press("Enter");
+  await result.click();
+  await page.waitForTimeout(500);
+  await canvas.click({ position: { x: 180, y: 180 } });
+  const landingLatitude = page.getByLabel("Landing latitude", { exact: true });
+  const landingLongitude = page.getByLabel("Landing longitude", { exact: true });
+  const landingLat = await landingLatitude.inputValue();
+  const landingLon = await landingLongitude.inputValue();
+  expect(Number(landingLat)).toBeCloseTo(45.9, 1);
+  expect(Number(landingLon)).toBeCloseTo(6.115, 1);
+  expect([landingLat, landingLon]).not.toEqual([flyingLat, flyingLon]);
+  await expect(latitude).toHaveValue(flyingLat);
+  await expect(longitude).toHaveValue(flyingLon);
+  await expect(page.getByRole("img", { name: "Flying site pin (blue)" })).toBeAttached();
+  await expect(page.getByRole("img", { name: "Landing pin (orange)" })).toBeAttached();
+  await canvas.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: "test-results/manual-landing-map-mobile.png" });
+  await page.getByRole("button", { name: "Add manual flight", exact: true }).click();
+  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
+  await page.getByRole("link", { name: "Edit flight", exact: true }).click();
+  await page.getByText("Site location", { exact: true }).click();
+  await expect(page.getByLabel("Site latitude", { exact: true })).toHaveValue(flyingLat);
+  await expect(page.getByLabel("Site longitude", { exact: true })).toHaveValue(flyingLon);
+  await expect(page.getByLabel("Landing latitude", { exact: true })).toHaveValue(landingLat);
+  await expect(page.getByLabel("Landing longitude", { exact: true })).toHaveValue(landingLon);
 });
 
 test("manual flight → edit → attach a reviewed IGC, keeping one entry", async ({ page }) => {
@@ -118,14 +205,14 @@ test("manual flight → edit → attach a reviewed IGC, keeping one entry", asyn
   await page.getByRole("button", { name: "Attach IGC and use recorded measurements" }).click();
   await expect(page).toHaveURL(flightUrl);
   await page.goto("/logbook");
-  await expect(page.getByRole("status").filter({ hasText: "1 of 1 flights" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "1 of 1 flight" })).toBeVisible();
 });
 
 test("CSV name matching, duplicate review, reported trophies, mobile layout and undo", async ({ page }) => {
   test.setTimeout(120000);
   await signUp(page);
   await page.goto("/settings");
-  await page.getByRole("link", { name: /Import an existing logbook/ }).click();
+  await page.getByRole("link", { name: "Import logbook", exact: true }).click();
   const csv = "date,duration_minutes,wing,site,xc_distance,xc_type\n2001-04-24,60,Rush4,Hill,25,open\n2001-04-24,60,Rush 4,Hill,25,open\n2001-04-25,,Rush4,Hill,30,FAI triangle";
   await expect(page.getByLabel("Choose logbook CSV")).toBeEnabled();
   await page.getByLabel("Choose logbook CSV").setInputFiles({ name: "history.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });

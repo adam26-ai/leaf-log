@@ -114,7 +114,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     const counts = new Map<string, number>();
     rows.forEach(row => counts.set(row.draft[field], (counts.get(row.draft[field]) ?? 0) + 1));
     const candidates = field === "glider" ? [...options.wings, ...counts.keys()] : [...options.siteNames, ...options.sites.map(site => site.name), ...counts.keys()];
-    return <details open={counts.size <= 15} className="rounded-lg border border-gray-200 p-4"><summary className="cursor-pointer font-medium">{title} <span className="text-sm font-normal text-gray-500">({counts.size} names)</span></summary>
+    return <details open={counts.size <= 15} className="rounded-lg border border-gray-200 p-4"><summary className="cursor-pointer font-medium">{title} <span className="text-sm font-normal text-gray-500">({counts.size} {counts.size === 1 ? "name" : "names"})</span></summary>
       <datalist id={`names-${field}`}>{[...new Set(candidates)].filter(Boolean).map(name => <option key={name} value={name} />)}</datalist>
       <div className="mt-4 flex flex-col gap-4">{[...counts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => {
         const key = `${field}:${name}`, match = matches[key] ?? { name, siteId: "" };
@@ -136,7 +136,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   }
   if (result) return <Card className="flex flex-col gap-4 p-6" aria-live="polite">
     <SuccessMark size="lg" /><h2 className="font-condensed text-2xl font-bold">{result.alreadyImported ? "This file was already imported" : "Your flights are in your logbook"}</h2>
-    <p className="text-sm text-gray-600">{result.importedCount} flights imported · {result.skippedCount} skipped.{result.alreadyImported && " No extra copies were added."}</p>
+    <p className="text-sm text-gray-600">{result.importedCount} {result.importedCount === 1 ? "flight" : "flights"} imported · {result.skippedCount} skipped.{result.alreadyImported && " No extra copies were added."}</p>
     <div className="flex flex-wrap gap-3"><Button asChild><Link href="/logbook">Open logbook</Link></Button><Button variant="outline" onClick={() => { setStep(0); setResult(null); }}>Import another CSV</Button></div>
   </Card>;
   return <div className="flex flex-col gap-5">
@@ -149,7 +149,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       <label className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-6 text-center text-sm"><span className="mb-3 block font-medium">Choose your completed CSV</span><input aria-label="Choose logbook CSV" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={pending || !hydrated} onChange={e => void openFile(e.target.files?.[0])} className="max-w-full text-xs" /><span className="mt-3 block text-xs text-gray-500">Up to 5,000 flights / 2 MB. Nothing is saved until you confirm the review.</span></label>
     </Card>}
     {step === 1 && table && <Card className="flex flex-col gap-5 p-5">
-      <div><h2 className="font-condensed text-xl font-bold">Match your columns</h2><p className="mt-1 break-all text-sm text-gray-500">{filename} · {table.rows.length} flights</p></div>
+      <div><h2 className="font-condensed text-xl font-bold">Match your columns</h2><p className="mt-1 break-all text-sm text-gray-500">{filename} · {table.rows.length} {table.rows.length === 1 ? "flight" : "flights"}</p></div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">Date format<select value={formats.dateFormat} onChange={e => setFormats({ ...formats, dateFormat: e.target.value as CsvOptions["dateFormat"] })} className={entryInputClass}><option value="ymd">Year-month-day (2020-06-15)</option><option value="mdy">Month/day/year (06/15/2020)</option><option value="dmy">Day/month/year (15/06/2020)</option></select></label>
         <label className="text-sm">Duration format<select value={formats.durationFormat} onChange={e => setFormats({ ...formats, durationFormat: e.target.value as CsvOptions["durationFormat"] })} className={entryInputClass}><option value="minutes">Minutes (95)</option><option value="hours">Decimal hours (1.5)</option><option value="clock">Hours:minutes[:seconds] (1:35)</option><option value="seconds">Seconds (5700)</option></select></label>
@@ -181,12 +181,12 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
         })}</div>
         {rows.length > 25 && <div className="flex items-center justify-between gap-3 text-sm"><Button variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page + 1} of {Math.ceil(rows.length / 25)}</span><Button variant="outline" disabled={(page + 1) * 25 >= rows.length} onClick={() => setPage(page + 1)}>Next</Button></div>}
       </>}
-      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review ? blocking ? `${blocking} flights need a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
+      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review ? blocking ? `${blocking} ${blocking === 1 ? "flight needs" : "flights need"} a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
       {review && !blocking && included.length > 0 && editing === null && <div className="flex flex-col gap-4 border-t border-gray-200 pt-5">
-        <p className="text-sm"><strong>{included.length} flights</strong> · {(totalMinutes / 60).toFixed(1)} hours{unknownDurations > 0 && ` + ${unknownDurations} ${unknownDurations === 1 ? "flight" : "flights"} with unknown duration`} · {rows.length - included.length} skipped</p>
+        <p className="text-sm"><strong>{included.length} {included.length === 1 ? "flight" : "flights"}</strong> · {(totalMinutes / 60).toFixed(1)} {(totalMinutes / 60).toFixed(1) === "1.0" ? "hour" : "hours"}{unknownDurations > 0 && ` + ${unknownDurations} ${unknownDurations === 1 ? "flight" : "flights"} with unknown duration`} · {rows.length - included.length} skipped</p>
         <label className="max-w-xs text-sm">Visibility for these flights<select value={visibility} disabled={pending} onChange={e => { setVisibility(e.target.value); setConfirm(false); }} className={entryInputClass}><option value="private">Private</option><option value="friends">Friends only</option><option value="public">Public</option></select></label>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirm} disabled={pending} onChange={e => setConfirm(e.target.checked)} className="mt-1" />I have checked the dates, units, and selected flights.</label>
-        <Button className="self-start" disabled={!confirm || pending} onClick={() => void commit()}>{pending ? "Importing…" : `Import ${included.length} flights`}</Button>
+        <Button className="self-start" disabled={!confirm || pending} onClick={() => void commit()}>{pending ? "Importing…" : `Import ${included.length} ${included.length === 1 ? "flight" : "flights"}`}</Button>
       </div>}
     </Card>}
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}

@@ -27,7 +27,7 @@ export function Dropzone() {
       f.name.toLowerCase().endsWith(".igc"),
     );
     if (list.length === 0) {
-      setResults([{ filename: "—", error: "Please choose .igc files" }]);
+      setResults([{ filename: "—", error: "Please choose .igc files." }]);
       return;
     }
     setBusy(true);
@@ -39,7 +39,7 @@ export function Dropzone() {
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
       const rs: UploadResult[] = data.results ?? [
-        { filename: "—", error: data.error ?? "Upload failed" },
+        { filename: "—", error: data.error ?? "Upload failed." },
       ];
       setResults(rs);
 
@@ -50,7 +50,7 @@ export function Dropzone() {
         router.refresh();
       }
     } catch {
-      setResults([{ filename: "—", error: "Upload failed — please try again" }]);
+      setResults([{ filename: "—", error: "Upload failed. Please try again." }]);
     } finally {
       setBusy(false);
     }
@@ -81,7 +81,7 @@ export function Dropzone() {
           {busy ? "Uploading…" : "Drop your IGC file here"}
         </p>
         <p className="text-gray-600">
-          or click to choose a file from your device
+          Or click to choose a file from your device.
         </p>
         <input
           ref={inputRef}

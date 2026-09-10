@@ -49,19 +49,28 @@ it("restores filters after leaving, deleting a flight, and remounting, scoped to
   expect(screen.getByRole("link", { name: "woodrat" })).toBeInTheDocument();
 });
 
-it("intersects local inclusive dates and trophy categories without reranking", () => {
-  render(<LogbookList flights={flights.map((flight, index) => ({ ...flight, takeoffAt: new Date(`2026-09-${index ? "11" : "10"}T01:00:00Z`), localUtcOffsetMinutes: -420 }))} trophies={{ unknown: [{ category: "altitude", rank: 2, value: 1500, approximate: false }] }} />);
-  fireEvent.click(screen.getByRole("button", { name: "Select Dates" }));
-  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-09" } });
-  fireEvent.change(screen.getByLabelText("Until"), { target: { value: "2026-09-09" } });
-  expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Select Trophies" }));
-  fireEvent.click(screen.getByLabelText("Highest altitude (MSL)"));
+it("toggles trophy flights while preserving other filters", () => {
+  render(<LogbookList flights={flights} trophies={{ unknown: [{ category: "altitude", rank: 2, value: 1500, approximate: false }] }} />);
+  const toggle = screen.getByRole("button", { name: "Trophies" });
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getAllByRole("link")).toHaveLength(1);
   expect(screen.getByRole("link", { name: "unknown" })).toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText("Longest duration"));
-  expect(screen.getByText("No flights match these filters.")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(screen.queryByRole("group", { name: "Trophies choices" })).not.toBeInTheDocument();
+  fireEvent.click(toggle);
   expect(screen.getAllByRole("link")).toHaveLength(2);
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("button", { name: "Select Wings" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Wing A (1h 00m)" }));
+  fireEvent.click(toggle);
+  expect(screen.getByText("No flights match these filters.")).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.getByRole("link", { name: "woodrat" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "unknown" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(screen.getByText("2 of 2 flights")).toBeInTheDocument();
 });
 
 it("loads shared flights only when needed and restores a selected friend", async () => {
@@ -74,12 +83,37 @@ it("loads shared flights only when needed and restores a selected friend", async
   expect(fetch).toHaveBeenCalledOnce();
 });
 
-it("keeps the only friend selected instead of treating that selection as all flights", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ friends: [{ key: "alice", label: "Alice", flightIds: ["unknown"] }] }) })));
-  render(<LogbookList flights={flights} trophies={{}} />);
-  fireEvent.click(screen.getByRole("button", { name: "Select Friends" }));
+it("filters by selected friends and restores all flights after unchecking the last friend", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ friends: [{ key: "alice", label: "Alice", flightIds: ["unknown"] }, { key: "ben", label: "Ben", flightIds: ["woodrat"] }] }) })));
+  render(<LogbookList flights={[...flights, { ...flights[0], id: "solo" }]} trophies={{}} />);
+  const trigger = screen.getByRole("button", { name: "Select Friends" });
+  fireEvent.click(trigger);
   fireEvent.click(await screen.findByRole("checkbox", { name: "Alice" }));
+  expect(screen.getAllByRole("link")).toHaveLength(1);
   expect(screen.getByRole("link", { name: "unknown" })).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Select Friends" })).toHaveClass("bg-brand-blue");
+  expect(trigger).toHaveClass("bg-brand-blue");
+  fireEvent.click(screen.getByRole("checkbox", { name: "Ben" }));
+  expect(screen.getAllByRole("link")).toHaveLength(2);
+  expect(screen.queryByRole("link", { name: "solo" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Alice" }));
+  expect(screen.getAllByRole("link")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Ben" }));
+  expect(screen.getAllByRole("link")).toHaveLength(3);
+  expect(trigger).not.toHaveClass("bg-brand-blue");
+  expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: "No shared flights" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Alice" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+  expect(screen.getAllByRole("link")).toHaveLength(3);
+});
+
+it("restores retired empty friend and no-trophy selections as inactive filters", () => {
+  sessionStorage.setItem("leaf-logbook-filters:v1:pilot", JSON.stringify({ friends: ["__no_shared_flights__"], trophies: ["none"] }));
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  render(<LogbookList ownerId="pilot" flights={flights} trophies={{}} />);
+  expect(screen.getAllByRole("link")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Trophies" })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
 });

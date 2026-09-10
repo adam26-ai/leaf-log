@@ -23,7 +23,7 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
       <Trophy className="h-3.5 w-3.5" />{multiple ? <Plus className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
     </span>
     <span role="tooltip" className="pointer-events-none absolute right-0 bottom-full z-40 mb-2 hidden w-72 max-w-[85vw] overflow-hidden rounded-xl border border-white/10 bg-gray-900 text-left text-xs font-normal text-white shadow-xl group-hover/trophy:block group-focus/trophy:block">
-      <span className="block border-b border-white/15 px-3 py-2 font-condensed text-lg font-bold tracking-wide">Personal Bests</span>
+      <span className="block border-b border-white/15 px-3 py-2 font-condensed text-lg font-bold tracking-wide">Personal bests</span>
       <span className="block px-3 py-1">
         {records.map(record => {
           const CategoryIcon = icons[record.category];

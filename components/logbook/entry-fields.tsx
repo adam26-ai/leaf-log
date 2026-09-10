@@ -97,7 +97,11 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
       <p className="my-3 text-xs text-gray-500">A known site fills this in automatically. For an unlisted site, enter coordinates or choose a point on the map.</p>
       <div className="grid grid-cols-2 gap-3">{input("takeoffLat", "Site latitude", "number", { min: -90, max: 90 })}{input("takeoffLon", "Site longitude", "number", { min: -180, max: 180 })}</div>
       <button type="button" onClick={() => setShowMap(!showMap)} className="my-3 text-sm text-brand-blue-strong underline">{showMap ? "Hide map" : "Choose on map"}</button>
-      {showMap && <EntryMap lat={value.takeoffLat ? Number(value.takeoffLat) : null} lon={value.takeoffLon ? Number(value.takeoffLon) : null} onPick={(lat, lon) => set({ takeoffSiteId: "", takeoffLat: String(lat), takeoffLon: String(lon) })} />}
+      {showMap && <EntryMap sites={options.sites}
+        lat={value.takeoffLat ? Number(value.takeoffLat) : null} lon={value.takeoffLon ? Number(value.takeoffLon) : null}
+        landingLat={value.landingLat ? Number(value.landingLat) : null} landingLon={value.landingLon ? Number(value.landingLon) : null}
+        onPick={(lat, lon) => set({ takeoffSiteId: "", takeoffLat: String(lat), takeoffLon: String(lon) })}
+        onPickLanding={(lat, lon) => set({ landingSiteId: "", landingLat: String(lat), landingLon: String(lon) })} />}
       <div className="mt-3 grid grid-cols-2 gap-3">{input("landingLat", "Landing latitude", "number", { min: -90, max: 90 })}{input("landingLon", "Landing longitude", "number", { min: -180, max: 180 })}</div>
     </details>
     <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-700">{ENTRY_FIELDS.notes}

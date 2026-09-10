@@ -155,11 +155,11 @@ export function FriendSearch() {
           className="absolute z-20 mt-2 max-h-96 w-full overflow-y-auto rounded-md border border-gray-200 bg-paper shadow-lg ring-1 ring-black/5"
         >
           {loading && (
-            <div className="px-4 py-3 text-sm text-gray-600">Searching...</div>
+            <div className="px-4 py-3 text-sm text-gray-600">Searching…</div>
           )}
 
           {!loading && hasSearched && results.length === 0 && (
-            <div className="px-4 py-3 text-sm text-gray-600">No pilots found</div>
+            <div className="px-4 py-3 text-sm text-gray-600">No pilots found.</div>
           )}
 
           {!loading && results.length > 0 && (

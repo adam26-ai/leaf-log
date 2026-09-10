@@ -14,8 +14,7 @@ export default async function UploadPage() {
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Add flight</SectionHeading>
         <p className="mt-4 mb-8 text-gray-600">
-          Drop an <span className="whitespace-nowrap"><span className="font-mono text-ink">.igc</span>{" file"}</span> from your
-          Leaf (or any flight recorder). We&apos;ll parse it and build your flight
+          Drop an .igc file from your Leaf (or any flight recorder). We&apos;ll parse it and build your flight
           page. Flights are private until you choose to share them.
         </p>
         <Dropzone />

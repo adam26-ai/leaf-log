@@ -38,7 +38,7 @@ export default async function EditFlightPage({ params }: { params: Promise<{ id:
             <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </Link>
           <div className="flex flex-col gap-2">
-            <h1 className="font-condensed font-bold tracking-tight text-ink">Edit Flight</h1>
+            <h1 className="font-condensed font-bold tracking-tight text-ink">Edit flight</h1>
             <AccentBar className="bg-[var(--replay-accent)]" />
           </div>
         </div>
