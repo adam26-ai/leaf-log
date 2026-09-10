@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { ExportLogbook } from "@/components/logbook/export-logbook";
 import { AvatarUploader } from "./avatar-uploader";
 import {
   FLIGHT_VISIBILITIES,
@@ -166,6 +167,7 @@ export function SettingsForm({
       {afterProfile}
       <Card className="flex flex-col gap-5 p-6">
       <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
+      <div className="flex justify-end"><ExportLogbook /></div>
       <Link href="/settings/import" className="rounded-lg border border-gray-200 p-4 text-sm hover:border-brand-blue"><span className="block font-medium text-ink">Import an existing logbook</span><span className="mt-1 block text-xs text-gray-500">Download a CSV template, review your earlier flights, and bring them into Leaf Log.</span></Link>
       <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
 

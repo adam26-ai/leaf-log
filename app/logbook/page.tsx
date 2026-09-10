@@ -11,6 +11,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { LogbookList } from "@/components/logbook/logbook-list";
 import { flightTrophies } from "@/lib/flights/trophies";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
+import { ExportLogbook } from "@/components/logbook/export-logbook";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
@@ -45,9 +46,12 @@ export default async function LogbookPage() {
               {friendCount} {friendCount === 1 ? "friend" : "friends"}
             </p>
           </div>
-          <Button asChild size="sm">
-            <Link href="/upload">Add flight</Link>
-          </Button>
+          <div className="flex w-full items-center gap-3 sm:w-auto">
+            <ExportLogbook align="start" />
+            <Button asChild size="sm">
+              <Link href="/upload">Add flight</Link>
+            </Button>
+          </div>
         </div>
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
 

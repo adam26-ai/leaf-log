@@ -20,7 +20,70 @@ async function signUp(page: Page) {
   await page.locator('input[name="display_name"]').fill("Historic Pilot");
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/);
+  return handle;
 }
+
+test("exports the full logbook as CSV and original IGC ZIP from desktop and mobile", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  const raw = Buffer.from("AXXX\r\nHFDTE120626\r\nGOriginal signature\r\n");
+  try {
+    const profile = await db.profile.findUniqueOrThrow({ where: { handle } });
+    await db.flight.create({ data: { ownerId: profile.id, status: "failed", flightDate: new Date("2026-06-12"), data: { create: { rawIgc: raw } } } });
+    await db.flight.create({ data: { ownerId: profile.id, recordingKind: "logbook", source: "manual_entry", status: "ready", flightDate: new Date("2000-01-01"), notes: "Manual flight" } });
+    await page.reload();
+    await page.waitForFunction(id => sessionStorage.getItem(`leaf-logbook-filters:v1:${id}`) !== null, profile.id);
+    await page.getByRole("button", { name: "Select Dates" }).click();
+    await page.getByLabel("From", { exact: true }).fill("2099-01-01");
+    await expect(page.getByText("No flights match these filters.")).toBeVisible();
+    await page.getByRole("button", { name: "Export logbook", exact: true }).click();
+    const csvDownload = page.waitForEvent("download");
+    await page.getByRole("link", { name: /Download CSV/ }).click();
+    const csv = await csvDownload;
+    expect(csv.suggestedFilename()).toMatch(/^leaf-log-logbook-.*\.csv$/);
+    expect(await csv.failure()).toBeNull();
+    const text = readFileSync((await csv.path())!, "utf8");
+    expect(text).toContain('"igc_filename"');
+    expect(text).toContain("Manual flight");
+    expect(text).toContain("flight-2026-06-12-");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Export logbook", exact: true })).toBeFocused();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Export logbook", exact: true }).click();
+    const zipLink = page.getByRole("link", { name: /Download IGC ZIP/ });
+    await expect(zipLink).toBeInViewport();
+    for (const width of [320, 480, 639, 640, 768, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const box = await zipLink.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+    await page.screenshot({ path: "test-results/logbook-export-mobile.png", fullPage: true });
+    const zipDownload = page.waitForEvent("download");
+    await zipLink.click();
+    const zip = await zipDownload;
+    expect(zip.suggestedFilename()).toMatch(/^leaf-log-igc-.*\.zip$/);
+    expect(await zip.failure()).toBeNull();
+    const { ZipReader, Uint8ArrayReader, Uint8ArrayWriter } = await import("@zip.js/zip.js");
+    const reader = new ZipReader(new Uint8ArrayReader(readFileSync((await zip.path())!)), { useWebWorkers: false });
+    const entries = await reader.getEntries();
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    if (entry.directory) throw new Error("Unexpected directory");
+    expect(Buffer.from(await entry.getData(new Uint8ArrayWriter(), { checkSignature: true }))).toEqual(raw);
+    expect(text).toContain(entry.filename);
+    await reader.close();
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Export logbook", exact: true }).click();
+    const settingsCsv = page.getByRole("link", { name: /Download CSV/ });
+    await expect(settingsCsv).toBeVisible();
+    const settingsBox = await settingsCsv.boundingBox();
+    expect(settingsBox!.x).toBeGreaterThanOrEqual(0);
+    expect(settingsBox!.x + settingsBox!.width).toBeLessThanOrEqual(390);
+  } finally {
+    await db.$disconnect();
+  }
+});
 
 test("manual flight → edit → attach a reviewed IGC, keeping one entry", async ({ page }) => {
   await signUp(page);

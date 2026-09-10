@@ -17,6 +17,14 @@ Review happens before saving:
 
 Imports save atomically. Retries use a request ID, and an already-imported file is recognized by its content hash. A receipt tracks the batch and original update timestamps. Undo removes unchanged entries, retaining flights with edits, attached recordings, photos, kudos, or instructor activity. Individual flights can always be removed through their normal edit page.
 
+## Exporting a logbook
+
+**Export logbook** is available on the logbook page and in **Settings → Logbook**. Choose **Download CSV** for all of the signed-in pilot's flights, including manual/imported entries, private flights, and flights still processing or failed. Current logbook filters do not limit exports.
+
+The UTF-8 CSV uses the import template's columns and explicit metric units, plus flight IDs, visibility/source/status, UTC timestamps, exact duration in seconds, track/straight distances, recorded XC results, and flight/launch tags. Reported XC remains separate from recorded XC. Unknown values stay blank. Spreadsheet formula prefixes in text fields are escaped with an apostrophe. CSV import limits still apply when reimporting an export; export-only columns are ignored by the importer.
+
+The `igc_filename` column matches the filename inside **Download IGC ZIP** and individual IGC downloads. Names use the flight's local date and unique ID, because original upload filenames are not stored. Flights without stored recordings have a blank filename and are omitted from the ZIP. Original bytes, including recorder signatures, are preserved even for unreadable flights. An empty logbook produces a header-only CSV and an empty ZIP. Downloads are private, uncached, and streamed; recordings are loaded one at a time.
+
 ## Recorded and unrecorded flights
 
 `Flight.recordingKind` distinguishes `igc` from `logbook`; `source` separately records web upload, device push, manual entry, or CSV import. Existing flights remain `igc`. Logbook entries have no `FlightData`, no IGC hash, and `xcStatus: not_recorded`. Ready entries participate in totals and personal bests. Replay companions, background scoring, replay generation, and bulk IGC reprocessing exclude unrecorded entries.

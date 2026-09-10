@@ -488,6 +488,17 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
   return resolveLocationFields(rows, ownerId);
 }
 
+/** Export every status, with live authorized location names and no heavy payloads. */
+export async function listOwnFlightsForExport(ownerId: string, afterId?: string) {
+  const rows = await prisma.flight.findMany({
+    where: { ownerId, ...(afterId ? { id: { gt: afterId } } : {}) },
+    orderBy: { id: "asc" },
+    take: 250,
+    include: { data: { select: { flightId: true } } },
+  });
+  return resolveLocationFields(rows, ownerId);
+}
+
 /** Rank complete personal histories, returning medals only for already-authorized rows.
  * Private record identities and values never leave this server-side calculation.
  */
