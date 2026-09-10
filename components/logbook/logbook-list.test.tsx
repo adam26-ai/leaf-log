@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { FlightListItem } from "@/lib/flights/repo";
 import { LogbookList } from "./logbook-list";
 
-vi.mock("./flight-row", () => ({ FlightRow: ({ flight }: { flight: FlightListItem }) => <a href={`/flights/${flight.id}`}>{flight.id}</a> }));
+vi.mock("./flight-row", () => ({ FlightRow: ({ flight, friendFlightsFound }: { flight: FlightListItem; friendFlightsFound?: boolean }) => <a href={`/flights/${flight.id}`} data-friend-flights={friendFlightsFound || undefined}>{flight.id}</a> }));
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); });
 const flights = [
   { id: "unknown", status: "ready", takeoffSiteId: null, takeoffSiteName: null, glider: "Wing A", durationS: 3600 },
@@ -83,6 +83,15 @@ it("loads shared flights only when needed and restores a selected friend", async
   expect(fetch).toHaveBeenCalledOnce();
 });
 
+it("loads companion matches for the logbook and marks flights shared with friends", async () => {
+  const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ friends: [{ key: "alice", label: "Alice", flightIds: ["woodrat"] }] }) }));
+  vi.stubGlobal("fetch", fetch);
+  render(<LogbookList ownerId="pilot" flights={flights} trophies={{}} />);
+  await waitFor(() => expect(screen.getByRole("link", { name: "woodrat" })).toHaveAttribute("data-friend-flights", "true"));
+  expect(screen.getByRole("link", { name: "unknown" })).not.toHaveAttribute("data-friend-flights");
+  expect(fetch).toHaveBeenCalledOnce();
+});
+
 it("filters by selected friends and restores all flights after unchecking the last friend", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ friends: [{ key: "alice", label: "Alice", flightIds: ["unknown"] }, { key: "ben", label: "Ben", flightIds: ["woodrat"] }] }) })));
   render(<LogbookList flights={[...flights, { ...flights[0], id: "solo" }]} trophies={{}} />);
@@ -107,13 +116,13 @@ it("filters by selected friends and restores all flights after unchecking the la
   expect(screen.getAllByRole("link")).toHaveLength(3);
 });
 
-it("restores retired empty friend and no-trophy selections as inactive filters", () => {
+it("restores retired empty friend and no-trophy selections as inactive filters", async () => {
   sessionStorage.setItem("leaf-logbook-filters:v1:pilot", JSON.stringify({ friends: ["__no_shared_flights__"], trophies: ["none"] }));
-  const fetch = vi.fn();
+  const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ friends: [] }) }));
   vi.stubGlobal("fetch", fetch);
   render(<LogbookList ownerId="pilot" flights={flights} trophies={{}} />);
   expect(screen.getAllByRole("link")).toHaveLength(2);
   expect(screen.getByRole("button", { name: "Trophies" })).toHaveAttribute("aria-pressed", "false");
   expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
-  expect(fetch).not.toHaveBeenCalled();
+  await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
 });

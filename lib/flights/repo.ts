@@ -514,7 +514,7 @@ export async function trophiesForVisibleFlights(flights: { id: string; ownerId: 
   return Object.fromEntries(flights.map(flight => [flight.id, ranked[flight.id] ?? []]));
 }
 
-/** Lazy logbook filter: accepted friends, readable recordings, positive airtime
+/** Logbook companion discovery: accepted friends, readable recordings, positive airtime
  * overlap, and the same 5km route-proximity check used by companion discovery.
  * Only own flight IDs are returned; no companion tracks or private metadata.
  */

@@ -75,7 +75,8 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
     if (!storageKey || restoredKey !== storageKey) return;
     try { sessionStorage.setItem(storageKey, JSON.stringify(filters)); } catch { /* Filtering still works without storage. */ }
   }, [filters, storageKey, restoredKey]);
-  const needsFriends = openChoices === "friends" || Boolean(filters.friends?.length);
+  // Companion matches now power both the Friends filter and the per-flight badge.
+  const needsFriends = Boolean(ownerId) || openChoices === "friends" || Boolean(filters.friends?.length);
   useEffect(() => {
     if (!needsFriends || friends !== null) return;
     const controller = new AbortController();
@@ -87,6 +88,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   }, [needsFriends, friends, retryFriends]);
   const update = (patch: Partial<LogbookFilters>) => setFilters(current => ({ ...current, ...patch }));
   const friendFlightIds = new Set(friends?.filter(friend => filters.friends?.includes(friend.key)).flatMap(friend => friend.flightIds));
+  const sharedFlightIds = new Set(friends?.flatMap(friend => friend.flightIds));
   const visible = flights.filter(f =>
     (filters.sites === null || filters.sites.includes(siteKey(f))) &&
     (filters.wings === null || filters.wings.includes(wingKey(f))) &&
@@ -121,7 +123,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
     </div>
     <p className="mt-3 text-xs text-gray-500" role="status">{visible.length} of {flights.length} {flights.length === 1 ? "flight" : "flights"}</p>
     <ul className="mt-3 flex flex-col gap-1">
-      {visible.map(f => <li key={f.id}><FlightRow flight={f} compact showAnalysis trophies={trophies[f.id] ?? []} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} /></li>)}
+      {visible.map(f => <li key={f.id}><FlightRow flight={f} compact showAnalysis friendFlightsFound={sharedFlightIds.has(f.id)} trophies={trophies[f.id] ?? []} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} /></li>)}
     </ul>
     {!visible.length && <p className="py-8 text-center text-gray-500">{Boolean(filters.friends?.length) && friends === null ? friendError ? "Could not load shared flights. Open Friends to retry." : "Finding shared flights…" : "No flights match these filters."}</p>}
   </>;
