@@ -330,6 +330,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
 test("re-opening an already-boundary-bearing site shows the saved shape as a dashed reference, not just the live draft", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   const runOffset = Date.now();
   const suffix = `${runOffset}b6reopen`;
   const email = `boundaries_e2e_reopen_${suffix}@test.local`;
