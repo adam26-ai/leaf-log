@@ -129,14 +129,14 @@ browser enables software WebGL for map interactions on machines without a GPU.
 
 ## Sites data
 
-Named-site reverse lookup is a bounding-box + haversine search over the `Site`
-table. Sites are **fully community-driven** (SPRINT-004) — a pilot names their
-own unmatched takeoff/landing as public or private directly on the flight page;
-there is no curated seed. `prisma/seed.ts` is kept as a no-op entry point for
-any future non-site seed data. `Site.source`/`license` still support a `manual`/
-`"curated"` value in the schema (unused today) in case a licensed gazetteer
-import is ever added later — `scripts/backfill-sites.ts` is the tool that would
-retroactively name existing flights against it.
+Named-site reverse lookup is a boundary-aware geographic search over the `Site`
+table. Sites are fully community-driven: pilots can create and map one in
+**Settings → Sites** without an IGC file, or select/create one from a flight.
+Creating, renaming, moving, or redrawing a site never silently changes other
+flight assignments. The management screen previews coordinate matches and
+requires an explicit selection before updating any historical flight. If
+multiple sites contain a new IGC endpoint, Leaf Log leaves it for review rather
+than silently choosing the nearest candidate.
 
 ## Deployment (Railway)
 

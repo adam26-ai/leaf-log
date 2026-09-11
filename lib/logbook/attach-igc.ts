@@ -7,8 +7,9 @@ import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { buildReplayArtifact } from "@/lib/igc/replay-artifact";
 import { sha256Hex } from "@/lib/ingest/dedupe";
 import { PARSER_VERSION } from "@/lib/ingest/ingest-flight";
-import { findLocation } from "@/lib/sites/lookup";
+import { findLocationDecision } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
+import { assignmentPatch, type SiteAssignment } from "@/lib/sites/assignment";
 import { EntryError } from "./service";
 import { duplicateKey } from "./duplicates";
 
@@ -35,10 +36,12 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
       takeoffAt: flight.takeoffAt?.toISOString() ?? null, landingAt: flight.landingAt?.toISOString() ?? null,
       takeoffLat: flight.takeoffLat, takeoffLon: flight.takeoffLon, landingLat: flight.landingLat, landingLon: flight.landingLon }, recorded };
   if (expectedHash !== hash || expectedUpdatedAt !== flight.updatedAt.toISOString()) throw new EntryError("The flight or selected file changed. Review the comparison again before attaching.", 409);
-  const [takeoffMatch, landingMatch] = await Promise.all([
-    findLocation(prisma, { ...metrics.takeoff, kind: "takeoff", viewerId: ownerId }),
-    findLocation(prisma, { ...metrics.landing, kind: "landing", viewerId: ownerId }),
+  const [takeoffDecision, landingDecision] = await Promise.all([
+    findLocationDecision(prisma, { ...metrics.takeoff, kind: "takeoff", viewerId: ownerId }),
+    findLocationDecision(prisma, { ...metrics.landing, kind: "landing", viewerId: ownerId }),
   ]);
+  const takeoffMatch = takeoffDecision.match;
+  const landingMatch = landingDecision.match;
   try {
     return await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
@@ -50,7 +53,18 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
       const patches = await Promise.all((["takeoff", "landing"] as const).map(async endpoint => {
         const match = endpoint === "takeoff" ? takeoffMatch : landingMatch;
         const id = current[`${endpoint}SiteId`];
-        if (id || !current[`${endpoint}SiteName`]) return resolveLocationCache(tx, id ?? match?.site.id ?? null, id ? null : match?.zone?.id ?? null, endpoint, ownerId);
+        if (id || !current[`${endpoint}SiteName`]) {
+          const patch = await resolveLocationCache(tx, id ?? match?.site.id ?? null, id ? null : match?.zone?.id ?? null, endpoint, ownerId);
+          const decision = endpoint === "takeoff" ? takeoffDecision : landingDecision;
+          const assignment = id
+            ? current[`${endpoint}SiteAssignment`] as SiteAssignment
+            : decision.ambiguous
+              ? "needs_review"
+              : patch[`${endpoint}SiteId`]
+              ? "auto_matched"
+              : "unassigned";
+          return { ...patch, ...assignmentPatch(endpoint, assignment) };
+        }
         return {};
       }));
       const updated = await tx.flight.updateMany({ where: { id: flightId, ownerId, recordingKind: "logbook", updatedAt: new Date(expectedUpdatedAt!) }, data: {

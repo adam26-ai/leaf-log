@@ -152,8 +152,8 @@ boundary-bearing rows and asserting identical results.
 
 - A boundary **replaces** the circle for the row that has one (never a
   union) — `lib/sites/geo.ts`'s `locationMatches` is the single composition
-  point for "boundary if present, else circle," used by `findLocation`,
-  `suggestNearbyLocations`, and `reassociateOwnFlights` alike, so the rule
+  point for "boundary if present, else circle," used by automatic lookup,
+  `suggestNearbyLocations`, and explicit site-management previews alike, so the rule
   can't drift between call sites. Every matched row — circle or boundary —
   gets a real `distanceM` (haversine to its own anchor), so ranking never
   needed a "boundary beats circle" tier; a 3 km ridge boundary intentionally
@@ -174,10 +174,10 @@ boundary-bearing rows and asserting identical results.
   site's owner via the same `findZoneEditableBy` SPRINT-005 established —
   and, unlike rename/delete, is **never** refused because another pilot's
   flight references the row (a boundary edit destroys nothing; the worst
-  case is a future flight matching differently). A widened boundary
-  retroactively re-associates the drawer's **own** previously-unmatched
-  flights via the existing `reassociateOwnFlights`, capped and logged the
-  same way SPRINT-005's zone-naming flow already is.
+  case is a future flight matching differently). Saving, clearing, or
+  widening a boundary never reassigns an existing flight. The owner can
+  preview coordinate matches in **Settings → Sites** and explicitly select
+  the exact flight endpoints to assign.
 - **The owner-scoped picker** (`listOwnedSitesForBoundaryEditing`/
   `listOwnedZonesForBoundaryEditing`) is the sprint's one deliberate
   departure from "never accept an id from the client": it lets a pilot edit
@@ -188,6 +188,13 @@ boundary-bearing rows and asserting identical results.
   picker-sourced id is re-verified against ownership from scratch before
   any read or write trusts it, the same posture `findZoneEditableBy`
   already has for the bound-flight path.
+- **Site anchors are independent from flight fixes.** A pilot can create a
+  site without any flight, move its anchor, and then draw its boundary.
+  Moving the anchor or assigning the site does not overwrite the takeoff or
+  landing coordinates stored on IGC, manual, or CSV flights.
+- If more than one visible site/zone contains an endpoint, automatic ingest
+  stores no winner and marks the endpoint `needs_review`. The pilot chooses
+  among the candidates; proximity is suggestion ordering, not identity.
 - A `SITE_BOUNDARY_MATCHING=off` environment flag (read fresh in
   `lib/sites/lookup.ts`, not cached) reverts every row to circle-only
   matching with no data change and no redeploy — a rollback lever for a

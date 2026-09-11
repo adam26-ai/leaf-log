@@ -14,6 +14,7 @@ export type AuditAction =
   | "create"
   | "published"
   | "renamed"
+  | "moved"
   | "boundary_set"
   | "boundary_cleared"
   | "merge";

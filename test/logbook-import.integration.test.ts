@@ -108,8 +108,8 @@ it("resolves chosen sites, rejects someone else's private sites, and hides priva
   await expect(saveLogbookEntry(owners[1], request)).rejects.toMatchObject({ status: 409 });
   const result = await saveLogbookEntry(owners[0], { ...request, visibility: "public" });
   if (!("id" in result)) throw new Error("Unexpected duplicate");
-  expect(await getFlightForViewer(result.id, owners[0])).toMatchObject({ takeoffSiteName: site.name, takeoffLat: 37, takeoffLon: -122 });
-  expect(await prisma.flight.findUnique({ where: result })).toMatchObject({ takeoffSiteName: null });
+  expect(await getFlightForViewer(result.id, owners[0])).toMatchObject({ takeoffSiteName: site.name, takeoffLat: 0, takeoffLon: 0 });
+  expect(await prisma.flight.findUnique({ where: result })).toMatchObject({ takeoffSiteName: null, takeoffLat: 0, takeoffLon: 0, takeoffSiteAssignment: "user_selected" });
   expect(await getFlightForViewer(result.id, null)).toMatchObject({ takeoffSiteName: null, takeoffLat: null, takeoffLon: null });
   await prisma.site.delete({ where: { id: site.id } });
 });

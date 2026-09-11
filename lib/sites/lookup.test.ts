@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import { config } from "dotenv";
 config({ path: ".env.local" });
-import { findLocation } from "./lookup";
+import { findLocation, findLocationDecision } from "./lookup";
 import { validateBoundary, boundaryColumns } from "./boundary";
 
 if (!process.env.DATABASE_URL) {
@@ -596,7 +596,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(ownerMatch?.zone).toBeNull();
   });
 
-  it("[gate-on legacy] a zone under a different, farther site can beat a nearer bare site — accepted collision, tested", async () => {
+  it("[gate-on legacy] overlapping sites and zones are ambiguous instead of silently choosing one", async () => {
     process.env.ZONES_ENABLED = "true";
     const nearSite = await createSite({
       lat: -65,
@@ -623,18 +623,17 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       ownerId: null,
     });
 
-    // Query from a point 50 m from nearSite's own centre — well inside
-    // nearSite's bare-site radius, but farZone (≈240 m away) is still
-    // within the zone radius and wins because zones always beat sites.
-    const match = await findLocation(prisma, {
+    // Both the near site and the farther site's zone plausibly contain the
+    // point. Geometry can nominate them, but must not choose for the pilot.
+    const decision = await findLocationDecision(prisma, {
       lat: -65 + 50 / 111_320,
       lon: -65,
       kind: "takeoff",
       viewerId: null,
     });
-    expect(match?.zone?.id).toBe(farZone.id);
-    expect(match?.site.id).toBe(farSite.id);
-    expect(match?.site.id).not.toBe(nearSite.id);
+    expect(decision).toEqual({ match: null, ambiguous: true });
+    expect(farZone.id).toBeTruthy();
+    expect(farSite.id).not.toBe(nearSite.id);
   });
 
   // -------------------------------------------------------------------
@@ -712,7 +711,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match?.site.id).toBe(site.id);
   });
 
-  it("ranks a boundary-bearing site and a circle-only site by anchor distance alone — no membership tier", async () => {
+  it("requires review when a boundary-bearing site and a circle-only site overlap", async () => {
     const owner = await createPilot("b6-ranking");
     // A big boundary-bearing site, further away by anchor...
     const farBoundarySite = await createSite({
@@ -732,17 +731,16 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       ownerId: owner,
     });
 
-    // Query point is inside BOTH the boundary (2000m half-size) and the
-    // circle site's own 600m radius — the nearer ANCHOR must win regardless
-    // of which row matched by boundary vs. circle.
-    const match = await findLocation(prisma, {
+    // Query point is inside BOTH. Distance ordering is useful for display,
+    // but must not turn two valid candidates into a silent assignment.
+    const decision = await findLocationDecision(prisma, {
       lat: 83,
       lon: 83 + 150 / (111_320 * Math.cos((83 * Math.PI) / 180)),
       kind: "takeoff",
       viewerId: null,
     });
-    expect(match?.site.id).toBe(nearCircleSite.id);
-    expect(match?.site.id).not.toBe(farBoundarySite.id);
+    expect(decision).toEqual({ match: null, ambiguous: true });
+    expect(nearCircleSite.id).not.toBe(farBoundarySite.id);
   });
 
   it("a PRIVATE boundary-bearing site never matches a stranger's ingest", async () => {

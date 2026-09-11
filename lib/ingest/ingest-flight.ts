@@ -4,7 +4,7 @@ import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
 import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { buildReplayArtifact } from "@/lib/igc/replay-artifact";
-import { findLocation } from "@/lib/sites/lookup";
+import { findLocationDecision } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
@@ -79,15 +79,15 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   // SPRINT-005: findLocation resolves a zone-first match with a site
   // fallback; resolveLocationCache below re-verifies and writes both levels
   // inside the create transaction.
-  const [takeoffMatch, landingMatch] = metrics
+  const [takeoffDecision, landingDecision] = metrics
     ? await Promise.all([
-        findLocation(prisma, {
+        findLocationDecision(prisma, {
           lat: metrics.takeoff.lat,
           lon: metrics.takeoff.lon,
           kind: "takeoff",
           viewerId: ownerId,
         }),
-        findLocation(prisma, {
+        findLocationDecision(prisma, {
           lat: metrics.landing.lat,
           lon: metrics.landing.lon,
           kind: "landing",
@@ -95,6 +95,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         }),
       ])
     : [null, null];
+  const takeoffMatch = takeoffDecision?.match ?? null;
+  const landingMatch = landingDecision?.match ?? null;
 
   const track = metrics ? buildTrackArtifact(parsed.fixes, metrics) : null;
   const status: "ready" | "failed" = metrics ? "ready" : "failed";
@@ -128,6 +130,8 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         recorder: parsed.headers.recorder,
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
         landingAt: metrics ? new Date(metrics.landingAtMs) : null,
+        takeoffSiteAssignment: takeoffDecision?.ambiguous ? "needs_review" : takeoffPatch.takeoffSiteId ? "auto_matched" : "unassigned",
+        landingSiteAssignment: landingDecision?.ambiguous ? "needs_review" : landingPatch.landingSiteId ? "auto_matched" : "unassigned",
         durationS: metrics?.durationS ?? null,
         ...altitudeMeasurements(parsed, metrics),
         altGainM: metrics?.altGainM ?? null,

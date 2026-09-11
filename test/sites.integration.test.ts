@@ -41,6 +41,7 @@ describe("sites: read-path firewall", () => {
   let repo: typeof import("@/lib/flights/repo");
   let associate: typeof import("@/lib/sites/associate");
   let siteRepo: typeof import("@/lib/sites/repo");
+  let siteManage: typeof import("@/lib/sites/manage");
   const ids: string[] = [];
   const siteIds: string[] = [];
   const zoneIds: string[] = [];
@@ -214,6 +215,7 @@ describe("sites: read-path firewall", () => {
     repo = await import("@/lib/flights/repo");
     associate = await import("@/lib/sites/associate");
     siteRepo = await import("@/lib/sites/repo");
+    siteManage = await import("@/lib/sites/manage");
   });
 
   afterAll(async () => {
@@ -995,8 +997,35 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("reassociateOwnFlights — retroactive fix", () => {
-    it("re-associates the creator's own older unmatched flights but not another pilot's", async () => {
+  describe("explicit site assignment", () => {
+    it("creates and moves a site without an IGC or changing a bound flight's coordinates", async () => {
+      const owner = await createPilot("standalone-site-owner");
+      const site = await siteManage.createStandaloneSite(owner, {
+        name: `Standalone ${suffix}`,
+        kind: "takeoff",
+        visibility: "private",
+        lat: 44.4,
+        lon: 44.4,
+      });
+      siteIds.push(site.id);
+
+      const flight = await createFlight({
+        ownerId: owner,
+        visibility: "private",
+        takeoffSiteId: site.id,
+        takeoffLat: 44.41,
+        takeoffLon: 44.42,
+      });
+      const moved = await siteManage.moveOwnedSiteAnchor(owner, site.id, 44.405, 44.406);
+      expect(moved.lat).toBe(44.405);
+      expect(moved.lon).toBe(44.406);
+
+      const unchangedFlight = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
+      expect(unchangedFlight.takeoffLat).toBe(44.41);
+      expect(unchangedFlight.takeoffLon).toBe(44.42);
+    });
+
+    it("leaves nearby history untouched until the owner previews and selects it", async () => {
       const owner = await createPilot("retroowner");
       const other = await createPilot("retroother");
 
@@ -1007,6 +1036,7 @@ describe("sites: read-path firewall", () => {
         visibility: "public",
         takeoffLat: 43,
         takeoffLon: 43,
+        takeoffSiteName: "Ed Levin 300",
         flightDate: new Date("2026-01-01T00:00:00.000Z"),
       });
       // Another pilot's flight at the exact same spot — must NOT be touched.
@@ -1026,11 +1056,22 @@ describe("sites: read-path firewall", () => {
       });
       siteIds.push(site.id);
 
-      expect(reassociated.updated).toBeGreaterThanOrEqual(1);
+      expect(reassociated.updated).toBe(0);
 
-      const olderRow = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwn.id } });
-      expect(olderRow.takeoffSiteId).toBe(site.id);
-      expect(olderRow.takeoffSiteName).toBe("Retro Site");
+      const beforeConfirmation = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwn.id } });
+      expect(beforeConfirmation.takeoffSiteId).toBeNull();
+      expect(beforeConfirmation.takeoffSiteName).toBe("Ed Levin 300");
+
+      const candidates = await siteManage.previewFlightsForSite(owner, site.id);
+      expect(candidates.some((candidate) => candidate.id === olderOwn.id && candidate.endpoint === "takeoff")).toBe(true);
+      await siteManage.assignFlightsToSite(owner, site.id, [{ id: olderOwn.id, endpoint: "takeoff" }]);
+
+      const afterConfirmation = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwn.id } });
+      expect(afterConfirmation.takeoffSiteId).toBe(site.id);
+      expect(afterConfirmation.takeoffSiteName).toBe("Retro Site");
+      expect(afterConfirmation.takeoffLat).toBe(43);
+      expect(afterConfirmation.takeoffLon).toBe(43);
+      expect(afterConfirmation.takeoffSiteAssignment).toBe("user_selected");
 
       const othersRow = await prisma.flight.findUniqueOrThrow({ where: { id: othersFlight.id } });
       expect(othersRow.takeoffSiteId).toBeNull();
@@ -2249,12 +2290,12 @@ describe("sites: read-path firewall", () => {
     });
   });
 
-  describe("[gate-on legacy] reassociateOwnFlights — zone upgrades the creator's already-site-bound back-catalog", () => {
+  describe("[gate-on legacy] zone creation is scoped to the selected flight", () => {
     beforeEach(() => {
       process.env.ZONES_ENABLED = "true";
     });
 
-    it("upgrades the creator's own already-site-bound flights to the new zone; another pilot's stay at the site level", async () => {
+    it("does not silently upgrade either pilot's already-site-bound back-catalog", async () => {
       const owner = await createPilot("upgradeowner");
       const other = await createPilot("upgradeother");
       const site = await createSite({ lat: -93, lon: -93, visibility: "public", ownerId: owner });
@@ -2281,11 +2322,11 @@ describe("sites: read-path firewall", () => {
       });
       if (result.zone) zoneIds.push(result.zone.id);
 
-      expect(result.reassociated.updated).toBeGreaterThanOrEqual(1);
+      expect(result.reassociated.updated).toBe(0);
 
       const olderRow = await prisma.flight.findUniqueOrThrow({ where: { id: olderOwnAtSite.id } });
-      expect(olderRow.takeoffZoneId).toBe(result.zone?.id);
-      expect(olderRow.takeoffZoneName).toBe("Upgrade Zone");
+      expect(olderRow.takeoffZoneId).toBeNull();
+      expect(olderRow.takeoffSiteId).toBe(site.id);
 
       const othersRow = await prisma.flight.findUniqueOrThrow({ where: { id: othersAtSite.id } });
       expect(othersRow.takeoffZoneId).toBeNull(); // another pilot's flight is never touched
@@ -2620,7 +2661,7 @@ describe("sites: read-path firewall", () => {
       expect(otherAfter.takeoffSiteId).toBe(site.id);
     });
 
-    it("widening a boundary re-associates the drawer's OWN previously-unmatched flights, but not other pilots'", async () => {
+    it("widening a boundary does not reassign any previously-unmatched flights", async () => {
       const owner = await createPilot("b6wpwiden-owner");
       const otherPilot = await createPilot("b6wpwiden-other");
       const site = await createSite({ lat: 77.5, lon: 77.5, visibility: "public", ownerId: owner, kind: "takeoff" });
@@ -2633,8 +2674,8 @@ describe("sites: read-path firewall", () => {
 
       const ownAfter = await prisma.flight.findUniqueOrThrow({ where: { id: ownUnmatched.id } });
       const otherAfter = await prisma.flight.findUniqueOrThrow({ where: { id: otherUnmatched.id } });
-      expect(ownAfter.takeoffSiteId).toBe(site.id); // the drawer's own flight picked up
-      expect(otherAfter.takeoffSiteId).toBeNull(); // another pilot's flight is untouched
+      expect(ownAfter.takeoffSiteId).toBeNull();
+      expect(otherAfter.takeoffSiteId).toBeNull();
     });
 
     it("the num_nulls CHECK rejects a hand-written half-written boundary row", async () => {

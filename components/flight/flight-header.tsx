@@ -6,7 +6,6 @@ import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { formatLocalDate, formatLocalTime } from "@/lib/flights/format";
 import type { Flight } from "@prisma/client";
 import type { ReactNode } from "react";
-import { isLogbookEntry } from "@/lib/flights/recording";
 
 function FlightArrow({
   flightId,
@@ -63,7 +62,11 @@ export function FlightHeader({
   // A named landing only earns its own display when it's somewhere other
   // than takeoff (e.g. not a top-landing back at launch) — otherwise it's
   // just noise repeating the title.
-  const showLanding = hasLandingFix && flight.landingSiteId !== flight.takeoffSiteId;
+  const showLanding = hasLandingFix && (
+    flight.landingSiteId !== flight.takeoffSiteId ||
+    flight.landingSiteName !== flight.takeoffSiteName ||
+    flight.landingSiteAssignment === "needs_review"
+  );
   // SPRINT-008: a client component can't read process.env directly — the
   // gate's value is computed here (server-side) and threaded down as a
   // prop so NameSiteDialog's step machine can be gated too, not just the
@@ -102,8 +105,9 @@ export function FlightHeader({
             initialZoneName={flight.takeoffZoneName}
             siteId={flight.takeoffSiteId}
             zoneId={flight.takeoffZoneId}
-            isOwner={isOwner && !isLogbookEntry(flight)}
+            isOwner={isOwner}
             zonesEnabled={zonesOn}
+            needsReview={flight.takeoffSiteAssignment === "needs_review"}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
           {showLanding && (
@@ -118,8 +122,9 @@ export function FlightHeader({
                 initialZoneName={flight.landingZoneName}
                 siteId={flight.landingSiteId}
                 zoneId={flight.landingZoneId}
-                isOwner={isOwner && !isLogbookEntry(flight)}
+                isOwner={isOwner}
                 zonesEnabled={zonesOn}
+                needsReview={flight.landingSiteAssignment === "needs_review"}
                 className="font-condensed text-base font-bold text-gray-500"
               />
             </>

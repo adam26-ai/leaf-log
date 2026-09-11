@@ -19,6 +19,14 @@ Review happens before saving:
 
 Imports save atomically. Retries use a request ID, and an already-imported file is recognized by its content hash. A receipt tracks the batch and original update timestamps. Undo removes unchanged entries, retaining flights with edits, attached recordings, photos, kudos, or instructor activity. Individual flights can always be removed through their normal edit page.
 
+CSV and manual flight coordinates remain properties of the flight. Selecting a
+known site changes the site assignment but does not replace coordinates already
+entered or imported. Site creation and boundary edits likewise never relabel
+other logbook rows automatically. Use **Settings → Sites** to create a site
+without an IGC, move its independent anchor, draw a boundary, preview matching
+flight coordinates, and explicitly select the entries to assign. Overlapping
+sites are treated as ambiguous and require a pilot choice.
+
 ## Exporting a logbook
 
 **Import** and **Export** are available side by side in **Settings → Logbook**. Choose **Export → Download CSV** for all of the signed-in pilot's flights, including manual/imported entries, private flights, and flights still processing or failed. Current logbook filters do not limit exports.

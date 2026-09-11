@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
 import { validateBoundary, boundaryColumns, type BoundaryColumns } from "./boundary";
 import { writeAuditEntry, type AuditAction } from "./audit";
+import { assignmentPatch } from "./assignment";
 
 export type SiteEndpoint = "takeoff" | "landing";
 
@@ -500,6 +501,17 @@ export async function deleteSite(siteId: string, ownerId: string): Promise<void>
       UPDATE "Flight" f SET "landingZoneId" = NULL, "landingZoneName" = NULL
       FROM "Zone" z WHERE f."landingZoneId" = z."id" AND z."siteId" = ${siteId}`;
 
+    // Once the shared row disappears, its cached name becomes a deliberate
+    // custom fallback and must not become eligible for automatic matching.
+    await tx.flight.updateMany({
+      where: { takeoffSiteId: siteId },
+      data: assignmentPatch("takeoff", "custom_name"),
+    });
+    await tx.flight.updateMany({
+      where: { landingSiteId: siteId },
+      data: assignmentPatch("landing", "custom_name"),
+    });
+
     await tx.site.delete({ where: { id: siteId } });
   });
 }
@@ -743,53 +755,6 @@ function boundaryUpdateData(cols: BoundaryColumns) {
 }
 
 /**
- * Which endpoint(s) a widened boundary should retroactively re-associate
- * the drawer's own unmatched flights against — mirrors kindMatches's
- * existing "both" wildcard; a kind-less/legacy row re-associates both
- * directions rather than none, which is conservative (it only ever fills
- * in a null on the OWNER's own flights).
- */
-function endpointsForKind(kind: string): SiteEndpoint[] {
-  if (kind === "takeoff") return ["takeoff"];
-  if (kind === "landing") return ["landing"];
-  return ["takeoff", "landing"];
-}
-
-/**
- * Widening a boundary can reach flights the old radius couldn't — fire the
- * same retroactive, owner-scoped, capped re-association
- * createOrAttachSiteFromFlight already uses (lib/sites/repo.ts's
- * reassociateOwnFlights), additively: locationCachePatch remains the only
- * Flight-cache writer, this only decides WHICH of the caller's own flights
- * get offered to it. A dynamic import breaks the otherwise-circular
- * associate.ts <-> repo.ts dependency (repo.ts already imports
- * locationCachePatch from this file) without restructuring either module —
- * safe because it's resolved lazily, well after both modules are loaded,
- * never at import time.
- */
-async function reassociateAfterBoundarySet(
-  ownerId: string,
-  level: "site" | "zone",
-  updatedRow: Site | Zone,
-): Promise<void> {
-  const { reassociateOwnFlights } = await import("./repo");
-  if (level === "site") {
-    const site = updatedRow as Site;
-    for (const endpoint of endpointsForKind(site.kind)) {
-      await reassociateOwnFlights(ownerId, site, endpoint, null);
-    }
-    return;
-  }
-
-  const zone = updatedRow as Zone;
-  const site = await prisma.site.findUnique({ where: { id: zone.siteId } });
-  if (!site) return; // deleted concurrently — nothing to re-associate against
-  for (const endpoint of endpointsForKind(zone.kind)) {
-    await reassociateOwnFlights(ownerId, site, endpoint, zone);
-  }
-}
-
-/**
  * Set (or replace) a site's boundary — its owner, or (SPRINT-007) any
  * onboarded pilot when the site is public. No "referenced by another
  * pilot's flight" guard, unlike rename/delete: a boundary edit destroys
@@ -821,7 +786,6 @@ export async function setSiteBoundary(siteId: string, callerId: string, raw: unk
     );
     return row;
   });
-  await reassociateAfterBoundarySet(callerId, "site", updated);
   return updated;
 }
 
@@ -875,7 +839,6 @@ export async function setZoneBoundary(zoneId: string, callerId: string, raw: unk
     );
     return row;
   });
-  await reassociateAfterBoundarySet(callerId, "zone", updated);
   return updated;
 }
 

@@ -249,9 +249,13 @@ model Flight {
   takeoffSiteId         String?
   takeoffSite           Site?         @relation("TakeoffSite", fields: [takeoffSiteId], references: [id], onDelete: SetNull)
   takeoffSiteName       String?
+  // Why this endpoint has its current site value. Explicit/custom/legacy
+  // choices are never eligible for silent geographic reassignment.
+  takeoffSiteAssignment String         @default("unassigned") // unassigned | custom_name | auto_matched | user_selected | needs_review | legacy
   landingSiteId         String?
   landingSite           Site?         @relation("LandingSite", fields: [landingSiteId], references: [id], onDelete: SetNull)
   landingSiteName       String?
+  landingSiteAssignment String         @default("unassigned")
   // located zones (SPRINT-005) — a zone is a specific launch/landing spot
   // WITHIN the site above; zoneId is only ever non-null alongside its own
   // siteId (zone.siteId === flight.takeoffSiteId), enforced by the single
@@ -506,7 +510,7 @@ model LocationAuditEntry {
   zone      Zone?    @relation("ZoneAuditEntries", fields: [zoneId], references: [id], onDelete: Cascade)
   actorId   String?
   actor     Profile? @relation("LocationAuditEntries", fields: [actorId], references: [id], onDelete: SetNull)
-  action    String   // create | published | renamed | boundary_set | boundary_cleared | merge
+  action    String   // create | published | renamed | moved | boundary_set | boundary_cleared | merge
   detail    Json?    // action-specific display context — never raw geometry, never a private name
   createdAt DateTime @default(now())
 
