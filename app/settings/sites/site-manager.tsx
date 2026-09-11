@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { ChevronDown } from "lucide-react";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -54,6 +55,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const [pending, startTransition] = useTransition();
   const [selectedId, setSelectedId] = useState<string | null>(sites[0]?.id ?? null);
   const selected = sites.find((site) => site.id === selectedId) ?? sites[0] ?? null;
+  const [createOpen, setCreateOpen] = useState(false);
   const [createPoint, setCreatePoint] = useState<{ lat: number | null; lon: number | null }>({ lat: null, lon: null });
   const [anchorDraft, setAnchorDraft] = useState<{ siteId: string; lat: number; lon: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -158,19 +160,30 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(240px,0.7fr)_minmax(0,1.3fr)]">
       <div className="flex flex-col gap-6">
-        <Card className="p-5">
-          <h2 className="font-condensed text-xl font-bold text-ink">Create a site</h2>
-          <p className="mb-4 mt-1 text-sm text-gray-600">No flight or IGC file is required. Click the map to place the site anchor.</p>
-          <form action={createSite} className="flex flex-col gap-3">
-            <label className="text-sm font-medium text-gray-700">Name<input name="name" required maxLength={120} className={`${inputClass} mt-1.5`} /></label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm font-medium text-gray-700">Kind<select name="kind" className={`${inputClass} mt-1.5`} defaultValue="takeoff"><option value="takeoff">Takeoff</option><option value="landing">Landing</option><option value="both">Both</option></select></label>
-              <label className="text-sm font-medium text-gray-700">Visibility<select name="visibility" className={`${inputClass} mt-1.5`} defaultValue="private"><option value="private">Private</option><option value="public">Public</option></select></label>
-            </div>
-            <EntryMap lat={createPoint.lat} lon={createPoint.lon} label="New site anchor" draggable onPick={(lat, lon) => setCreatePoint({ lat, lon })} />
-            {createPoint.lat != null && <p className="text-xs text-gray-500">Anchor: {createPoint.lat.toFixed(6)}, {createPoint.lon?.toFixed(6)}</p>}
-            <Button type="submit" disabled={pending || createPoint.lat == null || createPoint.lon == null}>Create site</Button>
-          </form>
+        <Card className="overflow-hidden">
+          <button
+            type="button"
+            aria-expanded={createOpen}
+            aria-controls="create-site-panel"
+            onClick={() => setCreateOpen((open) => !open)}
+            className="flex w-full items-center justify-between gap-3 p-5 text-left hover:bg-gray-50"
+          >
+            <span className="font-condensed text-xl font-bold text-ink">Create a site</span>
+            <ChevronDown className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${createOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+          {createOpen && <div id="create-site-panel" className="border-t border-gray-200 p-5">
+            <p className="mb-4 text-sm text-gray-600">No flight or IGC file is required. Click the map to place the site anchor.</p>
+            <form action={createSite} className="flex flex-col gap-3">
+              <label className="text-sm font-medium text-gray-700">Name<input name="name" required maxLength={120} className={`${inputClass} mt-1.5`} /></label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm font-medium text-gray-700">Kind<select name="kind" className={`${inputClass} mt-1.5`} defaultValue="takeoff"><option value="takeoff">Takeoff</option><option value="landing">Landing</option><option value="both">Both</option></select></label>
+                <label className="text-sm font-medium text-gray-700">Visibility<select name="visibility" className={`${inputClass} mt-1.5`} defaultValue="private"><option value="private">Private</option><option value="public">Public</option></select></label>
+              </div>
+              <EntryMap lat={createPoint.lat} lon={createPoint.lon} label="New site anchor" draggable onPick={(lat, lon) => setCreatePoint({ lat, lon })} />
+              {createPoint.lat != null && <p className="text-xs text-gray-500">Anchor: {createPoint.lat.toFixed(6)}, {createPoint.lon?.toFixed(6)}</p>}
+              <Button type="submit" disabled={pending || createPoint.lat == null || createPoint.lon == null}>Create site</Button>
+            </form>
+          </div>}
         </Card>
 
         <Card className="p-3">

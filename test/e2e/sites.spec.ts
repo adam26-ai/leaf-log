@@ -84,6 +84,11 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   // A site can be created independently, without borrowing an IGC.
   await page.goto("/settings/sites");
   await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
+  const createSiteToggle = page.getByRole("button", { name: "Create a site", exact: true });
+  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator('input[name="name"]')).toBeHidden();
+  await createSiteToggle.click();
+  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "true");
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
   await page.locator('input[name="name"]').fill(standaloneName);
   await page.getByLabel("Flight site map").locator("canvas").click({ position: { x: 160, y: 160 } });
