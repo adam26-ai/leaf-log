@@ -29,7 +29,7 @@ export function OnboardingForm() {
         <span className="font-condensed text-sm font-bold tracking-wide text-ink">
           Handle
         </span>
-        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-amber focus-within:ring-2 focus-within:ring-amber/40">
+        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/40">
           <span className="pl-3 font-mono text-gray-500">@</span>
           <input
             name="handle"
@@ -51,7 +51,7 @@ export function OnboardingForm() {
           required
           placeholder="Alex Pilot"
           maxLength={60}
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
       </label>
 

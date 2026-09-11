@@ -1,22 +1,22 @@
+import { UnitToggle } from "@/components/flight/unit-toggle";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Download, Pencil } from "lucide-react";
 import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
-import { getFlightForViewer } from "@/lib/flights/repo";
+import {
+  getFlightForViewer,
+  listOwnFlights,
+  listProfileFlightsForViewer,
+} from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
 import { activeSignoffsFor } from "@/lib/ratings/signoffs";
 import { RATING_CRITERIA } from "@/lib/ratings/criteria";
-
-// SignoffForm is a Client Component — only kind: "instructor" rows may
-// cross that boundary as props. RATING_CRITERIA's `auto` rows carry a
-// getValue function, which React Server Components cannot serialize into a
-// client prop (this broke at runtime before the filter was added here).
-const SIGNABLE_CRITERIA = RATING_CRITERIA.filter((c) => c.kind === "instructor");
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
+import { flightStatistics } from "@/lib/flights/statistics";
 import { KeyStatistics } from "@/components/flight/key-statistics";
 import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
@@ -24,6 +24,14 @@ import { KudosButton } from "@/components/flight/kudos-button";
 import { InstructorNoteCard } from "@/components/flight/instructor-note-card";
 import { SignoffForm } from "@/components/flight/signoff-form";
 import { Card, CardBody } from "@/components/ui/card";
+import { isLogbookEntry } from "@/lib/flights/recording";
+import { EntryDetail } from "@/components/logbook/entry-detail";
+
+// SignoffForm is a Client Component — only kind: "instructor" rows may
+// cross that boundary as props. RATING_CRITERIA's `auto` rows carry a
+// getValue function, which React Server Components cannot serialize into a
+// client prop (this broke at runtime before the filter was added here).
+const SIGNABLE_CRITERIA = RATING_CRITERIA.filter((c) => c.kind === "instructor");
 
 export default async function FlightPage({
   params,
@@ -49,7 +57,7 @@ export default async function FlightPage({
       ? viewer
       : await prisma.profile.findUnique({
           where: { id: flight.ownerId },
-          select: { displayName: true },
+          select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true },
         });
   const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
   const instructorNotes = viewerId
@@ -61,34 +69,69 @@ export default async function FlightPage({
     for (const signoff of signoffs) signedCriterionKeys.add(signoff.criterionKey);
   }
 
+  const navigationFlights = isOwner
+    ? await listOwnFlights(flight.ownerId)
+    : await listProfileFlightsForViewer(flight.ownerId, viewerId);
+  const navigationIndex = navigationFlights.findIndex((row) => row.id === flight.id);
+  // Logs are newest-first: left goes to the previous (older) log and right
+  // goes to the next (newer) log.
+  const previousFlightId =
+    navigationIndex >= 0 ? navigationFlights[navigationIndex + 1]?.id ?? null : null;
+  const nextFlightId =
+    navigationIndex > 0 ? navigationFlights[navigationIndex - 1]?.id ?? null : null;
+
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={viewer} />
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <FlightHeader flight={flight} isOwner={isOwner} />
-          <div className="flex items-center gap-3">
-            {isOwner && <ShareToggle visibility={normalizeVisibility(flight.visibility)} />}
-            {kudoSummary && (
-              <KudosButton
-                flightId={flight.id}
-                initialCount={kudoSummary.count}
-                initialKudoed={kudoSummary.hasKudoed}
-                canToggle={!isOwner}
-              />
-            )}
-            {isOwner && (
-              <Link
-                href={`/flights/${flight.id}/edit`}
-                title="Edit flight"
-                aria-label="Edit flight"
-                className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
-              >
-                <Pencil className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            )}
-          </div>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-2 pt-3 sm:px-6">
+        <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+          <FlightHeader
+            flight={flight}
+            isOwner={isOwner}
+            previousFlightId={previousFlightId}
+            nextFlightId={nextFlightId}
+            actions={
+              <div className="flex shrink-0 items-center gap-3">
+                <UnitToggle />
+                {isOwner && (
+                  <ShareToggle
+                    flightId={flight.id}
+                    visibility={normalizeVisibility(flight.visibility)}
+                  />
+                )}
+                {kudoSummary && (
+                  <KudosButton
+                    flightId={flight.id}
+                    initialCount={kudoSummary.count}
+                    initialKudoed={kudoSummary.hasKudoed}
+                    canToggle={!isOwner}
+                  />
+                )}
+                {isOwner && (
+                  <a
+                    href={`/api/flights/${flight.id}/igc`}
+                    download
+                    title="Download original IGC"
+                    aria-label="Download original IGC"
+                    className="inline-flex items-center text-gray-600 hover:text-ink"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  </a>
+                )}
+                {isOwner && (
+                  <Link
+                    href={`/flights/${flight.id}/edit`}
+                    title="Edit flight"
+                    aria-label="Edit flight"
+                    className="inline-flex items-center gap-1.5 text-gray-600 hover:text-ink"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                )}
+              </div>
+            }
+          />
         </div>
 
         {flight.status === "failed" ? (
@@ -103,30 +146,37 @@ export default async function FlightPage({
             </CardBody>
           </Card>
         ) : (
-          <>
-            <div className="mt-8">
-              <KeyStatistics flight={flight} />
+          isLogbookEntry(flight) ? <>
+            <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+              <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
-            <div className="mt-8">
-              <FlightViz
-                flightId={flight.id}
-                takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
-                offsetMin={flight.localUtcOffsetMinutes ?? 0}
-                pilotName={owner?.displayName}
-                notes={isOwner ? flight.notes : null}
-              />
-            </div>
-          </>
+            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} lat={flight.takeoffLat} lon={flight.takeoffLon} siteName={flight.takeoffSiteName} notes={flight.notes} owner={isOwner} /></div>
+          </> : (
+          <FlightViz
+            viewerId={viewerId}
+            primaryStatistics={flightStatistics(flight)}
+            primaryPilot={{ id: flight.ownerId, handle: owner?.handle ?? "", displayName: owner?.displayName || owner?.handle || "Pilot", avatarUpdatedAt: owner?.avatarUpdatedAt?.toISOString() ?? null }}
+            xcScore={flight.xcScore}
+            key={flight.id}
+            flightId={flight.id}
+            canAddPhotos={isOwner}
+            takeoffMs={flight.takeoffAt ? flight.takeoffAt.getTime() : 0}
+            offsetMin={flight.localUtcOffsetMinutes ?? 0}
+            notes={flight.notes}
+          />
+          )
         )}
 
-        <div className="mt-8">
-          <InstructorNoteCard
-            flightId={flight.id}
-            notes={instructorNotes}
-            viewerId={viewerId}
-            isViewerCurrentInstructor={isViewerCurrentInstructor}
-          />
-        </div>
+        {(instructorNotes.length > 0 || isViewerCurrentInstructor) && (
+          <div className="mt-8">
+            <InstructorNoteCard
+              flightId={flight.id}
+              notes={instructorNotes}
+              viewerId={viewerId}
+              isViewerCurrentInstructor={isViewerCurrentInstructor}
+            />
+          </div>
+        )}
 
         {isViewerCurrentInstructor && (
           <div className="mt-8">
@@ -139,7 +189,7 @@ export default async function FlightPage({
         )}
 
         {isOwner && warnings.length > 0 && (
-          <Card className="mt-8 border-amber/40 bg-amber/5">
+          <Card className="mt-8 border-brand-blue/40 bg-brand-blue/5">
             <CardBody className="flex flex-col gap-1">
               <p className="font-condensed text-sm font-bold tracking-wide text-ink">
                 A few notes about this file

@@ -220,7 +220,7 @@ export function LocationCommunityDialog({
                     onChange={(e) => setNameInput(e.target.value)}
                     maxLength={60}
                     disabled={pending}
-                    className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-amber"
+                    className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-brand-blue"
                   />
                   <div className="flex gap-2">
                     <Button type="button" size="sm" disabled={pending} onClick={handleRename}>

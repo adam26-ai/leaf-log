@@ -44,7 +44,7 @@ describe("parseIgc", () => {
     expect(fixes[1].timeMs - fixes[0].timeMs).toBe(2000);
   });
 
-  it("treats a zero/stuck baro as absent (GPS fallback possible)", () => {
+  it("treats a zero-only baro channel as absent (GPS fallback possible)", () => {
     const igc = makeIgc({
       fixes: [{ tSec: 36000, lat: 37.8, lon: -122.5, baro: 0, gps: 540 }],
     });
@@ -85,5 +85,58 @@ describe("parseIgc", () => {
     const { headers, fixes } = parseIgc(igc);
     expect(headers.recorder).toContain("Foreign");
     expect(fixes).toHaveLength(1);
+  });
+
+  it("preserves zero crossings in both altitude channels", () => {
+    const { fixes } = parseIgc([
+      "AXLFLeaf1", "HFDTE160826",
+      "B2155253741903N12229923WA-0002-0001",
+      "B2155263741903N12229923WA0000000000",
+      "B2155273741903N12229923WA0000100002",
+    ].join("\n"));
+    expect(fixes.map((fix) => fix.baroAlt)).toEqual([-2, 0, 1]);
+    expect(fixes.map((fix) => fix.gpsAlt)).toEqual([-1, 0, 2]);
+  });
+
+  it("keeps a run of zero baro values when the channel has nonzero readings", () => {
+    const { fixes } = parseIgc(makeIgc({ fixes: [1, 0, 0, 0, 1].map((baro, i) => ({
+      tSec: 36000 + i, lat: 37.8, lon: -122.5, baro, gps: 50,
+    })) }));
+    expect(fixes.map((fix) => fix.baroAlt ?? fix.gpsAlt)).toEqual([1, 0, 0, 0, 1]);
+  });
+
+  it("treats a zero-only GPS channel as absent without discarding baro zeros", () => {
+    const { fixes } = parseIgc(makeIgc({ fixes: [1, 0, 1].map((baro, i) => ({
+      tSec: 36000 + i, lat: 37.8, lon: -122.5, baro, gps: 0,
+    })) }));
+    expect(fixes.map((fix) => fix.gpsAlt)).toEqual([null, null, null]);
+    expect(fixes.map((fix) => fix.baroAlt)).toEqual([1, 0, 1]);
+  });
+
+  it("parses optional B-record extensions declared by an I record", () => {
+    const igc = [
+      "AXLFLeaf1",
+      "HFDTE060926",
+      "I063638FXA3941GSP4244TRT4547WDI4850WSP5153VAR",
+      "B1958433731056N12153531WA0055200593005025335000000-12",
+    ].join("\n");
+    const { fixes } = parseIgc(igc);
+    expect(fixes[0]).toMatchObject({
+      fixAccuracyM: 5,
+      groundSpeedKmh: 25,
+      trueTrackDeg: 335,
+      windDirectionDeg: 0,
+      windSpeedKmh: 0,
+      varioMs: -1.2,
+    });
+  });
+
+  it("does not interpret undeclared B-record suffix data", () => {
+    const igc = [
+      "AXLFLeaf1",
+      "HFDTE060926",
+      "B1958433731056N12153531WA0055200593005025335000000012",
+    ].join("\n");
+    expect(parseIgc(igc).fixes[0].varioMs).toBeNull();
   });
 });

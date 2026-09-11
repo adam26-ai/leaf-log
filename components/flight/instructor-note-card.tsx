@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
+import { SuccessStatus } from "@/components/ui/success-status";
 import {
   updateInstructorNote,
   type InstructorNoteState,
@@ -73,13 +74,13 @@ export function InstructorNoteCard({
               maxLength={2000}
               rows={4}
               placeholder="Private notes for this pilot — visible only to them and to you."
-              className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+              className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
             />
             <div className="flex items-center gap-3">
               <Button type="submit" disabled={pending}>
                 {pending ? "Saving…" : ownNote ? "Update note" : "Save note"}
               </Button>
-              {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
+              {state.ok && <SuccessStatus>Saved.</SuccessStatus>}
               {state.error && <span className="text-sm text-red-600">{state.error}</span>}
             </div>
           </form>

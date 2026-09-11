@@ -1,5 +1,6 @@
-import { CircleCheck, Circle, Lock } from "lucide-react";
+import { Circle, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SuccessMark } from "@/components/ui/success-status";
 
 /**
  * Plain presentational row — RatingLevelCard computes the display value and
@@ -18,7 +19,7 @@ export function CriterionRow({ label, detail, met, muted = false }: CriterionRow
     <div className="flex items-center justify-between gap-4 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
         {met ? (
-          <CircleCheck className="h-4 w-4 shrink-0 text-leaf" />
+          <SuccessMark />
         ) : muted ? (
           <Lock className="h-4 w-4 shrink-0 text-gray-300" />
         ) : (

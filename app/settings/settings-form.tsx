@@ -1,15 +1,21 @@
 "use client";
 
-import { useActionState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { ExportLogbook } from "@/components/logbook/export-logbook";
+import { AvatarUploader } from "./avatar-uploader";
 import {
   FLIGHT_VISIBILITIES,
   normalizeVisibility,
   type FlightVisibility,
 } from "@/lib/flights/visibility";
-import { updateProfile, type SettingsState } from "./actions";
+import { updateProfile } from "./actions";
 
-const initial: SettingsState = {};
+import { MapDefaultsFields } from "./map-defaults-fields";
+
 
 const VISIBILITY_COPY: Record<FlightVisibility, { label: string; hint: string }> = {
   private: {
@@ -32,22 +38,91 @@ export function SettingsForm({
   displayName,
   bio,
   defaultVisibility,
+  defaultUnits,
+  customUnits,
+  mapDefaults,
+  avatarUpdatedAt,
+  afterProfile,
 }: {
   handle: string;
   displayName: string;
   bio: string;
   defaultVisibility: string;
+  defaultUnits: string;
+  customUnits?: unknown;
+  mapDefaults: unknown;
+  avatarUpdatedAt: Date | string | null;
+  afterProfile?: ReactNode;
 }) {
-  const [state, formAction, pending] = useActionState(updateProfile, initial);
+  const formRef = useRef<HTMLFormElement>(null);
+  const latestRevision = useRef(0);
+  const submittedRevision = useRef(0);
+  const [revision, setRevision] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("Changes save automatically");
+  const [error, setError] = useState(false);
+  function changed() {
+    latestRevision.current += 1;
+    setRevision(latestRevision.current);
+    setStatus("Unsaved changes…");
+    setError(false);
+  }
+
+  // Debounce typing and serialize writes so an older request cannot overwrite
+  // newer edits. Any edits during a request are saved in the next pass.
+  useEffect(() => {
+    if (saving || revision <= submittedRevision.current) return;
+    const timer = window.setTimeout(async () => {
+      const form = formRef.current;
+      if (!form) return;
+      const invalid = Array.from(form.elements).find(el =>
+        el instanceof HTMLInputElement && !el.validity.valid) as HTMLInputElement | undefined;
+      if (invalid) {
+        setStatus(`${invalid.name === "handle" ? "Handle" : "Display name"}: ${invalid.validationMessage}`);
+        setError(true);
+        return;
+      }
+      submittedRevision.current = revision;
+      setSaving(true);
+      setStatus("Saving…");
+      try {
+        const result = await updateProfile({}, new FormData(form));
+        if (latestRevision.current === revision) {
+          setStatus(result.error ?? "Saved");
+          setError(Boolean(result.error));
+        }
+      } catch {
+        if (latestRevision.current === revision) {
+          setStatus("Couldn't save. Please retry.");
+          setError(true);
+        }
+      } finally {
+        setSaving(false);
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [revision, saving]);
+
+  const saveStatus = <div role="status" aria-live="polite" className={`text-xs ${error ? "text-red-600" : "text-gray-500"}`}>
+    {status}{error && <button type="button" onClick={changed} className="ml-2 underline">Retry</button>}
+  </div>;
   const normalizedDefaultVisibility = normalizeVisibility(defaultVisibility);
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
+    <form ref={formRef} onSubmit={e => { e.preventDefault(); changed(); }} onChange={e => {
+      const target = e.target;
+      if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) && target.name) changed();
+    }} className="flex flex-col gap-6">
+      <Card className="flex flex-col gap-5 p-6">
+        <div className="flex flex-col gap-3">
+          <h2 className="font-condensed text-lg font-bold text-ink">Profile</h2>
+          <AvatarUploader handle={handle} displayName={displayName} avatarUpdatedAt={avatarUpdatedAt} />
+        </div>
       <label className="flex flex-col gap-1.5">
         <span className="font-condensed text-sm font-bold tracking-wide text-ink">
           Handle
         </span>
-        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-amber focus-within:ring-2 focus-within:ring-amber/40">
+        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/40">
           <span className="pl-3 font-mono text-gray-500">@</span>
           <input
             name="handle"
@@ -71,7 +146,7 @@ export function SettingsForm({
           required
           defaultValue={displayName}
           maxLength={60}
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
       </label>
 
@@ -85,29 +160,42 @@ export function SettingsForm({
           maxLength={280}
           rows={3}
           placeholder="A line about your flying — wings, home site, anything."
-          className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-amber focus:ring-2 focus:ring-amber/40"
+          className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
         />
       </label>
+
+      {saveStatus}
+      </Card>
+      {afterProfile}
+      <Card className="flex flex-col gap-5 p-6">
+      <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
+      <div className="grid grid-cols-2 gap-3">
+        <Button asChild variant="outline">
+          <Link href="/settings/import" aria-label="Import logbook"><Upload className="h-4 w-4" aria-hidden="true" />Import</Link>
+        </Button>
+        <ExportLogbook />
+      </div>
+      <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
 
       <fieldset className="flex flex-col gap-2">
         <legend className="font-condensed text-sm font-bold tracking-wide text-ink">
           Default privacy for new flights
         </legend>
         <span className="text-xs text-gray-500">
-          New uploads start at this visibility. You can change any flight later.
+          New flights start at this visibility. You can change any flight later.
         </span>
         <div className="mt-1 flex flex-col gap-2">
           {FLIGHT_VISIBILITIES.map((value) => (
             <label
               key={value}
-              className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-amber has-[:checked]:border-amber has-[:checked]:bg-amber/5"
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5"
             >
               <input
                 type="radio"
                 name="default_visibility"
                 value={value}
                 defaultChecked={normalizedDefaultVisibility === value}
-                className="mt-0.5 accent-amber"
+                className="mt-0.5 accent-brand-blue"
               />
               <span className="flex flex-col">
                 <span className="font-condensed text-sm font-bold text-ink">
@@ -121,14 +209,8 @@ export function SettingsForm({
           ))}
         </div>
       </fieldset>
-
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : "Save changes"}
-        </Button>
-        {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
-        {state.error && <span className="text-sm text-red-600">{state.error}</span>}
-      </div>
+      {saveStatus}
+      </Card>
     </form>
   );
 }

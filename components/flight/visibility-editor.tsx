@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { setVisibility } from "@/app/flights/[id]/visibility-action";
 import { FLIGHT_VISIBILITIES, type FlightVisibility } from "@/lib/flights/visibility";
+import { useHydrated } from "@/lib/use-hydrated";
 
 const LABELS: Record<FlightVisibility, { title: string; hint: string }> = {
   private: {
@@ -27,33 +28,37 @@ export function VisibilityEditor({
   flightId: string;
   visibility: FlightVisibility;
 }) {
+  const hydrated = useHydrated();
   const [current, setCurrent] = useState(visibility);
   const [pending, startTransition] = useTransition();
+
 
   function choose(next: FlightVisibility) {
     if (next === current) return;
     startTransition(async () => {
       const res = await setVisibility(flightId, next);
-      if (res.ok) setCurrent(next);
+      if (res.ok) {
+        setCurrent(next);
+      }
     });
   }
 
   return (
     <div className="flex flex-col gap-3">
       <span className="text-xs text-gray-500">{LABELS[current].hint}</span>
-      <div className="grid grid-cols-3 gap-1 rounded-md bg-gray-100 p-1">
+      <div className="grid grid-cols-3 gap-1 rounded-md bg-[var(--replay-inactive-border)]/35 p-1">
         {FLIGHT_VISIBILITIES.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => choose(option)}
-            disabled={pending}
+            disabled={!hydrated || pending}
             aria-pressed={current === option}
             className={
               "h-9 rounded-sm px-2 font-condensed text-sm font-bold tracking-wide transition-colors disabled:opacity-60 " +
               (current === option
-                ? "bg-paper text-ink shadow-sm"
-                : "text-gray-600 hover:bg-paper/70")
+                ? "bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)] shadow-sm"
+                : "bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95")
             }
           >
             {LABELS[option].title}

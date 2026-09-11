@@ -12,6 +12,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-09-08",
+    title: "See friends in your replays",
+    body: "Relive a flying day together: nearby friends' flights from the same time can now appear alongside the flight you're replaying, with sharing permissions respected. Tap a pilot's avatar to follow them and see their live stats and altitude profile, jump to their takeoff, or hide their flight to simplify the view. Shared photos appear along their tracks too. Smoother camera movement and clearer pilot markers make the group easier to follow. Also new: rename or merge wing names across your logbook in Settings, automatically save flight notes as you type, and use clearer Calculate, Retry, and Improve options when an XC score needs attention.",
+  },
+  {
+    date: "2026-09-07",
+    title: "A cleaner logbook, a roomier replay",
+    body: "Leaf Log has had a big UI tidy-up, from desktop to phone. Larger text and tighter logbook rows make flights easier to scan, with launch and destination names together when space allows and clearer sections for altitude, trophies, and sharing icons. Filter by site, wing, or trophies, and open the Personal Bests panel to see your gold, silver, and bronze results. The replay gives more room to the map and altitude profile, with compact controls and clearer flight statistics. You can also choose your preferred map, camera, playback speed, units, and route display in Settings so each replay starts the way you like it.",
+  },
+  {
     date: "2026-09-02",
     title: "Ratings sign-offs are live",
     body: "If you're the instructor named on a flight, you can now sign off USHPA P2/P3/P4 skills you witnessed — precision landings, demonstrated skills and knowledge. It shows up immediately on the pilot's Ratings page as \"Signed off by [you] on [date]\", permanently credited to you.",

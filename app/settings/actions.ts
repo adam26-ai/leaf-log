@@ -6,8 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { normalizeHandle, normalizeDisplayName } from "@/lib/handle";
 import { normalizeVisibility } from "@/lib/flights/visibility";
+import { readCustomUnits } from "@/lib/flights/units";
 
 export type SettingsState = { error?: string; ok?: boolean };
+
+import { readMapDefaults } from "@/lib/flights/map-defaults";
 
 const MAX_BIO = 280;
 
@@ -30,6 +33,28 @@ export async function updateProfile(
   }
 
   const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
+  const defaultUnits = formData.get("default_units");
+  if (defaultUnits !== "metric" && defaultUnits !== "imperial" && defaultUnits !== "custom") {
+    return { error: "Choose Metric, Imperial, or Custom for default units." };
+  }
+
+  let customUnits;
+  try {
+    const submitted = JSON.parse(String(formData.get("custom_units") ?? "null"));
+    customUnits = readCustomUnits(submitted);
+    if ((submitted !== null || defaultUnits === "custom") && !customUnits) {
+      return { error: "Choose a valid unit for altitude, speed, distance, and vertical speed." };
+    }
+  } catch {
+    return { error: "Invalid custom units. Please reload and try again." };
+  }
+
+  let mapDefaults;
+  try {
+    mapDefaults = readMapDefaults(JSON.parse(String(formData.get("map_defaults") ?? "{}")));
+  } catch {
+    return { error: "Invalid map defaults. Please reload and try again." };
+  }
 
   // Reject changing the handle to one another pilot already owns (the unique
   // constraint catches the race; this gives a friendlier message first).
@@ -49,6 +74,9 @@ export async function updateProfile(
         displayName: d.displayName,
         bio: bio || null,
         defaultVisibility,
+        defaultUnits,
+        customUnits: customUnits ?? Prisma.DbNull,
+        mapDefaults: { ...mapDefaults },
       },
     });
   } catch (e) {
@@ -58,7 +86,7 @@ export async function updateProfile(
     return { error: "Something went wrong. Please try again." };
   }
 
-  revalidatePath("/settings");
+  revalidatePath("/", "layout");
   revalidatePath(`/@${h.handle}`);
   return { ok: true };
 }

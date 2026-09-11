@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
+import { SuccessStatus } from "@/components/ui/success-status";
 import { updateInstructor, type InstructorState } from "./actions";
 
 const initial: InstructorState = {};
@@ -42,7 +43,7 @@ export function InstructorEditor({
             name="instructorId"
             value=""
             defaultChecked={instructorId === null}
-            className="h-4 w-4 accent-amber"
+            className="h-4 w-4 accent-brand-blue"
           />
           None
         </label>
@@ -53,7 +54,7 @@ export function InstructorEditor({
               name="instructorId"
               value={option.id}
               defaultChecked={instructorId === option.id}
-              className="h-4 w-4 accent-amber"
+              className="h-4 w-4 accent-brand-blue"
             />
             {option.displayName} (@{option.handle})
             {option.stale && (
@@ -72,7 +73,7 @@ export function InstructorEditor({
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save instructor"}
         </Button>
-        {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
+        {state.ok && <SuccessStatus>Saved.</SuccessStatus>}
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
       </div>
     </form>

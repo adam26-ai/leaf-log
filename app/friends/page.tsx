@@ -64,7 +64,7 @@ export default async function FriendsPage() {
                           await acceptFriendRequest(req.requester.handle);
                         }}
                       >
-                        <Button type="submit" size="sm" variant="leaf">
+                        <Button type="submit" size="sm">
                           Accept
                         </Button>
                       </form>

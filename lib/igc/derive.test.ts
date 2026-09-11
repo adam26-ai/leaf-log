@@ -67,4 +67,25 @@ describe("deriveMetrics", () => {
     expect(m.trackDistM).toBeLessThan(5);
     expect(m.maxClimbMs).toBeCloseTo(0, 0);
   });
+
+  it("uses recorded VAR values for climb and sink metrics when present", () => {
+    const fixes = Array.from({ length: 60 }, (_, i) => ({
+      tSec: 36000 + i,
+      lat: 37.8 + i * 0.0002,
+      lon: -122.5,
+      baro: 500,
+    }));
+    const base = makeIgc({ fixes });
+    const lines = base.trimEnd().split("\n");
+    lines.splice(2, 0, "I013638VAR");
+    let bIndex = 0;
+    const igc = lines.map((line) => {
+      if (!line.startsWith("B")) return line;
+      const vario = bIndex++ === 20 ? "047" : bIndex === 41 ? "-36" : "000";
+      return line + vario;
+    }).join("\n");
+    const m = deriveMetrics(parseIgc(igc))!;
+    expect(m.maxClimbMs).toBe(4.7);
+    expect(m.maxSinkMs).toBe(-3.6);
+  });
 });

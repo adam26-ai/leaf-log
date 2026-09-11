@@ -2,6 +2,43 @@ import type { Fix, IgcHeaders, ParsedIgc } from "./types";
 
 const DAY_MS = 86_400_000;
 
+interface BRecordExtension {
+  start: number;
+  end: number;
+  code: string;
+}
+
+/** Parse an I-record's one-based, inclusive B-record extension declarations. */
+function parseIRecord(line: string): BRecordExtension[] {
+  const count = Number(line.slice(1, 3));
+  if (!Number.isInteger(count) || count < 1) return [];
+  const extensions: BRecordExtension[] = [];
+  for (let index = 0; index < count; index++) {
+    const offset = 3 + index * 7;
+    const start = Number(line.slice(offset, offset + 2));
+    const end = Number(line.slice(offset + 2, offset + 4));
+    const code = line.slice(offset + 4, offset + 7).toUpperCase();
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start || code.length !== 3) {
+      continue;
+    }
+    extensions.push({ start: start - 1, end, code });
+  }
+  return extensions;
+}
+
+function extensionNumber(
+  line: string,
+  extensions: Map<string, BRecordExtension>,
+  code: string,
+): number | null {
+  const extension = extensions.get(code);
+  if (!extension || line.length < extension.end) return null;
+  const value = line.slice(extension.start, extension.end);
+  if (!/^-?\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 /** Parse "DDMMmmm" (lat, 7 digits) or "DDDMMmmm" (lon, 8 digits) into signed degrees. */
 function parseCoord(
   digits: string,
@@ -64,6 +101,7 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
 
   const lines = text.split(/\r?\n/);
   let badBRecords = 0;
+  const bRecordExtensions = new Map<string, BRecordExtension>();
 
   // First pass: headers (need the date before we can timestamp B-records).
   for (const raw of lines) {
@@ -78,6 +116,10 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
       else if (tag.startsWith("HFPLT")) headers.pilot = headerValue(line);
       else if (tag.startsWith("HFGTY") || tag.startsWith("HFGID")) {
         headers.glider = headers.glider ?? headerValue(line);
+      }
+    } else if (type === "I") {
+      for (const extension of parseIRecord(line)) {
+        bRecordExtensions.set(extension.code, extension);
       }
     }
   }
@@ -127,6 +169,12 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
     const validFlag = line[24];
     const baroAlt = parseAltField(line.slice(25, 30));
     const gpsAlt = parseAltField(line.slice(30, 35));
+    const fxa = extensionNumber(line, bRecordExtensions, "FXA");
+    const gsp = extensionNumber(line, bRecordExtensions, "GSP");
+    const trt = extensionNumber(line, bRecordExtensions, "TRT");
+    const wdi = extensionNumber(line, bRecordExtensions, "WDI");
+    const wsp = extensionNumber(line, bRecordExtensions, "WSP");
+    const variable = extensionNumber(line, bRecordExtensions, "VAR");
 
     if (prevSecOfDay >= 0 && secOfDay < prevSecOfDay - 60) {
       // Time went backwards by more than a minute → crossed UTC midnight.
@@ -141,11 +189,25 @@ export function parseIgc(input: string | Uint8Array): ParsedIgc {
       timeMs,
       lat,
       lon,
-      // Treat a stuck/zero baro as "absent" so derivation can fall back to GPS.
-      baroAlt: baroAlt && baroAlt !== 0 ? baroAlt : null,
-      gpsAlt: gpsAlt && gpsAlt !== 0 ? gpsAlt : null,
+      baroAlt,
+      gpsAlt,
+      fixAccuracyM: fxa,
+      groundSpeedKmh: gsp,
+      trueTrackDeg: trt,
+      windDirectionDeg: wdi,
+      windSpeedKmh: wsp,
+      varioMs: variable == null ? null : variable / 10,
       valid: validFlag === "A",
     });
+  }
+
+  // A zero-only channel is commonly an unavailable sensor. Detect that across
+  // the recording, rather than discarding legitimate sea-level crossings and
+  // switching altitude references at each zero-valued fix.
+  for (const source of ["baroAlt", "gpsAlt"] as const) {
+    if (!fixes.some((fix) => fix[source] != null && fix[source] !== 0)) {
+      for (const fix of fixes) fix[source] = null;
+    }
   }
 
   if (badBRecords > 0) {

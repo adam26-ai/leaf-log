@@ -3,15 +3,17 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { deleteFlight } from "@/app/flights/[id]/delete-action";
+import { useHydrated } from "@/lib/use-hydrated";
 
 /** Owner-only delete with a low-key two-step inline confirm (no scary modal). */
 export function DeleteFlightButton({ flightId }: { flightId: string }) {
+  const hydrated = useHydrated();
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
 
   if (!confirming) {
     return (
-      <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+      <Button variant="ghost" size="sm" disabled={!hydrated} onClick={() => setConfirming(true)}>
         Delete flight
       </Button>
     );

@@ -5,14 +5,14 @@ import { buildReplayPath } from "./replay";
 import { makeRealisticFlight, makeIgc } from "@/test/igc/make-igc";
 
 describe("buildReplayPath", () => {
-  it("produces an aligned [lon,lat,alt,t] path within the cap", () => {
+  it("produces an aligned [lon,lat,alt,t] path at a time-based resolution", () => {
     const { igc, truth } = makeRealisticFlight();
     const parsed = parseIgc(igc);
     const metrics = deriveMetrics(parsed)!;
     const replay = buildReplayPath(parsed, metrics);
 
     expect(replay.samples.length).toBeGreaterThan(2);
-    expect(replay.samples.length).toBeLessThanOrEqual(1500);
+    expect(replay.samples.length).toBeLessThanOrEqual(Math.ceil(metrics.durationS) + 1);
     expect(replay.vario).toHaveLength(replay.samples.length);
 
     // Each sample is [lon, lat, alt, t]; time is monotonic from 0.
@@ -39,8 +39,27 @@ describe("buildReplayPath", () => {
     }));
     const parsed = parseIgc(makeIgc({ fixes }));
     const metrics = deriveMetrics(parsed)!;
+    const oneSecondReplay = buildReplayPath(parsed, metrics);
+    expect(oneSecondReplay.samples.length).toBeGreaterThan(1500);
+    expect(oneSecondReplay.samples.length).toBeLessThanOrEqual(Math.ceil(metrics.durationS) + 1);
+
     const replay = buildReplayPath(parsed, metrics, 1000);
     expect(replay.samples.length).toBeLessThanOrEqual(1001);
     expect(replay.samples.length).toBeGreaterThan(100);
+  });
+
+  it("uses recorded VAR values in the replay stream", () => {
+    const fixes = Array.from({ length: 60 }, (_, i) => ({
+      tSec: 36000 + i,
+      lat: 37.8 + i * 0.0002,
+      lon: -122.5,
+      baro: 500,
+    }));
+    const lines = makeIgc({ fixes }).trimEnd().split("\n");
+    lines.splice(2, 0, "I013638VAR");
+    const igc = lines.map((line) => line.startsWith("B") ? `${line}047` : line).join("\n");
+    const parsed = parseIgc(igc);
+    const replay = buildReplayPath(parsed, deriveMetrics(parsed)!);
+    expect(replay.vario.every((value) => value === 4.7)).toBe(true);
   });
 });

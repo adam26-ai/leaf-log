@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { AccentBar } from "./accent-bar";
 
 /**
- * Section heading with the signature amber accent bar beneath it —
+ * Section heading with the signature brand-blue accent bar beneath it —
  * Roboto Condensed, the leafvario.com signage feel (DESIGN.md).
  */
 export function SectionHeading({

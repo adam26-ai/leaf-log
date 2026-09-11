@@ -6,6 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Undo2, Eraser, Trash2, Save as SaveIcon, Check, X } from "lucide-react";
 import { styleFor } from "./basemaps";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import type { Boundary, Ring } from "@/lib/sites/geo";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import {
@@ -285,7 +286,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       el.dataset.testid = "boundary-vertex";
       el.dataset.vertexIndex = String(index);
       el.style.cssText =
-        "width:18px;height:18px;border-radius:50%;background:#ffb459;border:2px solid #141414;cursor:pointer;box-sizing:border-box;";
+        "width:18px;height:18px;border-radius:50%;background:#0099ff;border:2px solid #141414;cursor:pointer;box-sizing:border-box;";
       // A native 'click' fires after mouseup on the same element regardless
       // of how far the pointer travelled in between — so a real drag would
       // ALSO fire 'click' right after 'dragend' unless we distinguish them.
@@ -359,7 +360,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
         // A row that already has a boundary is being replaced by whatever
         // gets saved next, not by the circle — show the CURRENTLY SAVED
         // shape as a static dashed reference, distinct from the live
-        // (orange, editable) draft, so editing/dragging points never loses
+        // (blue, editable) draft, so editing/dragging points never loses
         // sight of what's actually live right now.
         map.addSource("current-boundary", {
           type: "geojson",
@@ -422,13 +423,13 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
         id: "draft-boundary-fill",
         type: "fill",
         source: "draft-boundary",
-        paint: { "fill-color": "#ffb459", "fill-opacity": 0.2 },
+        paint: { "fill-color": "#0099ff", "fill-opacity": 0.2 },
       });
       map.addLayer({
         id: "draft-boundary-line",
         type: "line",
         source: "draft-boundary",
-        paint: { "line-color": "#ffb459", "line-width": 2 },
+        paint: { "line-color": "#0099ff", "line-width": 2 },
       });
 
       syncDrawing();
@@ -574,7 +575,11 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   return (
     <div className="flex flex-col gap-3">
       <div className="relative">
-        <div ref={containerRef} data-testid="boundary-editor-map" className="h-[520px] w-full rounded-lg" />
+        <div
+          ref={containerRef}
+          data-testid="boundary-editor-map"
+          className="h-[clamp(260px,45vh,520px)] w-full rounded-lg"
+        />
         {/* On-map control stack, right below MapLibre's own zoom buttons
          *  (top-right) — icons instead of the old below-map text row, which
          *  crowded awkwardly against this component's embedding contexts'
@@ -636,14 +641,9 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       {errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
       {showCancel && (
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="self-start rounded border px-3 py-1.5 text-sm disabled:opacity-40"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving} className="self-start">
           Cancel
-        </button>
+        </Button>
       )}
     </div>
   );

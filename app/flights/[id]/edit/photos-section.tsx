@@ -32,6 +32,7 @@ export function PhotosSection({ flightId }: { flightId: string }) {
         openId={openId}
         onOpenChange={setOpenId}
         onChanged={loadPhotos}
+        showHeading={false}
       />
     </div>
   );

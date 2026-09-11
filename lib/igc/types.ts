@@ -10,6 +10,18 @@ export interface Fix {
   baroAlt: number | null;
   /** GPS altitude in metres, or null if absent/invalid. */
   gpsAlt: number | null;
+  /** Fix accuracy in metres from an optional FXA B-record extension. */
+  fixAccuracyM: number | null;
+  /** Ground speed in km/h from an optional GSP B-record extension. */
+  groundSpeedKmh: number | null;
+  /** GPS true track/course over ground in degrees from an optional TRT extension. */
+  trueTrackDeg: number | null;
+  /** Wind direction in degrees from an optional WDI B-record extension. */
+  windDirectionDeg: number | null;
+  /** Wind speed in km/h from an optional WSP B-record extension. */
+  windSpeedKmh: number | null;
+  /** Recorded vertical speed in m/s from an optional VAR B-record extension. */
+  varioMs: number | null;
   /** IGC fix validity flag: 'A' = 3D valid, 'V' = 2D/invalid. */
   valid: boolean;
 }

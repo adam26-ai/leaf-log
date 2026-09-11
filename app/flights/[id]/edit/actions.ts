@@ -10,6 +10,27 @@ export type NotesState = { error?: string; ok?: boolean };
 
 const MAX_NOTES = 2000;
 
+export async function updateFlightWing(
+  flightId: string,
+  _prev: NotesState,
+  formData: FormData,
+): Promise<NotesState> {
+  const userId = await getCurrentUserId();
+  if (!userId) return { error: "Not signed in." };
+  const glider = formData.get("glider");
+  if (typeof glider !== "string" || glider.trim().length > 200 || /[\r\n\x00]/.test(glider)) {
+    return { error: "Enter a wing name of 200 characters or fewer, on one line." };
+  }
+  const result = await prisma.flight.updateMany({
+    where: { id: flightId, ownerId: userId },
+    // Historical pilot labels and the original IGC are never changed by wing edits.
+    data: { glider: glider.trim() || null },
+  });
+  if (!result.count) return { error: "Flight not found." };
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 /** Update a flight's free-text notes. Owner-scoped via the where-clause. */
 export async function updateNotes(
   flightId: string,

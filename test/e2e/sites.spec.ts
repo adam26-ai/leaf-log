@@ -1,8 +1,9 @@
+import { uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 
-const LINK_FILE = "/tmp/leaf-magic-link.txt";
+import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
 async function getMagicLink(): Promise<string> {
   for (let i = 0; i < 40; i++) {
@@ -82,9 +83,7 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
 
   // 2. Upload a flight far from every curated site -> "Unknown site".
   await page.goto("/upload");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });
+  await uploadFlight(page, { name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
@@ -101,9 +100,7 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   // 4. A distinct second IGC nearby (same pilot) auto-associates on upload —
   // no interaction with the naming dialog at all.
   await page.goto("/upload");
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({ name: "remote2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 2) });
+  await uploadFlight(page, { name: "remote2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 2) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });

@@ -19,7 +19,7 @@ function initials(name: string): string {
 
 /**
  * A pilot's avatar — the uploaded image when present, else their initials on a
- * leaf-tinted disc. Pure presentational; safe in server components.
+ * brand-tinted disc. Pure presentational; safe in server components.
  */
 export function Avatar({
   handle,
@@ -34,7 +34,7 @@ export function Avatar({
   variant?: "thumb" | "full";
   className?: string;
 }) {
-  const base = "shrink-0 overflow-hidden rounded-full bg-leaf/15 ring-1 ring-black/5";
+  const base = "shrink-0 overflow-hidden rounded-full bg-gray-100 ring-1 ring-black/5";
   if (avatarUpdatedAt) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -50,7 +50,7 @@ export function Avatar({
       aria-label={displayName}
       className={cn(
         base,
-        "flex items-center justify-center font-condensed font-bold text-leaf-strong",
+        "flex items-center justify-center bg-brand-blue/10 font-condensed font-bold text-brand-blue-strong ring-brand-blue/15",
         className,
       )}
     >

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
+import { SuccessStatus } from "@/components/ui/success-status";
 import {
   OCCUPANCIES,
   OCCUPANCY_LABELS,
@@ -51,7 +52,7 @@ export function FlightDetailsEditor({
                 name="occupancy"
                 value={value}
                 defaultChecked={(details.occupancy ?? "solo") === value}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {OCCUPANCY_LABELS[value]}
             </label>
@@ -71,7 +72,7 @@ export function FlightDetailsEditor({
                 name="flightTypeTags"
                 value={tag}
                 defaultChecked={details.flightTypeTags.includes(tag)}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {FLIGHT_TYPE_TAG_LABELS[tag]} ({tag})
             </label>
@@ -91,7 +92,7 @@ export function FlightDetailsEditor({
                 name="launchTypes"
                 value={tag}
                 defaultChecked={details.launchTypes.includes(tag)}
-                className="h-4 w-4 accent-amber"
+                className="h-4 w-4 accent-brand-blue"
               />
               {LAUNCH_TYPE_LABELS[tag]} ({tag})
             </label>
@@ -108,7 +109,7 @@ export function FlightDetailsEditor({
             type="checkbox"
             name="restrictedLandingField"
             defaultChecked={details.restrictedLandingField}
-            className="h-4 w-4 accent-amber"
+            className="h-4 w-4 accent-brand-blue"
           />
           Restricted Landing Field (RLF)
         </label>
@@ -118,7 +119,7 @@ export function FlightDetailsEditor({
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Save flight details"}
         </Button>
-        {state.ok && <span className="text-sm text-leaf-strong">Saved.</span>}
+        {state.ok && <SuccessStatus>Saved.</SuccessStatus>}
         {state.error && <span className="text-sm text-red-600">{state.error}</span>}
       </div>
     </form>

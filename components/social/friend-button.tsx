@@ -10,6 +10,7 @@ import {
   sendFriendRequest,
 } from "@/app/[handle]/friend-action";
 import type { FriendState } from "@/lib/social/friends";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export function FriendButton({
   targetHandle,
@@ -18,6 +19,7 @@ export function FriendButton({
   targetHandle: string;
   initialState: FriendState;
 }) {
+  const hydrated = useHydrated();
   const [state, setState] = useState(initialState);
   const [responding, setResponding] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -40,8 +42,7 @@ export function FriendButton({
     return (
       <Button
         size="sm"
-        variant="leaf"
-        disabled={pending}
+        disabled={!hydrated || pending}
         onClick={() => run("outgoing", () => sendFriendRequest(targetHandle))}
       >
         {pending ? "Sending…" : "Add friend"}
@@ -54,7 +55,7 @@ export function FriendButton({
       <Button
         size="sm"
         variant="outline"
-        disabled={pending}
+        disabled={!hydrated || pending}
         onClick={() => run("none", () => cancelFriendRequest(targetHandle))}
       >
         {pending ? "Canceling…" : "Requested"}
@@ -68,7 +69,7 @@ export function FriendButton({
         <Button
           size="sm"
           variant="outline"
-          disabled={pending}
+          disabled={!hydrated || pending}
           onClick={() => setResponding(true)}
         >
           Respond
@@ -80,8 +81,7 @@ export function FriendButton({
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          variant="leaf"
-          disabled={pending}
+          disabled={!hydrated || pending}
           onClick={() => run("friends", () => acceptFriendRequest(targetHandle))}
         >
           Accept
@@ -89,7 +89,7 @@ export function FriendButton({
         <Button
           size="sm"
           variant="ghost"
-          disabled={pending}
+          disabled={!hydrated || pending}
           onClick={() => run("none", () => declineFriendRequest(targetHandle))}
         >
           Decline
@@ -103,7 +103,7 @@ export function FriendButton({
       <Button
         size="sm"
         variant="outline"
-        disabled={pending}
+        disabled={!hydrated || pending}
         onClick={() => setConfirmingRemove(true)}
       >
         Friends
@@ -116,7 +116,7 @@ export function FriendButton({
       <Button
         size="sm"
         variant="ghost"
-        disabled={pending}
+        disabled={!hydrated || pending}
         onClick={() => setConfirmingRemove(false)}
       >
         Keep
@@ -124,7 +124,7 @@ export function FriendButton({
       <Button
         size="sm"
         variant="danger"
-        disabled={pending}
+        disabled={!hydrated || pending}
         onClick={() => run("none", () => removeFriendAction(targetHandle))}
       >
         Remove

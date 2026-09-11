@@ -82,6 +82,20 @@ describe("friends feed", () => {
     await prisma.$disconnect();
   });
 
+  it("ranks trophies per pilot across full history while returning only authorized flight awards", async () => {
+    const pilotA = await createPilot("trophyA");
+    const pilotB = await createPilot("trophyB");
+    const visible = await createFlight({ ownerId: pilotA.id, visibility: "public", label: "silver" });
+    const hidden = await createFlight({ ownerId: pilotA.id, visibility: "private", label: "gold" });
+    const other = await createFlight({ ownerId: pilotB.id, visibility: "public", label: "other-gold" });
+    await prisma.flight.updateMany({ where: { id: { in: [visible.id, hidden.id, other.id] } }, data: { recordingKind: "logbook" } });
+    const result = await repo.trophiesForVisibleFlights([visible, other]);
+    expect(result[visible.id]).toEqual(expect.arrayContaining([expect.objectContaining({ category: "duration", rank: 2 })]));
+    expect(result[other.id]).toEqual(expect.arrayContaining([expect.objectContaining({ category: "duration", rank: 1 })]));
+    expect(result).not.toHaveProperty(hidden.id);
+    expect(await repo.trophiesForVisibleFlights([visible])).toEqual({ [visible.id]: result[visible.id] });
+  });
+
   it("shows a friend's public and friends-only ready flights and excludes hidden rows", async () => {
     const viewer = await createPilot("feedViewer");
     const friend = await createPilot("feedFriend");

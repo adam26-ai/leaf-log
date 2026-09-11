@@ -144,7 +144,7 @@ export function FriendSearch() {
             updateQuery(event.target.value);
           }}
           onKeyDown={handleInputKeyDown}
-          className="h-11 w-full rounded-md border border-gray-300 bg-paper px-4 font-mono text-sm text-ink outline-none transition-colors placeholder:text-gray-400 focus:border-amber focus:ring-2 focus:ring-amber/30"
+          className="h-11 w-full rounded-md border border-gray-300 bg-paper px-4 font-mono text-sm text-ink outline-none transition-colors placeholder:text-gray-400 focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30"
         />
       </div>
 
@@ -155,11 +155,11 @@ export function FriendSearch() {
           className="absolute z-20 mt-2 max-h-96 w-full overflow-y-auto rounded-md border border-gray-200 bg-paper shadow-lg ring-1 ring-black/5"
         >
           {loading && (
-            <div className="px-4 py-3 text-sm text-gray-600">Searching...</div>
+            <div className="px-4 py-3 text-sm text-gray-600">Searching…</div>
           )}
 
           {!loading && hasSearched && results.length === 0 && (
-            <div className="px-4 py-3 text-sm text-gray-600">No pilots found</div>
+            <div className="px-4 py-3 text-sm text-gray-600">No pilots found.</div>
           )}
 
           {!loading && results.length > 0 && (
@@ -172,13 +172,13 @@ export function FriendSearch() {
                   aria-selected={index === activeIndex}
                   className={cn(
                     "flex items-center gap-3 px-3 py-3",
-                    index === activeIndex && "bg-amber/10",
+                    index === activeIndex && "bg-brand-blue/10",
                   )}
                 >
                   <Link
                     href={`/@${result.handle}`}
                     onClick={() => setOpen(false)}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber"
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue"
                   >
                     <Avatar
                       handle={result.handle}

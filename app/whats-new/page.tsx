@@ -31,7 +31,7 @@ export default async function WhatsNewPage() {
           {RELEASE_NOTES.map((note) => (
             <li key={`${note.date}-${note.title}`}>
               <Card className="flex flex-col gap-2 p-6">
-                <time className="font-condensed text-xs font-bold tracking-wide text-amber-strong uppercase">
+                <time className="font-condensed text-xs font-bold tracking-wide text-brand-blue-strong uppercase">
                   {formatDate(note.date)}
                 </time>
                 <h2 className="font-condensed text-lg font-bold text-ink">

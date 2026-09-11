@@ -1,9 +1,15 @@
 import type { ParsedIgc, DerivedMetrics } from "./types";
+import { baroGpsOffset, playbackAltitude } from "./altitude";
+import { calculatedVario } from "./vario";
 
-const MAX_SAMPLES = 1500;
+// Preserve the recorder's typical one-fix-per-second detail regardless of
+// flight duration. The high ceiling still bounds unusually dense/long files.
+const TARGET_SAMPLE_INTERVAL_S = 1;
+const MAX_REPLAY_SAMPLES = 24_000;
 
 /** The /api/flights/[id]/replay response (the replay path + timing context). */
 export interface ReplayResponse extends ReplayPath {
+  gapThresholdS?: number;
   takeoffMs: number;
   offsetMin: number;
 }
@@ -16,6 +22,8 @@ export interface ReplayPath {
   bounds: [number, number, number, number];
   durationS: number;
   altSource: "baro" | "gps";
+  /** Static GPS-minus-baro median in metres; null if no valid pairs exist. */
+  baroOffsetM?: number | null;
 }
 
 /**
@@ -27,18 +35,30 @@ export interface ReplayPath {
 export function buildReplayPath(
   parsed: ParsedIgc,
   metrics: DerivedMetrics,
-  maxSamples = MAX_SAMPLES,
+  maxSamples = MAX_REPLAY_SAMPLES,
 ): ReplayPath {
   const window = parsed.fixes.slice(
     metrics.takeoffIndex,
     metrics.landingIndex + 1,
   );
   const src = metrics.altSource;
+  const baroOffsetM = baroGpsOffset(window);
   const altOf = (f: (typeof window)[number]) =>
-    (src === "baro" ? (f.baroAlt ?? f.gpsAlt) : (f.gpsAlt ?? f.baroAlt)) ?? 0;
+    playbackAltitude(f, src, baroOffsetM) ?? 0;
 
-  const stride = Math.max(1, Math.ceil(window.length / maxSamples));
-  const picked = window.filter((_, i) => i % stride === 0);
+  const firstTime = window[0]?.t ?? 0;
+  const lastTime = window[window.length - 1]?.t ?? firstTime;
+  const duration = Math.max(0, lastTime - firstTime);
+  const limit = Math.max(2, Math.floor(maxSamples));
+  const interval = Math.max(TARGET_SAMPLE_INTERVAL_S, duration / Math.max(1, limit - 1));
+  const picked = window.length > 0 ? [window[0]] : [];
+  let nextTime = firstTime + interval;
+  for (let index = 1; index < window.length - 1 && picked.length < limit - 1; index++) {
+    const fix = window[index];
+    if (fix.t < nextTime) continue;
+    picked.push(fix);
+    while (nextTime <= fix.t) nextTime += interval;
+  }
   // Always include the final fix so the track ends at the landing.
   if (picked[picked.length - 1] !== window[window.length - 1]) {
     picked.push(window[window.length - 1]);
@@ -55,13 +75,10 @@ export function buildReplayPath(
       ],
   );
 
-  // Centred vertical speed per sample (m/s).
-  const vario = samples.map((s, i) => {
-    const prev = samples[Math.max(0, i - 1)];
-    const next = samples[Math.min(samples.length - 1, i + 1)];
-    const dt = next[3] - prev[3];
-    return dt > 0 ? (next[2] - prev[2]) / dt : 0;
-  });
+  // Calculate on original fixes so replay decimation cannot widen the window.
+  const rates = calculatedVario(window, src, baroOffsetM);
+  const rateByFix = new Map(window.map((fix, index) => [fix, fix.varioMs ?? rates[index]]));
+  const vario = picked.map(fix => rateByFix.get(fix) ?? 0);
 
   let west = Infinity, south = Infinity, east = -Infinity, north = -Infinity;
   for (const [lon, lat] of samples) {
@@ -77,5 +94,6 @@ export function buildReplayPath(
     bounds: [west, south, east, north],
     durationS: metrics.durationS,
     altSource: src,
+    baroOffsetM,
   };
 }

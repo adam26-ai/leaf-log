@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 interface UploadResult {
   filename: string;
@@ -19,6 +20,7 @@ export function PhotoUpload({
   flightId: string;
   onUploaded: () => void;
 }) {
+  const hydrated = useHydrated();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -55,6 +57,7 @@ export function PhotoUpload({
     <div className="flex flex-col gap-2">
       <div
         role="button"
+        aria-disabled={!hydrated || busy}
         tabIndex={0}
         onClick={() => inputRef.current?.click()}
         onKeyDown={(e) => {
@@ -74,7 +77,9 @@ export function PhotoUpload({
         }}
         className={cn(
           "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed px-4 py-6 text-center transition-colors",
-          dragging ? "border-amber bg-amber/10" : "border-gray-300 hover:border-amber",
+          dragging
+            ? "border-[var(--replay-accent)] bg-[var(--replay-profile-sky)]/40"
+            : "border-[var(--replay-inactive-border)] hover:border-[var(--replay-accent)]",
           busy && "pointer-events-none opacity-50",
         )}
       >
@@ -91,6 +96,7 @@ export function PhotoUpload({
         accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
         multiple
         hidden
+        disabled={!hydrated || busy}
         onChange={(e) => uploadFiles(Array.from(e.target.files ?? []))}
       />
       {results && (

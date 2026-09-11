@@ -1,18 +1,24 @@
 @import "tailwindcss";
+/* Explicit sources keep utility generation reliable in local checkouts. */
+@source "./";
+@source "../components";
 
 /*
   Leaf Log design tokens — see DESIGN.md ("same DNA as leafvario.com, warmer room").
-  Anchors: monochrome base, signature amber #ffb459 accent, Roboto / Roboto Condensed.
+  Anchors: monochrome base, signature brand-blue #0099ff accent, Roboto / Roboto Condensed.
 */
 @theme {
   /* Brand palette */
   --color-ink: #000000;        /* primary text / strong structure */
   --color-ink-soft: #272727;   /* near-black secondary surfaces */
   --color-paper: #ffffff;      /* background */
-  --color-amber: #ffb459;      /* signature accent — accent bar, CTAs, highlights */
-  --color-amber-strong: #f59e2c;
-  --color-leaf: #6fae5e;       /* provisional secondary — success / milestones (DESIGN.md) */
-  --color-leaf-strong: #558a47;
+  --color-brand-blue: #0099ff;      /* signature accent — accent bar, CTAs, highlights */
+  --color-brand-blue-strong: #007dcc;
+  --color-emergency-orange: #c2410c;
+  --color-emergency-orange-strong: #9a3412;
+  --color-emergency-orange-light: #fff0e5;
+  --color-success-accent: #d8ff00;
+  --color-success-surface: #424242;
 
   /* Neutral gray scale (borders, muted text, surfaces) */
   --color-gray-50: #f7f7f7;
@@ -44,6 +50,54 @@
 :root {
   --background: var(--color-paper);
   --foreground: var(--color-ink);
+  /* Flight replay palette. The development-only Palette Lab can override
+     these live without rebuilding the application. */
+  --replay-accent: #0099ff;
+  --replay-accent-strong: #0099ff;
+  --replay-active-bg: #0099ff;
+  --replay-active-fg: #ffffff;
+  --replay-active-border: var(--color-success-accent);
+  --replay-inactive-bg: #ffffff;
+  --replay-inactive-fg: #536779;
+  --replay-inactive-border: #bfd3df;
+  --replay-icon: var(--color-success-accent);
+  --replay-metric-icon-bg: var(--color-success-surface);
+  --replay-timeline: #0099ff;
+  --replay-profile-line: var(--color-success-accent);
+  --replay-profile-fill: var(--color-success-accent);
+  --replay-terrain-line: #536779;
+  --replay-terrain-fill: #a5aeb6;
+  --replay-terrain-gradient: #5c5c5c;
+  --replay-profile-sky: #99bee1;
+  --replay-profile-grid: #d4d4d4;
+  --replay-button-border-width: 1.5px;
+  --replay-button-icon-stroke: 2px;
+  --replay-inactive-button-border-width: 1px;
+  --replay-inactive-button-icon-stroke: 1.25px;
+  --replay-metric-icon-stroke: 3.25px;
+  --replay-timeline-width: 4px;
+  --replay-timeline-dot-fill: #ffffff;
+  --replay-profile-line-width: 2px;
+  --replay-terrain-line-width: 2px;
+  --replay-terrain-fill-alpha: 1;
+  --replay-terrain-gradient-alpha: 0.75;
+  --replay-header-accent-height: 5px;
+  --replay-group-primary: var(--color-success-accent);
+  --replay-group-companion: #0099ff;
+  --replay-group-card-bg: #ffffff;
+  --replay-group-card-text: #141414;
+  --replay-group-card-muted: #4b5563;
+  --replay-group-card-hover: #e5e7eb;
+  --replay-group-card-alpha: 0.55;
+  --replay-group-avatar-bg: #ffffff;
+  --replay-group-avatar-text: #536779;
+  --replay-group-track: #ffffff;
+  --replay-group-track-outline: #000000;
+  --replay-group-track-alpha: 0.3;
+  --replay-group-track-outline-alpha: 1;
+  --replay-group-badge-idle: #ffffff;
+  --replay-group-badge-text: #141414;
+  --replay-group-badge-border: #141414;
 }
 
 body {
@@ -56,4 +110,14 @@ body {
 /* Headings lean on Roboto Condensed for the technical-yet-approachable signage feel. */
 h1, h2, h3, h4, .font-condensed {
   font-family: var(--font-condensed);
+}
+
+/* Match MapLibre's zoom/compass stack to Leaf's 36px replay controls. */
+.flight-replay-map .maplibregl-ctrl-group {
+  border-radius: var(--radius-md);
+}
+
+.flight-replay-map .maplibregl-ctrl-group button {
+  width: 36px;
+  height: 36px;
 }

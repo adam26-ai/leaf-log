@@ -3,11 +3,11 @@ import { describe, it, expect } from "vitest";
 import { AccentBar } from "./accent-bar";
 
 describe("AccentBar", () => {
-  it("renders the signature 3px amber bar", () => {
+  it("renders the signature 3px brand-blue bar", () => {
     const { container } = render(<AccentBar />);
     const bar = container.firstElementChild as HTMLElement;
     expect(bar).toBeInTheDocument();
-    expect(bar.className).toContain("bg-amber");
+    expect(bar.className).toContain("bg-brand-blue");
     expect(bar.className).toContain("h-[3px]");
     expect(bar).toHaveAttribute("aria-hidden");
   });

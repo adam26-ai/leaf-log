@@ -1,4 +1,5 @@
 import type { Fix, DerivedMetrics } from "./types";
+import { baroGpsOffset, playbackAltitude } from "./altitude";
 
 export const TRACK_ARTIFACT_VERSION = 1;
 const MAX_LINE_POINTS = 2000;
@@ -82,9 +83,10 @@ export function buildTrackArtifact(
 
   // Downsample the barograph series by striding.
   const src = metrics.altSource;
+  const offset = baroGpsOffset(window);
   const t0 = window[0]?.t ?? 0;
   const baroAll: [number, number][] = window.map((f) => {
-    const a = src === "baro" ? (f.baroAlt ?? f.gpsAlt) : (f.gpsAlt ?? f.baroAlt);
+    const a = playbackAltitude(f, src, offset);
     return [Math.round(f.t - t0), Math.round(a ?? 0)];
   });
   const stride = Math.max(1, Math.ceil(baroAll.length / MAX_BARO_POINTS));

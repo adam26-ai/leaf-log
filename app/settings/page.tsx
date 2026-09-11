@@ -5,12 +5,14 @@ import { AppHeader } from "@/components/app-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Card } from "@/components/ui/card";
 import { SettingsForm } from "./settings-form";
-import { AvatarUploader } from "./avatar-uploader";
+import { WingEditor } from "./wing-editor";
+import { listOwnWings } from "@/lib/flights/wings";
 
 export const metadata = { title: "Settings — Leaf Log" };
 
 export default async function SettingsPage() {
   const profile = await requireProfile();
+  const wings = await listOwnWings(profile.id);
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
@@ -22,9 +24,9 @@ export default async function SettingsPage() {
 
         <div className="flex flex-col gap-6">
           <Link href="/settings/devices" className="group block">
-            <Card className="p-6 transition-colors group-hover:border-amber">
+            <Card className="p-6 transition-colors group-hover:border-brand-blue">
               <div className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-amber/20 text-ink">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-success-surface text-success-accent">
                   <Plug className="h-5 w-5" />
                 </div>
                 <div>
@@ -40,23 +42,17 @@ export default async function SettingsPage() {
             </Card>
           </Link>
 
-          <Card className="flex flex-col gap-4 p-6">
-            <h2 className="font-condensed text-lg font-bold text-ink">Photo</h2>
-            <AvatarUploader
-              handle={profile.handle}
-              displayName={profile.displayName}
-              avatarUpdatedAt={profile.avatarUpdatedAt}
-            />
-          </Card>
-
-          <Card className="p-6">
             <SettingsForm
               handle={profile.handle}
               displayName={profile.displayName}
+              avatarUpdatedAt={profile.avatarUpdatedAt}
               bio={profile.bio ?? ""}
               defaultVisibility={profile.defaultVisibility}
+              defaultUnits={profile.defaultUnits}
+              customUnits={profile.customUnits}
+              mapDefaults={profile.mapDefaults}
+              afterProfile={<WingEditor wings={wings} />}
             />
-          </Card>
         </div>
       </main>
     </div>

@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Sparkles, Settings, LogOut, Users } from "lucide-react";
-import { Avatar } from "@/components/avatar";
+import { Sparkles, Settings, LogOut } from "lucide-react";
 import { signOutAction } from "@/lib/actions";
 import type { Profile } from "@/lib/profile";
 
@@ -36,14 +35,9 @@ export function AvatarMenu({ profile }: { profile: Profile }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
-        className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber focus-visible:ring-offset-2"
+        className="rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-2"
       >
-        <Avatar
-          handle={profile.handle}
-          displayName={profile.displayName}
-          avatarUpdatedAt={profile.avatarUpdatedAt}
-          className="h-8 w-8 text-xs"
-        />
+        <Settings className="h-8 w-8 p-1 text-gray-600" />
       </button>
 
       {open && (
@@ -60,9 +54,6 @@ export function AvatarMenu({ profile }: { profile: Profile }) {
 
           <MenuLink href="/whats-new" icon={<Sparkles className="h-4 w-4" />} onSelect={() => setOpen(false)}>
             What&apos;s new
-          </MenuLink>
-          <MenuLink href="/friends" icon={<Users className="h-4 w-4" />} onSelect={() => setOpen(false)}>
-            Friends
           </MenuLink>
           <MenuLink href="/settings" icon={<Settings className="h-4 w-4" />} onSelect={() => setOpen(false)}>
             Settings

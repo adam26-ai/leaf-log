@@ -27,6 +27,54 @@ A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ## Local development
 
+### Windows quick start
+
+Run this from the project folder in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-local.ps1
+```
+
+The launcher uses installed dependencies, creates `.env.local` if needed with a
+random auth secret, starts Docker Desktop and Postgres, applies existing
+migrations, and serves the app at the local `AUTH_URL`. Loopback URLs bind only
+to `127.0.0.1`; private-LAN URLs bind to all interfaces for phone testing. It
+uses Node from PATH or the Node runtime bundled with Codex on this machine. On a
+fresh checkout, install dependencies with `pnpm install` first. The launcher
+requires the local database settings from `.env.example` and an empty
+`RESEND_API_KEY`.
+
+On affected Windows 11 builds, a Docker Desktop shutdown can leave
+inaccessible AF_UNIX socket reparse points behind. When Docker fails with that
+specific signature, the launcher stops the failed startup, preserves the two
+runtime directories with `.stale-<timestamp>` names, and retries once. It never
+deletes Docker images, containers, volumes, or project data. Other Docker
+startup failures are reported without automatic recovery.
+
+Keep that terminal running; saved code changes appear automatically in the
+browser. Press **Ctrl+C** to stop the website; Docker Desktop stays running so
+the next launch is fast. Pass `-StopDockerWhenDone` to request Docker Desktop's
+supported stop sequence after the website exits. `docker compose stop` stops
+the database while keeping its data; running the launcher again resumes it.
+
+The local database starts empty and persists in Docker's `leaf-log-db` volume.
+Create a local account from the sign-in page using any test email address. After
+requesting a magic link, copy it from the server terminal, or open the latest link
+from another PowerShell window:
+
+```powershell
+Start-Process (Get-Content (Join-Path $env:TEMP 'leaf-magic-link.txt') -Raw).Trim()
+```
+
+No email is sent when `RESEND_API_KEY` is empty. Local accounts and flights are
+separate from Railway. `.env.local` is gitignored. If you need a sample IGC file:
+
+```powershell
+node --import tsx scripts/gen-fixture.ts test/e2e/.fixture.igc
+```
+
+### Manual setup (all platforms)
+
 ```bash
 pnpm install
 
@@ -46,8 +94,9 @@ pnpm db:seed         # currently a no-op; kept as the seed entry point
 pnpm dev             # http://localhost:3000
 ```
 
-In dev, **no real email is sent** — the magic-link URL is logged to the server
-console and written to `/tmp/leaf-magic-link.txt`.
+With `RESEND_API_KEY` empty, **no real email is sent** — the magic-link URL is
+logged to the server console and written to `leaf-magic-link.txt` in the operating
+system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 
 ## Testing
 
@@ -55,11 +104,28 @@ console and written to `/tmp/leaf-magic-link.txt`.
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
-pnpm e2e         # Playwright happy-path (needs local Postgres running)
+pnpm e2e         # Playwright browser suite (needs local Postgres running)
 ```
 
 Integration tests (`*.integration.test.ts`, `lib/sites/lookup.test.ts`) auto-skip
 when `DATABASE_URL` is unset.
+
+With a local database configured, the unit/integration suite applies migrations
+to its own temporary schema and removes it afterward. Files run serially because
+they exercise the shared XC queue. Existing development flights are not included
+in backfill tests, so a growing local logbook cannot slow down those checks.
+
+Playwright starts its own server at `http://localhost:3100`, with separate
+`.next-e2e` output and a fresh temporary PostgreSQL schema for each run. It applies
+migrations, generates the IGC fixture, and removes that schema after the run;
+your normal logbook and phone-testing settings are left alone. Real email is
+disabled for this server, and its magic links use a separate temporary file.
+Keep port 3100 free. Test traces are saved under `test-results/playwright` on failure.
+
+Install Chromium once with `pnpm exec playwright install chromium` (CI uses
+`--with-deps`). Windows falls back to installed Edge if bundled Chromium is
+missing; `PLAYWRIGHT_CHANNEL=msedge` can also select it explicitly. The test
+browser enables software WebGL for map interactions on machines without a GPU.
 
 ## Sites data
 
