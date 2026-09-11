@@ -7,8 +7,9 @@ import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { buildReplayArtifact } from "@/lib/igc/replay-artifact";
 import { sha256Hex } from "@/lib/ingest/dedupe";
 import { PARSER_VERSION } from "@/lib/ingest/ingest-flight";
-import { findLocation } from "@/lib/sites/lookup";
+import { findLocationDecision } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
+import { assignmentPatch, type SiteAssignment } from "@/lib/sites/assignment";
 import { EntryError } from "./service";
 import { duplicateKey } from "./duplicates";
 
@@ -18,9 +19,9 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
   const flight = await prisma.flight.findFirst({ where: { id: flightId, ownerId } });
   if (!flight) throw new EntryError("Flight not found.", 404);
   if (commit && flight.igcSha256 === hash && flight.recordingKind === "igc") return { id: flight.id, attached: true as const };
-  if (flight.recordingKind !== "logbook") throw new EntryError("This flight already has a recording.", 409);
   const existing = await prisma.flight.findUnique({ where: { ownerId_igcSha256: { ownerId, igcSha256: hash } }, select: { id: true } });
-  if (existing) throw new EntryError(`This IGC is already in your logbook as flight ${existing.id}. Open that flight instead.`, 409);
+  if (existing && existing.id !== flight.id) throw new EntryError(`This IGC is already in your logbook as flight ${existing.id}. Open that flight instead.`, 409);
+  if (commit && flight.recordingKind !== "logbook") throw new EntryError("This flight already has a recording.", 409);
   const parsed = parseIgc(bytes), metrics = deriveMetrics(parsed);
   if (!metrics) throw new EntryError("This file has no usable GPS track. Your manual entry has not changed.");
   const measurements = repairedMeasurements(parsed, metrics);
@@ -29,16 +30,18 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
     altGainM: metrics.altGainM, maxClimbMs: metrics.maxClimbMs, maxSinkMs: metrics.maxSinkMs,
     takeoffAt: new Date(metrics.takeoffAtMs).toISOString(), landingAt: new Date(metrics.landingAtMs).toISOString(),
     takeoffLat: metrics.takeoff.lat, takeoffLon: metrics.takeoff.lon, landingLat: metrics.landing.lat, landingLon: metrics.landing.lon };
-  if (!commit) return { attached: false as const, hash, expectedUpdatedAt: flight.updatedAt.toISOString(), warnings: parsed.warnings,
+  if (!commit) return { attached: false as const, mergeable: flight.recordingKind === "logbook", hash, expectedUpdatedAt: flight.updatedAt.toISOString(), warnings: parsed.warnings,
     previous: { date: duplicateKey(flight), durationS: flight.durationS, maxAltM: flight.maxAltM, launchAltM: flight.launchAltM,
       altGainM: flight.altGainM, maxClimbMs: flight.maxClimbMs, maxSinkMs: flight.maxSinkMs,
       takeoffAt: flight.takeoffAt?.toISOString() ?? null, landingAt: flight.landingAt?.toISOString() ?? null,
       takeoffLat: flight.takeoffLat, takeoffLon: flight.takeoffLon, landingLat: flight.landingLat, landingLon: flight.landingLon }, recorded };
   if (expectedHash !== hash || expectedUpdatedAt !== flight.updatedAt.toISOString()) throw new EntryError("The flight or selected file changed. Review the comparison again before attaching.", 409);
-  const [takeoffMatch, landingMatch] = await Promise.all([
-    findLocation(prisma, { ...metrics.takeoff, kind: "takeoff", viewerId: ownerId }),
-    findLocation(prisma, { ...metrics.landing, kind: "landing", viewerId: ownerId }),
+  const [takeoffDecision, landingDecision] = await Promise.all([
+    findLocationDecision(prisma, { ...metrics.takeoff, kind: "takeoff", viewerId: ownerId }),
+    findLocationDecision(prisma, { ...metrics.landing, kind: "landing", viewerId: ownerId }),
   ]);
+  const takeoffMatch = takeoffDecision.match;
+  const landingMatch = landingDecision.match;
   try {
     return await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
@@ -50,7 +53,18 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
       const patches = await Promise.all((["takeoff", "landing"] as const).map(async endpoint => {
         const match = endpoint === "takeoff" ? takeoffMatch : landingMatch;
         const id = current[`${endpoint}SiteId`];
-        if (id || !current[`${endpoint}SiteName`]) return resolveLocationCache(tx, id ?? match?.site.id ?? null, id ? null : match?.zone?.id ?? null, endpoint, ownerId);
+        if (id || !current[`${endpoint}SiteName`]) {
+          const patch = await resolveLocationCache(tx, id ?? match?.site.id ?? null, id ? null : match?.zone?.id ?? null, endpoint, ownerId);
+          const decision = endpoint === "takeoff" ? takeoffDecision : landingDecision;
+          const assignment = id
+            ? current[`${endpoint}SiteAssignment`] as SiteAssignment
+            : decision.ambiguous
+              ? "needs_review"
+              : patch[`${endpoint}SiteId`]
+              ? "auto_matched"
+              : "unassigned";
+          return { ...patch, ...assignmentPatch(endpoint, assignment) };
+        }
         return {};
       }));
       const updated = await tx.flight.updateMany({ where: { id: flightId, ownerId, recordingKind: "logbook", updatedAt: new Date(expectedUpdatedAt!) }, data: {

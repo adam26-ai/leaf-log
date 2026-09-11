@@ -6,16 +6,19 @@ const map = vi.hoisted(() => ({
   easeTo: vi.fn(), fitBounds: vi.fn(), on: vi.fn(), getCanvas: vi.fn(() => ({ focus: vi.fn() })),
   addControl: vi.fn(), remove: vi.fn(), resize: vi.fn(), getZoom: vi.fn(() => 11),
 }));
-const markers = vi.hoisted(() => [] as { color: string; element: HTMLElement; setLngLat: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }[]);
+const markers = vi.hoisted(() => [] as { color: string; draggable: boolean; element: HTMLElement; setLngLat: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; getLngLat: ReturnType<typeof vi.fn> }[]);
 vi.mock("maplibre-gl", () => ({ default: {
   Map: class { constructor() { return map; } },
   NavigationControl: class {},
   Marker: class {
     color: string;
+    draggable: boolean;
     element = document.createElement("div");
     setLngLat = vi.fn(() => this);
     remove = vi.fn();
-    constructor({ color }: { color: string }) { this.color = color; markers.push(this); }
+    on = vi.fn();
+    getLngLat = vi.fn(() => ({ lat: 45.91, wrap: () => ({ lng: 6.14 }) }));
+    constructor({ color, draggable = false }: { color: string; draggable?: boolean }) { this.color = color; this.draggable = draggable; markers.push(this); }
     addTo() { return this; }
     getElement() { return this.element; }
   },
@@ -115,6 +118,15 @@ it("handles empty results and ignores invalid coordinates and bounding boxes", a
 it("doesn't show location search on read-only maps", () => {
   render(<EntryMap lat={45.9} lon={6.13} />);
   expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+});
+
+it("lets a site-management pin be dragged independently", () => {
+  const onPick = vi.fn();
+  render(<EntryMap lat={45.9} lon={6.13} draggable onPick={onPick} />);
+  expect(markers[0].draggable).toBe(true);
+  const dragEnd = markers[0].on.mock.calls.find(([name]) => name === "dragend")?.[1];
+  act(() => dragEnd());
+  expect(onPick).toHaveBeenCalledWith(45.91, 6.14);
 });
 
 it("places only the chosen endpoint, retains two labeled pins, and removes only invalidated pins", () => {

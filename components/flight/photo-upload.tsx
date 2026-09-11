@@ -3,12 +3,7 @@
 import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
-
-interface UploadResult {
-  filename: string;
-  status: "placed" | "unplaced" | "skipped_dupe" | "rejected";
-  reason?: string;
-}
+import { uploadPhotoFiles, type PhotoUploadResult } from "./photo-upload-client";
 
 const ACCEPT_EXT = /\.(jpe?g|png|heic|heif)$/i;
 
@@ -24,7 +19,7 @@ export function PhotoUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [results, setResults] = useState<UploadResult[] | null>(null);
+  const [results, setResults] = useState<PhotoUploadResult[] | null>(null);
 
   async function uploadFiles(all: File[]) {
     const files = all.filter((f) => f.type.startsWith("image/") || ACCEPT_EXT.test(f.name));
@@ -32,18 +27,9 @@ export function PhotoUpload({
     setBusy(true);
     setResults(null);
     try {
-      const form = new FormData();
-      for (const f of files) form.append("files", f);
-      const res = await fetch(`/api/flights/${flightId}/photos`, { method: "POST", body: form });
-      const json = await res.json().catch(() => ({}));
-      setResults(
-        res.ok
-          ? (json.results ?? [])
-          : [{ filename: "Upload", status: "rejected", reason: json.error ?? "Upload failed" }],
-      );
-      if (res.ok) onUploaded();
-    } catch {
-      setResults([{ filename: "Upload", status: "rejected", reason: "Network error" }]);
+      const nextResults = await uploadPhotoFiles(flightId, files);
+      setResults(nextResults);
+      if (nextResults.some((result) => result.status !== "rejected")) onUploaded();
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -51,7 +37,8 @@ export function PhotoUpload({
   }
 
   const failed = results?.filter((r) => r.status === "rejected") ?? [];
-  const ok = results?.filter((r) => r.status !== "rejected").length ?? 0;
+  const added = results?.filter((r) => r.status === "placed" || r.status === "unplaced").length ?? 0;
+  const duplicates = results?.filter((r) => r.status === "skipped_dupe").length ?? 0;
 
   return (
     <div className="flex flex-col gap-2">
@@ -101,7 +88,8 @@ export function PhotoUpload({
       />
       {results && (
         <p className="text-xs text-gray-500">
-          {ok > 0 && `Added ${ok} photo${ok === 1 ? "" : "s"}.`}
+          {added > 0 && `Added ${added} photo${added === 1 ? "" : "s"}.`}
+          {duplicates > 0 && ` ${duplicates} ${duplicates === 1 ? "was" : "were"} already on this flight.`}
           {failed.length > 0 && (
             <span className="text-red-600">
               {" "}

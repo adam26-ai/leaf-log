@@ -34,10 +34,9 @@ function revalidateBoundarySurfaces() {
  * Save/clear a boundary on the site or zone currently bound to a flight
  * endpoint — the common case, reached from the flight page. The row id is
  * re-derived from the flight row (never accepted from the client), exactly
- * as every other SPRINT-004/005 flight-page action. Re-association (a
- * widened boundary retroactively picking up the caller's own previously
- * unmatched flights) fires from inside setSiteBoundary/setZoneBoundary
- * themselves, so every caller gets it automatically.
+ * as every other SPRINT-004/005 flight-page action. Flight assignment
+ * changes are intentionally deferred to the Site settings preview/confirm
+ * workflow, so editing geometry never silently rewrites logbook history.
  */
 export async function saveBoundaryForFlightEndpoint(
   flightId: string,

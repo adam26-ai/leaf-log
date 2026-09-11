@@ -47,8 +47,11 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await page.goto(`${flightUrl}/edit`);
   const photosChooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: /Add photos/i }).click();
-  await (await photosChooser).setFiles([JPEG, HEIC]);
-  await expect(page.getByText(/added 2 photos/i)).toBeVisible({ timeout: 30_000 });
+  // A single chooser selection can contain well over three files. Repeated
+  // JPEGs also exercise per-file duplicate reporting without adding extra
+  // gallery fixtures.
+  await (await photosChooser).setFiles([JPEG, HEIC, JPEG, JPEG, JPEG]);
+  await expect(page.getByText(/added 2 photos\. 3 were already on this flight/i)).toBeVisible({ timeout: 30_000 });
   await page.goto(flightUrl);
 
   // Two thumbnails appear in the gallery, both served (decoded) successfully.

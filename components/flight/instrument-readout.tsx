@@ -28,19 +28,19 @@ function Cell({
   color: string;
 }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-1">
+    <div className="flex min-w-0 flex-col items-center gap-0.5 sm:gap-1">
       <span className="whitespace-nowrap text-[8px] font-bold uppercase tracking-wide text-gray-400 sm:text-[10px]">
         {label}
       </span>
-      <span className="flex items-baseline justify-center gap-1 whitespace-nowrap">
+      <span className="flex items-baseline justify-center gap-0.5 whitespace-nowrap sm:gap-1">
         <span
-          className="font-condensed text-lg font-bold leading-none tabular-nums sm:text-2xl"
+          className="font-condensed text-base font-bold leading-none tabular-nums sm:text-2xl"
           style={{ color }}
         >
           {value}
         </span>
         {unit && (
-          <span className="text-[10px] font-medium sm:text-xs opacity-80" style={{ color }}>
+          <span className="text-[9px] font-medium opacity-80 sm:text-xs" style={{ color }}>
             {unit}
           </span>
         )}
@@ -64,7 +64,7 @@ export function InstrumentReadout({
   units?: UnitSystem;
   ranges?: InstrumentRanges | null;
 }) {
-  if (!reading) return <div className="grid w-64 max-w-full sm:w-80 grid-cols-3 items-center rounded-2xl bg-ink/85 px-2 py-2 sm:px-4 sm:py-2.5 shadow-lg backdrop-blur-sm">
+  if (!reading) return <div className="grid w-48 max-w-full grid-cols-3 items-center rounded-2xl bg-ink/85 px-1.5 py-2 shadow-lg backdrop-blur-sm sm:w-80 sm:px-4 sm:py-2.5">
     <Cell label="Altitude MSL" value="—" color="#b0b0b0" />
     <Cell label="Vario" value="—" color="#b0b0b0" />
     <Cell label="Speed" value="—" color="#b0b0b0" />
@@ -85,7 +85,7 @@ export function InstrumentReadout({
     ),
   );
   return (
-    <div className="grid w-64 max-w-full sm:w-80 grid-cols-3 items-center rounded-2xl bg-ink/85 px-2 py-2 sm:px-4 sm:py-2.5 shadow-lg backdrop-blur-sm">
+    <div className="grid w-48 max-w-full grid-cols-3 items-center rounded-2xl bg-ink/85 px-1.5 py-2 shadow-lg backdrop-blur-sm sm:w-80 sm:px-4 sm:py-2.5">
       <Cell label="Altitude MSL" value={altValue} unit={altUnit} color={altColor} />
       <Cell label="Vario" value={varioValue} unit={varioUnit} color={varioColor} />
       <Cell label="Speed" value={speedValue} unit={speedUnit} color={speedColor} />

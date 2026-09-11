@@ -1215,57 +1215,79 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     trackedZoomAnimationRef.current = requestAnimationFrame(animate);
   }
 
-  /**
-   * Predictable desktop navigation: left drag always rotates/pitches in the
-   * same direction, while right or middle drag pans. MapLibre's default
-   * around-cursor rotation reverses bearing above the viewport midpoint,
-   * which feels erratic in this steeply pitched 3D view.
-   */
+  /** Touch navigation mirrors the mouse model: one finger adjusts the view
+   * angle, two fingers pan, and a two-finger pinch zooms. */
   function installTouchNavigation(map: maplibregl.Map): () => void {
     const element = map.getCanvasContainer();
     const previousTouchAction = element.style.touchAction;
     element.style.touchAction = "none";
-    let previous: { x: number; y: number; distance: number; angle: number; count: number } | null = null;
+    let previous: { x: number; y: number; distance: number; count: number } | null = null;
     const sample = (touches: TouchList) => {
       const a = touches[0], b = touches[1] ?? a;
       return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2,
-        distance: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
-        angle: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI, count: touches.length };
+        distance: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY), count: touches.length };
     };
     const start = (event: TouchEvent) => {
       if (!event.touches.length) return;
       previous = sample(event.touches);
-      manualCameraInteractionRef.current = "rotate";
+      manualCameraInteractionRef.current = event.touches.length > 1 ? "pan" : "rotate";
       map.stop();
-      if (orbitStateRef.current) orbitStateRef.current.paused = true;
+      if (manualCameraInteractionRef.current === "rotate" && orbitStateRef.current) {
+        orbitStateRef.current.paused = true;
+      }
     };
     const move = (event: TouchEvent) => {
       if (!event.touches.length || !previous) return;
       const next = sample(event.touches), old = previous;
       previous = next;
-      if (next.count !== old.count) return;
+      if (next.count !== old.count) {
+        manualCameraInteractionRef.current = next.count > 1 ? "pan" : "rotate";
+        return;
+      }
       event.preventDefault();
-      const pitch = Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() - (next.y - old.y) * 0.25));
-      const bearing = map.getBearing() + (next.x - old.x) * 0.35 + (next.count > 1 ? angularDelta(old.angle, next.angle) : 0);
-      if (cameraModeRef.current === "chase") chasePitchRef.current = pitch;
-      setOrientationAroundTrackedPilot(map, bearing, pitch);
-      if (next.count > 1 && old.distance > 0 && next.distance > 0) {
-        // Use the same pilot-anchored zoom as desktop, retaining this gesture's bearing.
-        const zoom = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), map.getZoom() + Math.log2(next.distance / old.distance)));
-        map.jumpTo({ zoom });
+      if (next.count === 1) {
+        const pitch = Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() - (next.y - old.y) * 0.25));
+        const bearing = map.getBearing() + (next.x - old.x) * 0.35;
+        if (cameraModeRef.current === "chase") chasePitchRef.current = pitch;
         setOrientationAroundTrackedPilot(map, bearing, pitch);
+      } else {
+        // Two fingers drag the world exactly like desktop right-drag. Pinching
+        // still zooms, but twisting does not unexpectedly alter the view angle.
+        map.panBy([-(next.x - old.x), -(next.y - old.y)], { duration: 0 });
+        if (old.distance > 0 && next.distance > 0) {
+          const zoom = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), map.getZoom() + Math.log2(next.distance / old.distance)));
+          map.jumpTo({ zoom });
+        }
       }
     };
-    const end = (event: TouchEvent) => {
-      if (event.touches.length) { previous = sample(event.touches); return; }
-      previous = null;
-      manualCameraInteractionRef.current = null;
-      if (cameraModeRef.current === "chase") chaseOffsetRef.current = angularDelta(chaseBearingRef.current ?? map.getBearing(), map.getBearing());
-      if (orbitStateRef.current) {
+    const finish = (mode: "rotate" | "pan" | null) => {
+      if (mode === "rotate" && cameraModeRef.current === "chase") {
+        chaseOffsetRef.current = angularDelta(chaseBearingRef.current ?? map.getBearing(), map.getBearing());
+      }
+      if (mode === "rotate" && orbitStateRef.current) {
         orbitStateRef.current.paused = false;
         orbitStateRef.current.bearing = map.getBearing();
         orbitStateRef.current.timestamp = performance.now();
       }
+      if (mode === "pan" && cameraModeRef.current !== "fixed") {
+        preserveCameraOnFixedRef.current = true;
+        cameraModeRef.current = "fixed";
+        onManualCameraChangeRef.current?.();
+      }
+    };
+    const end = (event: TouchEvent) => {
+      const completedMode = manualCameraInteractionRef.current;
+      finish(completedMode);
+      if (event.touches.length) {
+        previous = sample(event.touches);
+        manualCameraInteractionRef.current = event.touches.length > 1 ? "pan" : "rotate";
+        if (manualCameraInteractionRef.current === "rotate" && orbitStateRef.current) {
+          orbitStateRef.current.paused = true;
+        }
+        return;
+      }
+      previous = null;
+      manualCameraInteractionRef.current = null;
     };
     element.addEventListener("touchstart", start, { passive: true });
     element.addEventListener("touchmove", move, { passive: false });

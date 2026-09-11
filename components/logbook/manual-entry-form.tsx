@@ -20,7 +20,7 @@ export function ManualEntryForm({ options, initial, flightId, expectedUpdatedAt,
   const [issues, setIssues] = useState<EntryIssue[]>([]);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const [duplicates, setDuplicates] = useState<{ id: string; date: string; site: string | null; wing: string | null }[]>([]);
+  const [duplicates, setDuplicates] = useState<{ id: string; date: string; time: string | null; site: string | null; wing: string | null }[]>([]);
   async function save(allowDuplicate = false) {
     const parsed = parseEntry(draft);
     if (!parsed.ok) { setIssues(parsed.issues); setError("Check the highlighted fields before saving."); return; }
@@ -43,9 +43,13 @@ export function ManualEntryForm({ options, initial, flightId, expectedUpdatedAt,
       </select>
     </label>
     {duplicates.length > 0 && <div className="rounded-lg border border-emergency-orange/25 bg-emergency-orange-light p-3 text-sm text-emergency-orange">
-      <p className="font-medium">This may already be in your logbook</p>
-      <ul className="my-2 list-disc pl-5">{duplicates.map(item => <li key={item.id}><Link href={`/flights/${item.id}`} target="_blank" className="underline">{item.date} · {item.site ?? "Unknown site"} · {item.wing ?? "Unknown wing"}</Link></li>)}</ul>
-      <button type="button" disabled={pending} onClick={() => void save(true)} className="font-medium underline">These are different flights — add a separate entry</button>
+      <p className="font-medium">This flight may overlap an existing flight</p>
+      <p className="mt-1 text-gray-700">Compare the details before keeping this new entry. The existing flight will not be changed.</p>
+      <ul className="my-2 list-disc pl-5">{duplicates.map(item => <li key={item.id}><Link href={`/flights/${item.id}`} target="_blank" className="underline">{item.date}{item.time ? ` · ${item.time}` : ""} · {item.site ?? "Unknown site"} · {item.wing ?? "Unknown wing"}</Link></li>)}</ul>
+      <div className="flex flex-wrap gap-3">
+        <button type="button" disabled={pending} onClick={() => void save(true)} className="font-medium underline">Keep this new flight</button>
+        <button type="button" disabled={pending} onClick={() => { setDraft(initial ?? emptyEntry(imperial)); setDuplicates([]); requestId.current = null; }} className="font-medium underline">Discard this new flight</button>
+      </div>
     </div>}
     {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
     <Button type="submit" disabled={pending} className="self-start">{pending ? "Saving…" : flightId ? "Save flight details" : "Add manual flight"}</Button>

@@ -36,7 +36,8 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
       <label className="flex flex-col gap-1.5 text-sm"><span className="font-medium text-gray-700">{label}</span>
         <select aria-label={`Choose ${label.toLowerCase()}`} value={value[`${endpoint}SiteId`]} onChange={event => {
           const selected = options.sites.find(site => site.id === event.target.value);
-          if (selected) set({ [`${endpoint}SiteId`]: selected.id, [`${endpoint}SiteName`]: selected.name, [`${endpoint}Lat`]: String(selected.lat), [`${endpoint}Lon`]: String(selected.lon) });
+          if (selected) set({ [`${endpoint}SiteId`]: selected.id, [`${endpoint}SiteName`]: selected.name,
+            ...(!value[`${endpoint}Lat`] || !value[`${endpoint}Lon`] ? { [`${endpoint}Lat`]: String(selected.lat), [`${endpoint}Lon`]: String(selected.lon) } : {}) });
           else set({ [`${endpoint}SiteId`]: "" });
         }} className={entryInputClass}>
           <option value="">Enter a name below, or choose a site…</option>

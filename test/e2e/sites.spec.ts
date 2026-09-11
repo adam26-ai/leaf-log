@@ -81,6 +81,21 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
+  // A site can be created independently, without borrowing an IGC.
+  await page.goto("/settings/sites");
+  await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
+  const createSiteToggle = page.getByRole("button", { name: "Create a site", exact: true });
+  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator('input[name="name"]')).toBeHidden();
+  await createSiteToggle.click();
+  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "true");
+  const standaloneName = `E2E Standalone Ridge ${suffix}`;
+  await page.locator('input[name="name"]').fill(standaloneName);
+  await page.getByLabel("Flight site map").locator("canvas").click({ position: { x: 160, y: 160 } });
+  await page.getByRole("button", { name: "Create site", exact: true }).click();
+  await expect(page.getByRole("heading", { name: standaloneName })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Site created/)).toBeVisible();
+
   // 2. Upload a flight far from every curated site -> "Unknown site".
   await page.goto("/upload");
   await uploadFlight(page, { name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });
@@ -101,6 +116,7 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   // no interaction with the naming dialog at all.
   await page.goto("/upload");
   await uploadFlight(page, { name: "remote2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 2) });
+  await page.getByRole("button", { name: "Keep this uploaded flight" }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });

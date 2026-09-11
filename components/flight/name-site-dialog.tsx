@@ -57,6 +57,7 @@ export function SiteNameControl({
   zoneId,
   isOwner,
   zonesEnabled,
+  needsReview = false,
   className,
   as: As = "span",
 }: {
@@ -74,6 +75,8 @@ export function SiteNameControl({
    *  lib/flights/repo.ts's resolveEndpoint when disabled, this closes the
    *  path structurally too. */
   zonesEnabled: boolean;
+  /** Automatic location matching found multiple plausible sites. */
+  needsReview?: boolean;
   className?: string;
   as?: "h1" | "span";
 }) {
@@ -94,7 +97,7 @@ export function SiteNameControl({
       )}
     </>
   ) : (
-    "Unknown site"
+    needsReview ? "Choose site" : "Unknown site"
   );
 
   if (!isOwner) {
@@ -142,7 +145,7 @@ export function SiteNameControl({
             className,
             "cursor-pointer rounded-sm text-left underline decoration-dotted decoration-2 underline-offset-4 hover:decoration-solid",
           )}
-          title={siteName ? "Edit this site" : "Name this site"}
+          title={siteName ? "Edit this site" : needsReview ? "Choose between matching sites" : "Name this site"}
         >
           {content}
         </button>

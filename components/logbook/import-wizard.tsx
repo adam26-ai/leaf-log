@@ -24,6 +24,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   const hydrated = useHydrated();
   const router = useRouter();
   const requestId = useRef<string>("");
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
   const [csv, setCsv] = useState("");
   const [filename, setFilename] = useState("");
@@ -40,6 +41,8 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   const [visibility, setVisibility] = useState("private");
   const [result, setResult] = useState<{ importedCount: number; skippedCount: number; alreadyImported: boolean } | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [csvDragging, setCsvDragging] = useState(false);
+  const [duplicateGate, setDuplicateGate] = useState(false);
 
   async function openFile(file: File | undefined) {
     if (!file) return;
@@ -48,7 +51,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       if (file.size > MAX_CSV_BYTES) throw new Error("Choose a CSV of 2 MB or less.");
       const text = await file.text(), parsed = parseCsv(text);
       setCsv(text); setFilename(file.name); setTable(parsed); setMapping(guessColumns(parsed.headers));
-      setFormats(CSV_DEFAULTS); setRows([]); setReview(null); setMatches({}); setPage(0); setEditing(null); setResult(null); setConfirm(false);
+      setFormats(CSV_DEFAULTS); setRows([]); setReview(null); setMatches({}); setPage(0); setEditing(null); setResult(null); setConfirm(false); setDuplicateGate(false);
       requestId.current = crypto.randomUUID(); setStep(1);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not open this file."); }
     finally { setPending(false); }
@@ -75,23 +78,41 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       }
       return { ...row, draft, allowDuplicate: false };
     });
-    setRows(updated); setReview(null); setPage(0); setEditing(null); setStep(3); void check(updated);
+    setRows(updated); setReview(null); setPage(0); setEditing(null); setDuplicateGate(false); setStep(3); void check(updated);
   }
   const payload = (items: ImportRow[]) => ({ requestId: requestId.current, csv, filename, visibility, rows: items });
-  async function check(items = rows) {
+  async function check(items = rows, showUnhandledDuplicates = false) {
     setPending(true); setError(""); setConfirm(false);
     try {
       const response = await fetch("/api/logbook/imports?preview=1", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload(items)) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not review these flights.");
       setReview(result.rows);
+      setDuplicateGate(showUnhandledDuplicates && result.rows.some((item: Review, index: number) => item.duplicates.length > 0 && !items[index].excluded && !items[index].allowDuplicate));
     } catch (error) { setError(error instanceof Error ? error.message : "Could not review. Please retry."); }
     finally { setPending(false); }
   }
   function updateRow(index: number, patch: Partial<ImportRow>) {
     setRows(current => current.map((row, i) => i === index ? { ...row, ...patch } : row));
     setConfirm(false);
-    if (patch.draft || patch.excluded !== undefined) setReview(null);
+    if (patch.draft) { setReview(null); setDuplicateGate(false); }
+  }
+  function chooseDuplicate(index: number, choice: "include" | "skip" | null) {
+    updateRow(index, choice === "include"
+      ? { excluded: false, allowDuplicate: true }
+      : choice === "skip"
+        ? { excluded: true, allowDuplicate: false }
+        : { excluded: false, allowDuplicate: false });
+  }
+  function chooseAllDuplicates(choice: "include" | "skip", onlyUnhandled = false) {
+    if (!review) return;
+    setRows(current => current.map((row, index) => review[index]?.duplicates.length && (!onlyUnhandled || (!row.excluded && !row.allowDuplicate))
+      ? choice === "include"
+        ? { ...row, excluded: false, allowDuplicate: true }
+        : { ...row, excluded: true, allowDuplicate: false }
+      : row));
+    setConfirm(false);
+    setDuplicateGate(false);
   }
   async function commit() {
     setPending(true); setError("");
@@ -105,10 +126,33 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   }
   const included = rows.filter(row => !row.excluded);
   const blocking = review ? rows.filter((row, i) => !row.excluded && (review[i].errors.length > 0 || (review[i].duplicates.length > 0 && !row.allowDuplicate))).length : 0;
+  const unresolvedDuplicateIndexes = review ? rows.flatMap((row, index) => review[index].duplicates.length > 0 && !row.excluded && !row.allowDuplicate ? [index] : []) : [];
   const totalMinutes = included.reduce((total, row) => total + (Number(row.draft.durationMinutes) || 0), 0);
   const unknownDurations = included.filter(row => !row.draft.durationMinutes).length;
   const editRow = editing === null ? null : rows[editing];
   const editParsed = editRow ? parseEntry(editRow.draft) : null;
+
+  function duplicateActions(onlyUnhandled = false) {
+    if (!review?.some(item => item.duplicates.length > 0)) return null;
+    return <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span>Possible overlaps:</span>
+      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("include", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Keep all</button>
+      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("skip", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Discard all</button>
+    </span>;
+  }
+
+  function duplicateWarning(row: ImportRow, index: number, detail: Review) {
+    if (detail.duplicates.length === 0) return null;
+    const includedAsDifferent = !row.excluded && row.allowDuplicate;
+    return <div className="mt-2 rounded border border-emergency-orange/25 bg-emergency-orange-light p-2 text-emergency-orange">
+      <p className="font-medium">May overlap:</p>
+      {detail.duplicates.map(match => <p key={match.id}>{match.id.startsWith("row:") ? match.label : <Link href={`/flights/${match.id}`} target="_blank" className="underline">{match.label}</Link>}</p>)}
+      <div className="mt-2 flex flex-col gap-1.5">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={includedAsDifferent} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "include" : null)} />Keep this imported flight</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={row.excluded} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "skip" : null)} />Discard this imported flight</label>
+      </div>
+    </div>;
+  }
 
   function nameGroup(field: NameField, title: string) {
     const counts = new Map<string, number>();
@@ -146,7 +190,13 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       <p className="text-sm text-gray-600">Use one row per flight. Only the date is required; leave unknown details blank. These flights count toward your totals and personal bests, with reported measurements identified.</p>
       <div className="flex flex-wrap gap-4 text-sm"><a href="/api/logbook/template" download className="inline-flex items-center gap-1.5 text-brand-blue-strong underline"><Download className="h-4 w-4" />Download CSV template</a><a href="/api/logbook/template?example=1" download className="text-brand-blue-strong underline">Download an example</a></div>
       <p className="text-xs text-gray-500">Template dates: YYYY-MM-DD. Duration: minutes. Use altitude_unit (m / ft), distance_unit (km / mi / nmi), and xc_type (open / fai-triangle / free-triangle). Altitudes are above sea level. Existing CSV headings can be matched in the next step.</p>
-      <label className="cursor-pointer rounded-lg border-2 border-dashed border-gray-300 p-6 text-center text-sm"><span className="mb-3 block font-medium">Choose your completed CSV</span><input aria-label="Choose logbook CSV" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={pending || !hydrated} onChange={e => void openFile(e.target.files?.[0])} className="max-w-full text-xs" /><span className="mt-3 block text-xs text-gray-500">Up to 5,000 flights / 2 MB. Nothing is saved until you confirm the review.</span></label>
+      <label
+        onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setCsvDragging(true); } }}
+        onDragOver={event => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setCsvDragging(true); } }}
+        onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCsvDragging(false); }}
+        onDrop={event => { event.preventDefault(); setCsvDragging(false); void openFile(event.dataTransfer.files?.[0]); }}
+        className={`cursor-pointer rounded-lg border-2 border-dashed p-6 text-center text-sm transition-colors ${csvDragging ? "border-brand-blue bg-brand-blue/5" : "border-gray-300 hover:border-brand-blue"}`}
+      ><span className="mb-3 block font-medium">Drop your completed CSV here</span><input ref={csvInputRef} aria-label="Choose logbook CSV" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={pending || !hydrated} onChange={e => void openFile(e.target.files?.[0])} className="max-w-full text-xs" /><span className="mt-3 block text-xs text-gray-500">Drag and drop, or choose a file. Up to 5,000 flights / 2 MB. Nothing is saved until you confirm the review.</span></label>
     </Card>}
     {step === 1 && table && <Card className="flex flex-col gap-5 p-5">
       <div><h2 className="font-condensed text-xl font-bold">Match your columns</h2><p className="mt-1 break-all text-sm text-gray-500">{filename} · {table.rows.length} {table.rows.length === 1 ? "flight" : "flights"}</p></div>
@@ -169,19 +219,27 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     </Card>}
     {step === 3 && <Card className="flex flex-col gap-5 p-5">
       <h2 className="font-condensed text-xl font-bold">Review your flights</h2>
-      <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible duplicates need an explicit choice.</p>
-      {editRow && editing !== null ? <div className="flex flex-col gap-4 rounded-lg border border-brand-blue/40 p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-medium">CSV line {editRow.line}</h3><Button variant="outline" onClick={() => setEditing(null)}><ArrowLeft className="h-4 w-4" />Back to review</Button></div><EntryFields value={editRow.draft} onChange={(draft: EntryDraft) => updateRow(editing, { draft, allowDuplicate: false })} options={options} issues={editParsed && !editParsed.ok ? editParsed.issues : []} expanded /></div> : <>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{included.length} selected · {rows.length - included.length} skipped</span><button disabled={pending} onClick={() => { const duplicateLines = new Set(review?.filter(item => item.duplicates.length).map(item => item.line)); setRows(rows.map(row => duplicateLines.has(row.line) ? { ...row, excluded: true } : row)); setReview(null); setConfirm(false); }} className="text-brand-blue-strong underline disabled:opacity-50" hidden={!review?.some(item => item.duplicates.length)}>Skip all possible duplicates</button></div>
+      <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible overlaps need an explicit keep-or-discard choice.</p>
+      {duplicateGate && unresolvedDuplicateIndexes.length > 0 ? <div className="flex flex-col gap-4 rounded-lg border border-emergency-orange/30 bg-emergency-orange-light/40 p-4">
+        <div><h3 className="font-condensed text-xl font-bold">You must review these possibly overlapping flights</h3><p className="mt-1 text-sm text-gray-600">Choose whether to keep or discard each flight being imported. Existing flights will not be changed.</p></div>
+        <div className="text-sm">{duplicateActions(true)}</div>
+        <div className="flex flex-col gap-2">{unresolvedDuplicateIndexes.map(index => {
+          const row = rows[index], detail = review![index];
+          return <div key={row.line} className="rounded-lg border border-emergency-orange/25 bg-paper p-3 text-sm"><p className="font-medium">{row.draft.date || "Date missing"} <span className="font-normal text-gray-500">· line {row.line}</span></p><p className="break-words text-gray-600">{row.draft.takeoffSiteName || "Unknown site"} · {row.draft.glider || "Unknown wing"}</p><div className="text-xs">{duplicateWarning(row, index, detail)}</div></div>;
+        })}</div>
+        <Button variant="outline" className="self-start" onClick={() => setDuplicateGate(false)}>Back to all flights</Button>
+      </div> : editRow && editing !== null ? <div className="flex flex-col gap-4 rounded-lg border border-brand-blue/40 p-4"><div className="flex items-center justify-between gap-2"><h3 className="font-medium">CSV line {editRow.line}</h3><Button variant="outline" onClick={() => setEditing(null)}><ArrowLeft className="h-4 w-4" />Back to review</Button></div><EntryFields value={editRow.draft} onChange={(draft: EntryDraft) => updateRow(editing, { draft, allowDuplicate: false })} options={options} issues={editParsed && !editParsed.ok ? editParsed.issues : []} expanded /></div> : <>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>{included.length} selected · {rows.length - included.length} skipped</span>{duplicateActions()}</div>
         <div className="flex flex-col gap-2">{rows.slice(page * 25, page * 25 + 25).map((row, localIndex) => {
           const index = page * 25 + localIndex, detail = review?.[index];
           return <div key={row.line} className={`rounded-lg border p-3 ${row.excluded ? "border-gray-200 bg-gray-50" : detail?.errors.length ? "border-red-300" : "border-gray-200"}`}>
             <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Include CSV line ${row.line}`} checked={!row.excluded} disabled={pending} onChange={e => updateRow(index, { excluded: !e.target.checked })} className="mt-1" /><div className="min-w-0 flex-1 text-sm"><p className="font-medium">{row.draft.date || "Date missing"} <span className="font-normal text-gray-500">· line {row.line}</span></p><p className="break-words text-gray-600">{row.draft.takeoffSiteName || "Unknown site"} · {row.draft.glider || "Unknown wing"}</p><p className="text-xs text-gray-500">{row.draft.durationMinutes ? `${row.draft.durationMinutes} min` : "Duration unknown"}{row.draft.xcDistance ? ` · ${row.draft.xcDistance} ${row.draft.distanceUnit} ${XC_TYPE_LABELS[row.draft.xcType as keyof typeof XC_TYPE_LABELS] ?? row.draft.xcType} (reported)` : ""}</p></div><button disabled={pending} onClick={() => setEditing(index)} className="text-sm text-brand-blue-strong underline">Edit</button></div>
-            {!row.excluded && detail && <div className="mt-2 pl-6 text-xs">{detail.errors.map(message => <p key={message} className="text-red-600">{message}</p>)}{detail.warnings.map(message => <p key={message} className="text-gray-500">{message}</p>)}{detail.duplicates.length > 0 && <div className="mt-2 rounded border border-emergency-orange/25 bg-emergency-orange-light p-2 text-emergency-orange"><p className="font-medium">Possible duplicate of:</p>{detail.duplicates.map(match => <p key={match.id}>{match.id.startsWith("row:") ? match.label : <Link href={`/flights/${match.id}`} target="_blank" className="underline">{match.label}</Link>}</p>)}<label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={row.allowDuplicate} disabled={pending} onChange={e => updateRow(index, { allowDuplicate: e.target.checked })} />This is a different flight; include it</label></div>}</div>}
+            {!row.excluded && detail && <div className="mt-2 pl-6 text-xs">{detail.errors.map(message => <p key={message} className="text-red-600">{message}</p>)}{detail.warnings.map(message => <p key={message} className="text-gray-500">{message}</p>)}{duplicateWarning(row, index, detail)}</div>}
           </div>;
         })}</div>
         {rows.length > 25 && <div className="flex items-center justify-between gap-3 text-sm"><Button variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page + 1} of {Math.ceil(rows.length / 25)}</span><Button variant="outline" disabled={(page + 1) * 25 >= rows.length} onClick={() => setPage(page + 1)}>Next</Button></div>}
       </>}
-      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review ? blocking ? `${blocking} ${blocking === 1 ? "flight needs" : "flights need"} a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
+      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); setDuplicateGate(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(rows, true); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review ? blocking ? `${blocking} ${blocking === 1 ? "flight needs" : "flights need"} a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
       {review && !blocking && included.length > 0 && editing === null && <div className="flex flex-col gap-4 border-t border-gray-200 pt-5">
         <p className="text-sm"><strong>{included.length} {included.length === 1 ? "flight" : "flights"}</strong> · {(totalMinutes / 60).toFixed(1)} {(totalMinutes / 60).toFixed(1) === "1.0" ? "hour" : "hours"}{unknownDurations > 0 && ` + ${unknownDurations} ${unknownDurations === 1 ? "flight" : "flights"} with unknown duration`} · {rows.length - included.length} skipped</p>
         <label className="max-w-xs text-sm">Visibility for these flights<select value={visibility} disabled={pending} onChange={e => { setVisibility(e.target.value); setConfirm(false); }} className={entryInputClass}><option value="private">Private</option><option value="friends">Friends only</option><option value="public">Public</option></select></label>

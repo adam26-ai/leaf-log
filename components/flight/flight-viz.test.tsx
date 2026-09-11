@@ -27,6 +27,7 @@ function view() {
 it("offers the day calendar for a single own flight even when no companions are detected", () => {
   view();
   expect(screen.queryByLabelText("Pilots in this replay")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /^(Show|Hide) friends$/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Refresh friends" }));
   expect(group.discover).toHaveBeenCalledOnce();
   const slider = screen.getByRole("slider", { name: "Flight playback time" });
@@ -78,6 +79,17 @@ it("keeps focused flyouts available when the pointer leaves and applies the chos
   expect(option.parentElement!.parentElement).toHaveClass("invisible");
   expect(screen.getByRole("button", { name: "Basemap: Map (click to cycle, hover for options)" })).toBeInTheDocument();
 });
+it("opens flyouts without cycling on touch and dismisses them when the map is touched", () => {
+  view();
+  const control = screen.getByRole("button", { name: "Basemap: Map (click to cycle, hover for options)" });
+  fireEvent.pointerDown(control, { pointerType: "touch" });
+  fireEvent.click(control);
+  const option = screen.getByRole("button", { name: "Map" });
+  expect(option.parentElement!.parentElement).toHaveClass("visible");
+  expect(screen.getByRole("button", { name: "Basemap: Map (click to cycle, hover for options)" })).toBeInTheDocument();
+  fireEvent.pointerDown(screen.getByTestId("replay"), { pointerType: "touch" });
+  expect(option.parentElement!.parentElement).toHaveClass("invisible");
+});
 it("starts elapsed-track rendering on scrub and previews crossed photos for four real seconds", () => {
   vi.useFakeTimers(); view();
   expect(screen.getByTestId("replay")).toHaveAttribute("data-track", "full");
@@ -92,7 +104,7 @@ it("starts elapsed-track rendering on scrub and previews crossed photos for four
   expect(screen.queryByRole("button", { name: "Open test-photo.jpg" })).not.toBeInTheDocument();
 });
 
-it("shows all selected friend's profiles, ghosts our flight, and cycles takeoffs without a flight picker", () => {
+it("shows all selected friend's profiles, ghosts our flight, and uses timeline takeoffs without a flight picker", () => {
   const original = { ...group };
   const own = group.flights[0];
   const pilot = { ...own.owner, id: "friend", handle: "friend", displayName: "Friend" };
@@ -105,8 +117,8 @@ it("shows all selected friend's profiles, ghosts our flight, and cycles takeoffs
     expect(screen.getByTestId("profile-friend-first")).toHaveAttribute("data-state", "friendSelected");
     expect(screen.getByTestId("profile-friend-second")).toHaveAttribute("data-state", "friendSelected");
     expect(screen.getByTestId("profile-flight")).toHaveAttribute("data-state", "ownUnselected");
-    const takeoff = screen.getByRole("button", { name: "Jump to Friend's takeoff" });
-    for (const [id, time] of [[first.id, "40"], [second.id, "160"], [first.id, "40"]]) {
+    const takeoffs = screen.getAllByRole("button", { name: /Jump to Friend's takeoff at/ });
+    for (const [takeoff, id, time] of [[takeoffs[0], first.id, "40"], [takeoffs[1], second.id, "160"], [takeoffs[0], first.id, "40"]] as const) {
       fireEvent.click(takeoff);
       expect(group.select).toHaveBeenLastCalledWith(pilot, id);
       expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", time);

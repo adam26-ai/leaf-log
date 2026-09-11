@@ -57,6 +57,12 @@ export interface LocationMatch {
   zone: ZoneMatch | null;
 }
 
+export interface LocationDecision {
+  match: LocationMatch | null;
+  /** More than one distinct site or spot contains this endpoint. */
+  ambiguous: boolean;
+}
+
 export interface FindSiteOptions {
   lat: number;
   lon: number;
@@ -260,10 +266,10 @@ function toSiteMatch(
  * other pilot's nearby flight — a regression against "no dead ends," not an
  * improvement on it. The site pass here is unconditional.
  */
-export async function findLocation(
+export async function findLocationDecision(
   db: Pick<Db, "site" | "zone">,
   options: FindSiteOptions,
-): Promise<LocationMatch | null> {
+): Promise<LocationDecision> {
   const { lat, lon, kind, viewerId } = options;
 
   // SPRINT-008: zones hidden means no Zone query at all, not merely an
@@ -284,26 +290,52 @@ export async function findLocation(
     )
     .sort(compareSiteCandidates);
 
+  const siteRanked = matchAll(siteRows, lat, lon, radiusForKind(kind), "Site").sort(compareSiteCandidates);
+  const distinctSiteIds = new Set([
+    ...siteRanked.map((site) => site.id),
+    ...zoneRanked.map((zone) => zone.siteId),
+  ]);
+
+  // Geometry answers "could be". It must not silently answer "which one"
+  // when overlapping boundaries/circles describe multiple plausible sites
+  // or spots. Interactive surfaces can show the existing suggestion list;
+  // unattended ingestion leaves the endpoint for later review.
+  if (distinctSiteIds.size > 1 || zoneRanked.length > 1) {
+    return { match: null, ambiguous: true };
+  }
+
   const zoneWinner = zoneRanked[0];
   if (zoneWinner) {
     const siteDistanceM = haversineM(lat, lon, zoneWinner.site.lat, zoneWinner.site.lon);
     return {
-      site: toSiteMatch(zoneWinner.site, siteDistanceM),
-      zone: {
-        id: zoneWinner.id,
-        name: zoneWinner.name,
-        visibility: normalizeSiteVisibility(zoneWinner.visibility),
-        ownerId: zoneWinner.ownerId,
-        kind: zoneWinner.kind,
-        siteId: zoneWinner.siteId,
-        distanceM: zoneWinner.distanceM,
+      ambiguous: false,
+      match: {
+        site: toSiteMatch(zoneWinner.site, siteDistanceM),
+        zone: {
+          id: zoneWinner.id,
+          name: zoneWinner.name,
+          visibility: normalizeSiteVisibility(zoneWinner.visibility),
+          ownerId: zoneWinner.ownerId,
+          kind: zoneWinner.kind,
+          siteId: zoneWinner.siteId,
+          distanceM: zoneWinner.distanceM,
+        },
       },
     };
   }
 
-  const siteRanked = matchAll(siteRows, lat, lon, radiusForKind(kind), "Site").sort(compareSiteCandidates);
   const siteWinner = siteRanked[0];
-  if (!siteWinner) return null;
+  if (!siteWinner) return { match: null, ambiguous: false };
 
-  return { site: toSiteMatch(siteWinner, siteWinner.distanceM), zone: null };
+  return {
+    match: { site: toSiteMatch(siteWinner, siteWinner.distanceM), zone: null },
+    ambiguous: false,
+  };
+}
+
+export async function findLocation(
+  db: Pick<Db, "site" | "zone">,
+  options: FindSiteOptions,
+): Promise<LocationMatch | null> {
+  return (await findLocationDecision(db, options)).match;
 }

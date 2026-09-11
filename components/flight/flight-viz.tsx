@@ -22,7 +22,7 @@ import { useGroupReplay } from "./use-group-replay";
 import { ReplayPilots } from "./replay-pilots";
 import { KeyStatistics } from "./key-statistics";
 import type { FlightStatistics } from "@/lib/flights/statistics";
-import { nextPilotTakeoff, profileSamples, replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
+import { profileSamples, replayStateAt, type ReplayPilot } from "@/lib/flights/group-replay";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import {
   BAROGRAPH_PLOT_LEFT_INSET,
@@ -40,6 +40,7 @@ import {
 import { PlaybackStatus, PlaybackTimeline } from "./playback-bar";
 import { PhotoGallery } from "./photo-gallery";
 import { photoUrl, type FlightPhoto } from "./photos";
+import { uploadPhotoFiles } from "./photo-upload-client";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout, type InstrumentRanges } from "./instrument-readout";
 import { instrumentAt, smoothedSpeedKmh } from "@/lib/flights/instruments";
@@ -95,9 +96,8 @@ interface FlyoutOption<T extends string> {
   disabled?: boolean;
 }
 
-/** An icon button that, on hover, pops out a menu of every option (icon +
- *  name) so one can be picked directly — clicking the main icon still cycles
- *  (via `onClick`), which is the only path on touch, where hover never fires. */
+/** An icon button that opens its choices on hover/focus or with a touch tap.
+ * Desktop clicks retain the quick cycle behavior. */
 function IconFlyoutControl<T extends string>({
   icon,
   active,
@@ -116,19 +116,43 @@ function IconFlyoutControl<T extends string>({
   onSelect: (id: T) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const touchActivation = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+
+  function activateButton() {
+    const noHover = typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
+    if (touchActivation.current || noHover) {
+      touchActivation.current = false;
+      setOpen(current => !current);
+      return;
+    }
+    onClick();
+  }
+
   return (
     <div
+      ref={rootRef}
       className={cn("relative", open ? "z-30" : "z-20")}
+      onPointerDownCapture={event => { touchActivation.current = event.pointerType === "touch"; }}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={(event) => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false); }}
-      onFocus={() => setOpen(true)}
+      onFocus={() => { if (!touchActivation.current) setOpen(true); }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
     >
       <MapIconButton
         icon={icon}
         active={active}
         title={title}
-        onClick={onClick}
+        onClick={activateButton}
       />
       <div
         className={cn(
@@ -302,7 +326,6 @@ export function FlightViz({
   const [photoDropActive, setPhotoDropActive] = useState(false);
   const [photoUploadState, setPhotoUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const timeRef = useRef(0);
-  const takeoffCycleRef = useRef<Record<string, string>>({});
   const replayRef = useRef<FlightReplay3DHandle>(null);
   // Same Metric/Imperial preference as the key-statistics card, kept live in
   // sync across both components (see lib/flights/use-units.ts).
@@ -373,15 +396,12 @@ export function FlightViz({
     if (!canAddPhotos || files.length === 0) return;
     setPhotoUploadState("uploading");
     try {
-      const form = new FormData();
-      for (const file of files) form.append("files", file);
-      const response = await fetch(`/api/flights/${flightId}/photos`, {
-        method: "POST",
-        body: form,
-      });
-      if (!response.ok) throw new Error("Photo upload failed");
-      loadPhotos();
-      setPhotoUploadState("idle");
+      const results = await uploadPhotoFiles(flightId, files);
+      if (results.some((result) => result.status !== "rejected")) loadPhotos();
+      setPhotoUploadState(results.some((result) => result.status === "rejected") ? "error" : "idle");
+      if (results.some((result) => result.status === "rejected")) {
+        window.setTimeout(() => setPhotoUploadState("idle"), 3000);
+      }
     } catch {
       setPhotoUploadState("error");
       window.setTimeout(() => setPhotoUploadState("idle"), 3000);
@@ -433,7 +453,6 @@ export function FlightViz({
   function jumpToTakeoff(id: string) {
     const flight = group.flights.find((f) => f.id === id) ?? group.candidates.find((f) => f.id === id);
     if (!flight) return;
-    takeoffCycleRef.current[flight.owner.id] = flight.id;
     setPlaying(false);
     setOpenPhotoId(null);
     selectPilot(flight.owner, flight.id);
@@ -637,13 +656,6 @@ export function FlightViz({
               onTerrainProfile={recordTerrain}
             />
             <ReplayPilots group={group} primaryOwnerId={primaryPilot.id} viewerId={viewerId}
-              onTakeoff={(pilot) => {
-                const flights = group.candidates.filter((f) => f.owner.id === pilot.id)
-                  .map((f) => group.flights.find((loaded) => loaded.id === f.id) ?? f);
-                const flight = nextPilotTakeoff(flights, takeoffCycleRef.current[pilot.id]);
-                if (!flight) return;
-                jumpToTakeoff(flight.id);
-              }}
               onSelect={selectPilot} onToggle={(id) => {
                 const changingSelection = group.selected?.owner.id === id && group.isVisible(id);
                 if (group.isVisible(id)) setOpenPhotoId(null);
@@ -651,7 +663,7 @@ export function FlightViz({
                 if (changingSelection) setCameraMode("follow");
               }} />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
-            <div className={cn("pointer-events-none absolute left-12 right-2 top-3 flex flex-col items-center gap-1 px-2", group.pilots.some((pilot) => pilot.id !== primaryPilot.id) ? "sm:right-[165px]" : "sm:right-20")}>
+            <div className="pointer-events-none absolute left-12 right-[5.5rem] top-2 flex flex-col items-center gap-1 px-1 sm:right-[165px] sm:top-3 sm:px-2">
               <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
@@ -732,7 +744,7 @@ export function FlightViz({
             onTakeoff={jumpToTakeoff}
             dayExpanded={group.dayExpanded}
             discovering={group.discovering}
-            onToggleDay={viewerId === primaryPilot.id ? () => { takeoffCycleRef.current = {}; void group.discover(false, !group.dayExpanded); } : undefined}
+            onToggleDay={viewerId === primaryPilot.id ? () => { void group.discover(false, !group.dayExpanded); } : undefined}
           />
         </div>
 

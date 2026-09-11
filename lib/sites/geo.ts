@@ -339,8 +339,8 @@ export interface LocationMatchResult {
 
 /**
  * THE composition point: "boundary if present, else circle" is decided
- * here, and only here — findLocation, reassociateOwnFlights, and
- * suggestNearbyLocations all call this and nothing else, so the rule can
+ * here, and only here — automatic lookup, site-management previews, and
+ * nearby suggestions all call this and nothing else, so the rule can
  * never drift between call sites. `distanceM` is ALWAYS haversine-to-anchor,
  * computed unconditionally regardless of which shape decided `matched` —
  * this is what gives a polygon-matched row a real, comparable distance to

@@ -19,6 +19,7 @@ import { normalizeSiteVisibility, canSeeSite, canSeeZone, type SiteVisibility } 
 import { validateSiteName } from "./name";
 import { writeAuditEntry } from "./audit";
 import { zonesEnabled } from "./zones-enabled";
+import { assignmentPatch } from "./assignment";
 
 /**
  * App-layer privacy enforcement for sites AND zones, mirroring
@@ -90,6 +91,10 @@ const SUGGESTION_LIMIT = 5;
  * shouldn't double the blast radius of an abuse burst. */
 export const DAILY_CREATE_CAP = 10;
 export const REASSOCIATE_CAP = 200;
+
+function explicitSiteAssignmentsOnly(): boolean {
+  return true;
+}
 
 export interface SiteSuggestion {
   id: string;
@@ -263,6 +268,11 @@ export async function reassociateOwnFlights(
   endpoint: SiteEndpoint,
   zone?: Pick<Zone, "id" | "name" | "visibility" | "siteId" | "lat" | "lon" | "boundary"> | null,
 ): Promise<{ updated: number; truncated: boolean }> {
+  // Kept temporarily as a compatibility export for older callers. Site and
+  // boundary edits are deliberately one-flight/one-row operations now;
+  // history may only change through the preview + explicit assignment API.
+  if (explicitSiteAssignmentsOnly()) return { updated: 0, truncated: false };
+
   const matchKind: MatchKind = endpoint;
   const anchor = zone ?? site;
   const radius = zone ? zoneRadiusForKind(matchKind) : radiusForKind(matchKind);
@@ -404,8 +414,10 @@ export async function createOrAttachSiteFromFlight(
   const flight = await prisma.flight.findFirst({ where: { id: flightId, ownerId } });
   if (!flight) throw new Error("Flight not found or not owned by caller.");
   const coord = endpointCoord(flight, endpoint);
-  if (!coord) throw new Error(`Flight has no ${endpoint} coordinate.`);
-  const { lat, lon } = coord;
+  function requireCoordinate() {
+    if (!coord) throw new Error(`Flight has no ${endpoint} coordinate. Create the site in Site settings, then select it here.`);
+    return coord;
+  }
   const startOfDayUtc = new Date();
   startOfDayUtc.setUTCHours(0, 0, 0, 0);
 
@@ -425,6 +437,7 @@ export async function createOrAttachSiteFromFlight(
           ? existing
           : await tx.site.update({ where: { id: existing.id }, data: { kind: "both" } });
     } else {
+      const { lat, lon } = requireCoordinate();
       const validated = validateSiteName(input.site.name);
       if (!validated.ok) throw new Error(`Invalid site name (${validated.error}).`);
       const visibility = normalizeSiteVisibility(input.site.visibility);
@@ -508,6 +521,7 @@ export async function createOrAttachSiteFromFlight(
             ? existingZone
             : await tx.zone.update({ where: { id: existingZone.id }, data: { kind: "both" } });
       } else {
+        const { lat, lon } = requireCoordinate();
         const validated = validateSiteName(input.zone.name);
         if (!validated.ok) throw new Error(`Invalid zone name (${validated.error}).`);
         const zoneVisibility = normalizeSiteVisibility(input.zone.visibility);
@@ -588,12 +602,16 @@ export async function createOrAttachSiteFromFlight(
   // Link the CURRENT flight; the cache is written only through locationCachePatch.
   await prisma.flight.update({
     where: { id: flightId },
-    data: locationCachePatch(site, zone, endpoint) as LocationFieldPatch,
+    data: {
+      ...(locationCachePatch(site, zone, endpoint) as LocationFieldPatch),
+      ...assignmentPatch(endpoint, "user_selected"),
+    },
   });
 
-  // Retroactively fill in the creator's own other flights — upgrading
-  // already-site-bound ones to the new zone when one was created/reused-into.
-  const reassociated = await reassociateOwnFlights(ownerId, site, endpoint, zone);
+  // Creating or selecting a site is a one-flight action. Nearby history is
+  // offered separately through an explicit preview/confirm bulk workflow;
+  // never silently reinterpret a CSV label or another deliberate choice.
+  const reassociated = { updated: 0, truncated: false };
 
   console.log(
     `[sites] ${createdSite ? "create" : "bind"}-site=${site.id}${

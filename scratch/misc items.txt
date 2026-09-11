@@ -1,0 +1,5 @@
+I'd like to add a few tweaks to the flight entries in the logbook list view.
+
+Let's collapse the "friends/public/private" pill bubble with text to just always be a pill bubble with icons.  Let's use an 'eye' followed by the lock, friends, or world icon inside the pill shape.  That way it will be unmistakable 'visibility' rather than potentially interpreted as "flew with friends on this flight".
+
+Separately, if a flight does have simultaneous friends found, let's also add another similar pill shape with the paraglider icon and the friends icon, to indicate "there are paraglider friends on this flight".  The mouse-over text can be something like "Friend flights found" or something of that nature.  If present on a flight, this "has friends" pill can always be blue
