@@ -185,6 +185,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat + 5, anchorLon + 5, 2),
   });
+  await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
@@ -238,6 +239,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
     mimeType: "text/plain",
     buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon + metersToDegLon(700, anchorLat), 3),
   });
+  await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });

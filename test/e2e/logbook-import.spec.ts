@@ -223,8 +223,8 @@ test("CSV name matching, duplicate review, reported trophies, mobile layout and 
   await page.getByRole("button", { name: "Continue to names" }).click();
   await page.getByLabel("Wings: Rush4", { exact: true }).fill("Rush 4");
   await page.getByRole("button", { name: "Review flights", exact: true }).click();
-  await expect(page.getByText("Possible duplicate of:")).toBeVisible();
-  await page.getByRole("button", { name: "Skip all", exact: true }).click();
+  await expect(page.getByText("May overlap:", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Discard all", exact: true }).click();
   await page.getByRole("button", { name: "Check preview", exact: true }).click();
   await expect(page.getByText("Preview checked.", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -279,6 +279,7 @@ test("recording names stay read-only and wing edits preserve historical labels a
     await page.screenshot({ path: "test-results/recording-details-mobile.png", fullPage: true });
     await page.goto("/upload");
     await uploadFlight(page, { name: "no-pilot-name.igc", mimeType: "application/octet-stream", buffer: Buffer.from(makeRealisticFlight().igc) });
+    await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
     await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
     await page.goto(`${page.url()}/edit`);
     await page.getByText("Recording details", { exact: true }).click();

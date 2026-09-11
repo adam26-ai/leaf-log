@@ -106,6 +106,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
   // A distinct second IGC nearby auto-associates to the site, same as ever.
   await page.goto("/upload");
   await uploadFlight(page, { name: "nozone2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 2) });
+  await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });
