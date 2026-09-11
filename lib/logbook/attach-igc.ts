@@ -18,9 +18,9 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
   const flight = await prisma.flight.findFirst({ where: { id: flightId, ownerId } });
   if (!flight) throw new EntryError("Flight not found.", 404);
   if (commit && flight.igcSha256 === hash && flight.recordingKind === "igc") return { id: flight.id, attached: true as const };
-  if (flight.recordingKind !== "logbook") throw new EntryError("This flight already has a recording.", 409);
   const existing = await prisma.flight.findUnique({ where: { ownerId_igcSha256: { ownerId, igcSha256: hash } }, select: { id: true } });
-  if (existing) throw new EntryError(`This IGC is already in your logbook as flight ${existing.id}. Open that flight instead.`, 409);
+  if (existing && existing.id !== flight.id) throw new EntryError(`This IGC is already in your logbook as flight ${existing.id}. Open that flight instead.`, 409);
+  if (commit && flight.recordingKind !== "logbook") throw new EntryError("This flight already has a recording.", 409);
   const parsed = parseIgc(bytes), metrics = deriveMetrics(parsed);
   if (!metrics) throw new EntryError("This file has no usable GPS track. Your manual entry has not changed.");
   const measurements = repairedMeasurements(parsed, metrics);
@@ -29,7 +29,7 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
     altGainM: metrics.altGainM, maxClimbMs: metrics.maxClimbMs, maxSinkMs: metrics.maxSinkMs,
     takeoffAt: new Date(metrics.takeoffAtMs).toISOString(), landingAt: new Date(metrics.landingAtMs).toISOString(),
     takeoffLat: metrics.takeoff.lat, takeoffLon: metrics.takeoff.lon, landingLat: metrics.landing.lat, landingLon: metrics.landing.lon };
-  if (!commit) return { attached: false as const, hash, expectedUpdatedAt: flight.updatedAt.toISOString(), warnings: parsed.warnings,
+  if (!commit) return { attached: false as const, mergeable: flight.recordingKind === "logbook", hash, expectedUpdatedAt: flight.updatedAt.toISOString(), warnings: parsed.warnings,
     previous: { date: duplicateKey(flight), durationS: flight.durationS, maxAltM: flight.maxAltM, launchAltM: flight.launchAltM,
       altGainM: flight.altGainM, maxClimbMs: flight.maxClimbMs, maxSinkMs: flight.maxSinkMs,
       takeoffAt: flight.takeoffAt?.toISOString() ?? null, landingAt: flight.landingAt?.toISOString() ?? null,

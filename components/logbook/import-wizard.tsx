@@ -135,9 +135,9 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   function duplicateActions(onlyUnhandled = false) {
     if (!review?.some(item => item.duplicates.length > 0)) return null;
     return <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <span>Possible duplicates:</span>
-      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("include", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Accept all</button>
-      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("skip", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Skip all</button>
+      <span>Possible overlaps:</span>
+      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("include", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Keep all</button>
+      <button type="button" disabled={pending} onClick={() => chooseAllDuplicates("skip", onlyUnhandled)} className="text-brand-blue-strong underline disabled:opacity-50">Discard all</button>
     </span>;
   }
 
@@ -145,11 +145,11 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     if (detail.duplicates.length === 0) return null;
     const includedAsDifferent = !row.excluded && row.allowDuplicate;
     return <div className="mt-2 rounded border border-emergency-orange/25 bg-emergency-orange-light p-2 text-emergency-orange">
-      <p className="font-medium">Possible duplicate of:</p>
+      <p className="font-medium">May overlap:</p>
       {detail.duplicates.map(match => <p key={match.id}>{match.id.startsWith("row:") ? match.label : <Link href={`/flights/${match.id}`} target="_blank" className="underline">{match.label}</Link>}</p>)}
       <div className="mt-2 flex flex-col gap-1.5">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={includedAsDifferent} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "include" : null)} />This is a different flight; include it</label>
-        <label className="flex items-center gap-2"><input type="checkbox" checked={row.excluded} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "skip" : null)} />This is a duplicate; skip it</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={includedAsDifferent} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "include" : null)} />Keep this imported flight</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={row.excluded} disabled={pending} onChange={event => chooseDuplicate(index, event.target.checked ? "skip" : null)} />Discard this imported flight</label>
       </div>
     </div>;
   }
@@ -219,9 +219,9 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     </Card>}
     {step === 3 && <Card className="flex flex-col gap-5 p-5">
       <h2 className="font-condensed text-xl font-bold">Review your flights</h2>
-      <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible duplicates need an explicit choice.</p>
+      <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible overlaps need an explicit keep-or-discard choice.</p>
       {duplicateGate && unresolvedDuplicateIndexes.length > 0 ? <div className="flex flex-col gap-4 rounded-lg border border-emergency-orange/30 bg-emergency-orange-light/40 p-4">
-        <div><h3 className="font-condensed text-xl font-bold">You must finish marking these possible duplicate flights</h3><p className="mt-1 text-sm text-gray-600">Choose whether each flight is different or should be skipped before continuing.</p></div>
+        <div><h3 className="font-condensed text-xl font-bold">You must review these possibly overlapping flights</h3><p className="mt-1 text-sm text-gray-600">Choose whether to keep or discard each flight being imported. Existing flights will not be changed.</p></div>
         <div className="text-sm">{duplicateActions(true)}</div>
         <div className="flex flex-col gap-2">{unresolvedDuplicateIndexes.map(index => {
           const row = rows[index], detail = review![index];

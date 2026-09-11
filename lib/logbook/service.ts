@@ -7,7 +7,7 @@ import { siteVisibleWhere } from "@/lib/sites/repo";
 import { draftSchema, parseEntry, entryWarnings, type EntryDraft } from "./entry";
 import { MAX_IMPORT_ROWS, parseCsv } from "./csv";
 import { locationData, entrySiteSelect } from "./locations";
-import { duplicateKey, possibleDuplicate, type DuplicateFlight } from "./duplicates";
+import { duplicateKey, duplicateTimeLabel, possibleDuplicate, type DuplicateFlight } from "./duplicates";
 
 export class EntryError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -27,7 +27,7 @@ function requireParsed(draft: EntryDraft) {
 }
 
 type EntryDb = Pick<typeof prisma, "site" | "flight">;
-const duplicateSelect = { id: true, flightDate: true, takeoffAt: true, localUtcOffsetMinutes: true, durationS: true, glider: true, takeoffSiteName: true } as const;
+const duplicateSelect = { id: true, flightDate: true, takeoffAt: true, landingAt: true, localUtcOffsetMinutes: true, durationS: true, glider: true, takeoffSiteName: true } as const;
 
 export async function saveLogbookEntry(ownerId: string, value: unknown) {
   const request = entryRequestSchema.parse(value);
@@ -48,7 +48,7 @@ export async function saveLogbookEntry(ownerId: string, value: unknown) {
     if (!request.flightId && !request.allowDuplicate) {
       const existing = await tx.flight.findMany({ where: { ownerId }, select: duplicateSelect });
       const matches = existing.filter(flight => possibleDuplicate({ id: "new", ...data }, flight));
-      if (matches.length) return { duplicates: matches.map(flight => ({ id: flight.id, date: duplicateKey(flight), wing: flight.glider, site: flight.takeoffSiteName })) };
+      if (matches.length) return { duplicates: matches.map(flight => ({ id: flight.id, date: duplicateKey(flight), time: duplicateTimeLabel(flight), wing: flight.glider, site: flight.takeoffSiteName })) };
     }
     if (request.flightId) {
       const updated = await tx.flight.updateMany({ where: { id: request.flightId, ownerId, recordingKind: "logbook", updatedAt: new Date(request.expectedUpdatedAt!) }, data: { ...data, visibility: request.visibility } });
@@ -70,6 +70,7 @@ async function inspectRows(ownerId: string, request: ImportRequest, db: EntryDb 
   const existing = await db.flight.findMany({ where: { ownerId }, select: duplicateSelect });
   const byDay = new Map<string, DuplicateFlight[]>();
   for (const flight of existing) { const key = duplicateKey(flight); byDay.set(key, [...(byDay.get(key) ?? []), flight]); }
+  const timed = existing.filter(flight => flight.takeoffAt);
   const inspected = [];
   for (const row of request.rows) {
     const parsed = parseEntry(row.draft);
@@ -81,12 +82,16 @@ async function inspectRows(ownerId: string, request: ImportRequest, db: EntryDb 
       catch (error) { errors.push(error instanceof Error ? error.message : "Site could not be checked."); }
       const candidate = { id: `row:${row.line}`, ...data! };
       const key = duplicateKey(candidate);
-      for (const match of byDay.get(key) ?? []) {
-        if (possibleDuplicate(candidate, match)) duplicates.push({ id: match.id, label: match.id.startsWith("row:") ? `CSV line ${match.id.slice(4)}` : `${duplicateKey(match)} · ${match.takeoffSiteName ?? "Unknown site"} · ${match.glider ?? "Unknown wing"}` });
+      const possibleMatches = new Map((byDay.get(key) ?? []).map(match => [match.id, match]));
+      if (candidate.takeoffAt) timed.forEach(match => possibleMatches.set(match.id, match));
+      for (const match of possibleMatches.values()) {
+        const time = duplicateTimeLabel(match);
+        if (possibleDuplicate(candidate, match)) duplicates.push({ id: match.id, label: match.id.startsWith("row:") ? `CSV line ${match.id.slice(4)}${time ? ` · ${time}` : ""}` : `${duplicateKey(match)}${time ? ` · ${time}` : ""} · ${match.takeoffSiteName ?? "Unknown site"} · ${match.glider ?? "Unknown wing"}` });
         // A preview needs a few examples, even if a spreadsheet repeats a row thousands of times.
         if (duplicates.length === 5) break;
       }
       byDay.set(key, [...(byDay.get(key) ?? []), candidate]);
+      if (candidate.takeoffAt) timed.push(candidate);
     }
     inspected.push({ line: row.line, errors, warnings: entryWarnings(row.draft), duplicates, data });
   }
@@ -112,7 +117,7 @@ export async function commitLogbookImport(ownerId: string, value: unknown) {
     const inspected = await inspectRows(ownerId, request, tx);
     const included = request.rows.map((row, index) => ({ row, review: inspected[index] })).filter(({ row }) => !row.excluded);
     if (!included.length) throw new EntryError("Select at least one flight to import.");
-    if (included.some(({ row, review }) => review.errors.length || (review.duplicates.length && !row.allowDuplicate))) throw new EntryError("Resolve the highlighted errors and duplicates before importing. Check the preview again.", 409);
+    if (included.some(({ row, review }) => review.errors.length || (review.duplicates.length && !row.allowDuplicate))) throw new EntryError("Resolve the highlighted errors and overlapping flights before importing. Check the preview again.", 409);
     const batch = await tx.logbookImport.create({ data: { ownerId, requestId: request.requestId, fileHash, filename: request.filename,
       rowCount: request.rows.length, importedCount: included.length, skippedCount: request.rows.length - included.length, snapshot: {} } });
     const now = new Date();

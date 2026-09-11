@@ -6,6 +6,8 @@ import { emptyEntry } from "@/lib/logbook/entry";
 import { CSV_DEFAULTS, csvEntries, guessColumns, parseCsv } from "@/lib/logbook/csv";
 import { saveLogbookEntry, previewLogbookImport, commitLogbookImport, undoLogbookImport } from "@/lib/logbook/service";
 import { attachIgc } from "@/lib/logbook/attach-igc";
+import { inspectIgcDuplicates } from "@/lib/logbook/igc-duplicates";
+import { ingestFlight } from "@/lib/ingest/ingest-flight";
 import { getFlightForViewer, listOwnFlights, statsFrom } from "@/lib/flights/repo";
 import { makeRealisticFlight } from "./igc/make-igc";
 import { flightToEntryDraft } from "@/lib/logbook/flight-draft";
@@ -36,6 +38,44 @@ it("creates an editable date-only flight, retries safely, and protects ownership
   await saveLogbookEntry(owners[0], edit);
   await expect(saveLogbookEntry(owners[0], edit)).rejects.toMatchObject({ status: 409 });
   expect(await prisma.flight.findUniqueOrThrow({ where: result })).toMatchObject({ durationS: 5400, maxAltM: 2500, notes: "Remembered details" });
+});
+
+it("requires a keep-or-discard decision for overlapping manual flight times regardless of location", async () => {
+  const existingRequest = manual({
+    date: "2006-06-01",
+    takeoffTime: "10:00",
+    timeZone: "UTC",
+    durationMinutes: "60",
+    glider: "Wing A",
+    takeoffSiteName: "Coast",
+  });
+  const existing = await saveLogbookEntry(owners[0], existingRequest);
+  if (!("id" in existing)) throw new Error("Unexpected duplicate");
+
+  const incoming = manual({
+    date: "2006-06-01",
+    takeoffTime: "10:30",
+    timeZone: "UTC",
+    durationMinutes: "10",
+    glider: "Different wing",
+    takeoffSiteName: "Different continent",
+  });
+  expect(await saveLogbookEntry(owners[0], incoming)).toMatchObject({
+    duplicates: [{ id: existing.id, time: "10:00–11:00" }],
+  });
+
+  const kept = await saveLogbookEntry(owners[0], { ...incoming, allowDuplicate: true });
+  expect(kept).toHaveProperty("id");
+
+  const touching = await saveLogbookEntry(owners[0], manual({
+    date: "2006-06-01",
+    takeoffTime: "11:00",
+    timeZone: "UTC",
+    durationMinutes: "15",
+    glider: "Wing A",
+    takeoffSiteName: "Coast",
+  }));
+  expect(touching).toHaveProperty("id");
 });
 
 it("previews and imports atomically, detects CSV and existing duplicates, and prevents repeat imports", async () => {
@@ -84,6 +124,43 @@ it("undo removes only unchanged entries, never another pilot's entries or later 
   expect(await prisma.flight.findUnique({ where: { id: changed.id } })).toMatchObject({ notes: "Keep this memory" });
 });
 
+it("reviews IGC uploads against logbook entries and non-identical IGC recordings", async () => {
+  const bytes = Buffer.from(makeRealisticFlight().igc.replace("HFDTE120724", "HFDTE130724"));
+  const entry = await saveLogbookEntry(owners[1], manual({
+    date: "2024-07-13",
+    durationMinutes: "4",
+    glider: "Test Wing",
+    takeoffSiteName: "Pilot's launch",
+  }));
+  if (!("id" in entry)) throw new Error("Unexpected duplicate");
+
+  const againstEntry = await inspectIgcDuplicates(owners[1], bytes);
+  expect(againstEntry.exact).toBeNull();
+  expect(againstEntry.candidates).toContainEqual({
+    id: entry.id,
+    date: "2024-07-13",
+    time: null,
+    site: "Pilot's launch",
+    wing: "Test Wing",
+    recordingKind: "logbook",
+  });
+
+  const recorded = await ingestFlight({ ownerId: owners[1], bytes });
+  expect((await inspectIgcDuplicates(owners[1], bytes)).exact).toMatchObject({ id: recorded.flightId });
+
+  const variant = Buffer.from(`${bytes.toString()}LNONIDENTICAL:${randomUUID()}\n`);
+  const againstRecording = await inspectIgcDuplicates(owners[1], variant);
+  expect(againstRecording.exact).toBeNull();
+  expect(againstRecording.candidates).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: entry.id, recordingKind: "logbook" }),
+    expect.objectContaining({ id: recorded.flightId, recordingKind: "igc" }),
+  ]));
+
+  const comparison = await attachIgc(owners[1], recorded.flightId, variant, false);
+  if (comparison.attached) throw new Error("Unexpected attach");
+  expect(comparison.mergeable).toBe(false);
+});
+
 it("attaches a reviewed IGC to the same entry, retaining reported XC and rejecting stale or duplicate attachments", async () => {
   const batch = await commitLogbookImport(owners[0], requestFor("date,duration_minutes,wing,notes,xc_distance,xc_type\n2024-07-12,90,My historic wing,My memory,45,fai-triangle"));
   const flight = await prisma.flight.findFirstOrThrow({ where: { logbookImportId: batch.id } });
@@ -92,6 +169,7 @@ it("attaches a reviewed IGC to the same entry, retaining reported XC and rejecti
   await expect(attachIgc(owners[0], flight.id, Buffer.from("bad"), false)).rejects.toThrow(/no usable GPS/);
   const preview = await attachIgc(owners[0], flight.id, bytes, false);
   if (preview.attached) throw new Error("Unexpected attach");
+  expect(preview.mergeable).toBe(true);
   expect(preview.previous.durationS).toBe(5400);
   expect(preview.recorded.durationS).toBeLessThan(400);
   expect(await prisma.flightData.findUnique({ where: { flightId: flight.id } })).toBeNull();

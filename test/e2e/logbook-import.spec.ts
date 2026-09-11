@@ -198,8 +198,12 @@ test("manual flight → edit → attach a reviewed IGC, keeping one entry", asyn
   await page.getByRole("button", { name: "Save flight details" }).click();
   await expect(page).toHaveURL(flightUrl);
   await page.goto(`${flightUrl}/edit`);
+  await expect(page.getByText("Drop an IGC file here", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose file", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Compare IGC with this entry" })).toHaveCount(0);
   await expect(page.getByLabel("IGC to attach")).toBeEnabled();
   await page.getByLabel("IGC to attach").setInputFiles({ name: "found.igc", mimeType: "application/octet-stream", buffer: Buffer.from(makeRealisticFlight().igc) });
+  await expect(page.getByText("Selected: found.igc", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Compare IGC with this entry" }).click();
   await expect(page.getByRole("columnheader", { name: "From IGC" })).toBeVisible();
   await page.getByRole("button", { name: "Attach IGC and use recorded measurements" }).click();

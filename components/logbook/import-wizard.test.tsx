@@ -33,16 +33,16 @@ it("accepts a dropped CSV and keeps other duplicate warnings after one row is sk
   expect(await screen.findByText("Match your columns")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Continue to names" }));
   fireEvent.click(screen.getByRole("button", { name: "Review flights" }));
-  await waitFor(() => expect(screen.getAllByText("Possible duplicate of:")).toHaveLength(2));
+  await waitFor(() => expect(screen.getAllByText("May overlap:")).toHaveLength(2));
 
-  expect(screen.getAllByLabelText("This is a different flight; include it")).toHaveLength(2);
-  expect(screen.getAllByLabelText("This is a duplicate; skip it")).toHaveLength(2);
-  fireEvent.click(screen.getAllByLabelText("This is a duplicate; skip it")[0]);
-  expect(screen.getAllByText("Possible duplicate of:")).toHaveLength(1);
+  expect(screen.getAllByLabelText("Keep this imported flight")).toHaveLength(2);
+  expect(screen.getAllByLabelText("Discard this imported flight")).toHaveLength(2);
+  fireEvent.click(screen.getAllByLabelText("Discard this imported flight")[0]);
+  expect(screen.getAllByText("May overlap:")).toHaveLength(1);
 
   fireEvent.click(screen.getByRole("button", { name: "Check preview" }));
-  expect(await screen.findByText("You must finish marking these possible duplicate flights")).toBeInTheDocument();
-  expect(screen.getAllByText("Possible duplicate of:")).toHaveLength(1);
-  expect(screen.getByRole("button", { name: "Accept all" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Skip all" })).toBeInTheDocument();
+  expect(await screen.findByText("You must review these possibly overlapping flights")).toBeInTheDocument();
+  expect(screen.getAllByText("May overlap:")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Keep all" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Discard all" })).toBeInTheDocument();
 });

@@ -348,5 +348,4 @@ via Resend; in dev it's written to `/tmp/leaf-magic-link.txt` + logged.
 - Launch-coordinate privacy zones (obfuscation on public flights).
 - Community feed / following / kudos.
 - Device-push API + device-auth model.
-- Fuzzy near-duplicate detection; moving large blobs to object storage if they
-  outgrow Postgres.
+- Moving large blobs to object storage if they outgrow Postgres.

@@ -15,7 +15,7 @@ Review happens before saving:
 1. Choose a CSV (comma, semicolon, or tab separated; up to 5,000 flights and 2 MB).
 2. Match columns and confirm date, duration, and unit interpretation.
 3. Normalize wing and site names across incoming rows. Existing logbook names and the shared site directory are not renamed. Select a known site to use its coordinates, or add coordinates to individual entries. Unmatched names are not geocoded automatically.
-4. Edit or skip rows and review possible duplicates. Optional blanks are warnings. Invalid values and unacknowledged duplicates block the selected rows from importing. Select visibility (private by default) and confirm the final summary.
+4. Edit or skip rows and review flights that may overlap existing or earlier imported flights. Optional blanks are warnings. Invalid values and unreviewed overlaps block the selected rows from importing. Select visibility (private by default) and confirm the final summary. Keeping or discarding an incoming row never changes an existing flight.
 
 Imports save atomically. Retries use a request ID, and an already-imported file is recognized by its content hash. A receipt tracks the batch and original update timestamps. Undo removes unchanged entries, retaining flights with edits, attached recordings, photos, kudos, or instructor activity. Individual flights can always be removed through their normal edit page.
 
@@ -36,5 +36,7 @@ Pilot identity always comes from the owning Leaf Log profile. The optional pilot
 The flight detail page displays entered metrics, notes, photos, and a site map when coordinates are known. It has no playback controls. Private sites use the same name authorization as recorded flights; a private site's approximate map anchor is hidden from viewers without access.
 
 Owners can edit manual/imported fields or attach an IGC from the edit page. Attachment compares the entered and recorded measurements first, then updates the same flight ID after checking its revision and the file hash. Recorded metrics and endpoint coordinates replace entered measurements; notes, photos, visibility, chosen site names, wing, and reported XC remain. Blank wings/sites may be filled from the recording. The raw bytes are preserved and XC analysis is queued. Reattaching the same file is idempotent; another flight's existing IGC cannot be attached again for that pilot.
+
+User-initiated IGC, manual, and CSV additions are paused when their known time interval overlaps another flight. The comparison is read-only: the pilot may keep or discard only the flight currently being added, and an existing flight is never edited, deleted, or given a new recording from this review. When usable times are missing, the earlier conservative date/duration/site/wing check remains as a fallback. Exact IGC byte matches remain automatic no-ops. Device pushes retain their retry-safe automatic ingest contract and exact-byte deduplication because there is no interactive review surface on the device.
 
 The database migration is additive apart from making `igcSha256` nullable. Deploy the migration before deploying the application. Unit/integration tests use an isolated local schema, and browser tests use their own server and schema.

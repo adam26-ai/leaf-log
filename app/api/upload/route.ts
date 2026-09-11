@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ingestFlight } from "@/lib/ingest/ingest-flight";
+import { inspectIgcDuplicates } from "@/lib/logbook/igc-duplicates";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
   }
 
   const files = form.getAll("files").filter((f): f is File => f instanceof File);
+  const allowPossibleDuplicate = form.get("allowPossibleDuplicate") === "true";
   if (files.length === 0) {
     return NextResponse.json({ error: "No files provided" }, { status: 400 });
   }
@@ -53,6 +55,23 @@ export async function POST(request: Request) {
     }
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!allowPossibleDuplicate) {
+        const inspection = await inspectIgcDuplicates(userId, bytes);
+        if (inspection.exact) {
+          results.push({
+            filename: name,
+            flightId: inspection.exact.id,
+            status: inspection.exact.status,
+            deduped: true,
+            warnings: [],
+          });
+          continue;
+        }
+        if (inspection.candidates.length > 0) {
+          results.push({ filename: name, possibleDuplicates: inspection.candidates });
+          continue;
+        }
+      }
       const r = await ingestFlight({
         ownerId: userId,
         bytes,
