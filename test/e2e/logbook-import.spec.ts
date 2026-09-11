@@ -220,7 +220,7 @@ test("CSV name matching, duplicate review, reported trophies, mobile layout and 
   await page.getByLabel("Wings: Rush4", { exact: true }).fill("Rush 4");
   await page.getByRole("button", { name: "Review flights", exact: true }).click();
   await expect(page.getByText("Possible duplicate of:")).toBeVisible();
-  await page.getByRole("button", { name: "Skip all possible duplicates" }).click();
+  await page.getByRole("button", { name: "Skip all", exact: true }).click();
   await page.getByRole("button", { name: "Check preview", exact: true }).click();
   await expect(page.getByText("Preview checked.", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
