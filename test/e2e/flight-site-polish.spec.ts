@@ -113,6 +113,20 @@ test("IGC upload and editing save multiple flight types without changing an exac
     expect(await db.flight.findUniqueOrThrow({ where: { id } })).toMatchObject({ flightFlags: ["siv", "competition"], occupancy: "solo", launchTypes: [] });
     const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(1);
+    await db.profile.update({ where: { id: owner.id }, data: { ratingsTrackingEnabled: true } });
+    await page.goto(`/flights/${id}/edit`);
+    await page.getByRole("radio", { name: "Tandem", exact: true }).check();
+    await page.locator('input[name="launchTypes"][value="ST"]').check();
+    await page.getByRole("button", { name: "Save flight details", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "Tandem", exact: true })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Tow", exact: true })).toBeChecked();
+    expect((await db.flight.findUniqueOrThrow({ where: { id } })).flightFlags).toEqual(["siv", "competition", "tandem", "tow"]);
+    await page.getByRole("checkbox", { name: "Tandem", exact: true }).uncheck();
+    await page.getByRole("checkbox", { name: "Tow", exact: true }).uncheck();
+    await page.getByRole("button", { name: "Save flight type", exact: true }).click();
+    await expect(page.getByRole("radio", { name: "Solo", exact: true })).toBeChecked();
+    await expect(page.locator('input[name="launchTypes"][value="ST"]')).not.toBeChecked();
+    expect((await db.flight.findUniqueOrThrow({ where: { id } })).flightFlags).toEqual(["siv", "competition"]);
   } finally { await db.$disconnect(); }
 });
 

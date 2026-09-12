@@ -1,15 +1,16 @@
 import Link from "next/link";
 import Image from "next/image";
-import { BookOpen, Rss, Plus, Users } from "lucide-react";
+import { BookOpen, GraduationCap, Rss, Plus, Users } from "lucide-react";
 import { AvatarMenu } from "@/components/avatar-menu";
 import type { Profile } from "@/lib/profile";
 
-const navItems = [
+const BASE_NAV_ITEMS = [
   { href: "/logbook", label: "Logbook", icon: BookOpen },
   { href: "/feed", label: "Feed", icon: Rss },
   { href: "/friends", label: "Friends", icon: Users },
-  { href: "/upload", label: "Add flight", icon: Plus },
 ];
+const RATINGS_NAV_ITEM = { href: "/ratings", label: "Ratings", icon: GraduationCap };
+const UPLOAD_NAV_ITEM = { href: "/upload", label: "Add flight", icon: Plus };
 
 function NavWordmark() {
   return (
@@ -40,6 +41,12 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
       </header>
     );
   }
+
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    ...(profile.ratingsTrackingEnabled ? [RATINGS_NAV_ITEM] : []),
+    UPLOAD_NAV_ITEM,
+  ];
 
   return (
     <header className="flex items-center justify-between border-b border-gray-200 px-2 py-3 sm:px-6 sm:py-4 sm:px-10">

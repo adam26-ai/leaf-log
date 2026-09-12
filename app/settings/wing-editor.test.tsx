@@ -14,7 +14,7 @@ it("requires its dedicated Save and keeps wing edits out of profile autosaving",
   vi.useFakeTimers();
   vi.mocked(saveWingNames).mockResolvedValue({ count: 5 });
   render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null}
-    avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} />} />);
+    ratingsTrackingEnabled={false} avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} />} />);
   fireEvent.click(screen.getByRole("checkbox", { name: /Ozone Rush4/ }));
   expect(screen.getByRole("button", { name: "Rename wing" })).toBeDisabled();
   expect(screen.getByText("Rename:")).toHaveClass("text-brand-blue-strong");

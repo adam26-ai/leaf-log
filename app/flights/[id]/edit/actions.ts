@@ -86,11 +86,18 @@ export async function updateFlightDetails(
   const flightTypeTags = pickMultiSelect(formData, "flightTypeTags", FLIGHT_TYPE_TAGS);
   const launchTypes = pickMultiSelect(formData, "launchTypes", LAUNCH_TYPES);
   const restrictedLandingField = formData.get("restrictedLandingField") === "on";
+  const current = await prisma.flight.findFirst({ where: { id: flightId, ownerId: userId }, select: { flightFlags: true } });
+  if (!current) return { error: "Flight not found." };
 
   const res = await prisma.flight.updateMany({
     where: { id: flightId, ownerId: userId },
     data: {
       occupancy: occupancyRaw,
+      flightFlags: [
+        ...current.flightFlags.filter(flag => flag !== "tandem" && flag !== "tow"),
+        ...(occupancyRaw === "tandem" ? ["tandem"] : []),
+        ...(launchTypes.includes("ST") ? ["tow"] : []),
+      ],
       flightTypeTags,
       launchTypes,
       restrictedLandingField,

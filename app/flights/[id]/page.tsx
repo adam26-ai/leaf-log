@@ -13,6 +13,8 @@ import {
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
 import { listInstructorNotesForViewer } from "@/lib/ratings/notes";
+import { activeSignoffsFor } from "@/lib/ratings/signoffs";
+import { RATING_CRITERIA } from "@/lib/ratings/criteria";
 import { AppHeader } from "@/components/app-header";
 import { FlightHeader } from "@/components/flight/flight-header";
 import { flightStatistics } from "@/lib/flights/statistics";
@@ -21,9 +23,16 @@ import { FlightViz } from "@/components/flight/flight-viz";
 import { ShareToggle } from "@/components/flight/share-toggle";
 import { KudosButton } from "@/components/flight/kudos-button";
 import { InstructorNoteCard } from "@/components/flight/instructor-note-card";
+import { SignoffForm } from "@/components/flight/signoff-form";
 import { Card, CardBody } from "@/components/ui/card";
 import { isLogbookEntry } from "@/lib/flights/recording";
 import { EntryDetail } from "@/components/logbook/entry-detail";
+
+// SignoffForm is a Client Component — only kind: "instructor" rows may
+// cross that boundary as props. RATING_CRITERIA's `auto` rows carry a
+// getValue function, which React Server Components cannot serialize into a
+// client prop (this broke at runtime before the filter was added here).
+const SIGNABLE_CRITERIA = RATING_CRITERIA.filter((c) => c.kind === "instructor");
 
 export default async function FlightPage({
   params,
@@ -56,6 +65,12 @@ export default async function FlightPage({
   const instructorNotes = viewerId
     ? await listInstructorNotesForViewer(flight.id, viewerId)
     : [];
+  const signedCriterionKeys = new Set<string>();
+  if (isViewerCurrentInstructor && viewerId) {
+    const signoffs = await activeSignoffsFor(flight.ownerId, viewerId);
+    for (const signoff of signoffs) signedCriterionKeys.add(signoff.criterionKey);
+  }
+
   const navigationFlights = isOwner
     ? await listOwnFlights(flight.ownerId)
     : await listProfileFlightsForViewer(flight.ownerId, viewerId);
@@ -162,6 +177,16 @@ export default async function FlightPage({
               notes={instructorNotes}
               viewerId={viewerId}
               isViewerCurrentInstructor={isViewerCurrentInstructor}
+            />
+          </div>
+        )}
+
+        {isViewerCurrentInstructor && (
+          <div className="mt-8">
+            <SignoffForm
+              flightId={flight.id}
+              criteria={SIGNABLE_CRITERIA}
+              signedCriterionKeys={signedCriterionKeys}
             />
           </div>
         )}
