@@ -66,6 +66,7 @@ model Profile {
   // Default visibility applied to newly ingested flights (private | friends | public).
   defaultVisibility  String        @default("private")
   defaultUnits       String        @default("metric")
+  hiddenWings        String[]      @default([])
   customUnits        Json?
   mapDefaults        Json?
   // Opt-in: reveals the Ratings tracking section (Flight details tags +
@@ -218,6 +219,7 @@ model Flight {
   // solo | tandem; null = solo-equivalent (matches every pre-existing row,
   // since ingestion never distinguished tandem flights before this). Drives
   // exact solo-airtime for USHPA ratings (lib/ratings/stats.ts).
+  flightFlags           String[] @default([])
   occupancy             String?
   // Self-reported flight-character tags (currently just "XC" — cross
   // country). Separate from launchTypes: this describes the flight as a

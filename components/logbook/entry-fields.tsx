@@ -1,5 +1,7 @@
 "use client";
 
+import { FlightTypeFields } from "@/components/flight/type-flags";
+import { flightFlags } from "@/lib/flights/type-flags";
 import { useId, useState } from "react";
 import dynamic from "next/dynamic";
 import { XC_TYPE_LABELS } from "@/lib/flights/recording";
@@ -69,6 +71,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
       {input("glider", "Wing", "text", { list: `${uid}-wings`, placeholder: "Choose a previous wing or enter a name" })}
       {site("takeoff", "Flying site")}
     </div>
+    <FlightTypeFields value={flightFlags({ flightFlags: value.flightTypes.split(";"), occupancy: value.occupancy })} onChange={flags => set({ flightTypes: flags.join(";"), occupancy: flags.includes("tandem") ? "tandem" : "solo" })} />
     <fieldset className="rounded-lg border border-gray-200 p-3"><legend className="px-1 text-sm font-medium text-gray-700">Reported XC <span className="font-normal text-gray-400">(optional)</span></legend>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr]">
         <div className="col-span-2 sm:col-span-1">{select("xcType", "XC type", { "": "Choose a route type…", ...XC_TYPE_LABELS })}</div>
@@ -91,7 +94,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
         {input("maxClimb", "Best climb", "number", { min: 0 })}
         {input("maxSink", "Max sink", "number")}
         {site("landing", "Landing site")}
-        {select("occupancy", "Solo or tandem", { "": "Unknown", solo: "Solo", tandem: "Tandem" })}
+
       </div>
     </details>
     <details open={issues.some(issue => ["takeoffLat", "takeoffLon", "landingLat", "landingLon"].includes(issue.field)) || undefined} className="rounded-lg border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-gray-700">Site location</summary>

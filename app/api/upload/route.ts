@@ -1,3 +1,4 @@
+import { flightFlagsSchema } from "@/lib/flights/type-flags";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -32,6 +33,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid upload" }, { status: 400 });
   }
 
+  const flags = flightFlagsSchema.safeParse(form.getAll("flightFlags"));
+  if (!flags.success) return NextResponse.json({ error: "Invalid flight types" }, { status: 400 });
   const files = form.getAll("files").filter((f): f is File => f instanceof File);
   const allowPossibleDuplicate = form.get("allowPossibleDuplicate") === "true";
   if (files.length === 0) {
@@ -78,6 +81,12 @@ export async function POST(request: Request) {
         source: "web_upload",
         filename: name,
       });
+      if (!r.deduped && r.flightId && flags.data.length) {
+        await prisma.flight.updateMany({ where: { id: r.flightId, ownerId: userId }, data: {
+          flightFlags: flags.data, ...(flags.data.includes("tandem") ? { occupancy: "tandem" } : {}),
+          ...(flags.data.includes("tow") ? { launchTypes: { push: "ST" } } : {}),
+        } });
+      }
       results.push({ filename: name, ...r });
     } catch {
       results.push({ filename: name, error: "Could not process this file" });

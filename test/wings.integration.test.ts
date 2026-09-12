@@ -30,7 +30,7 @@ it("renames and merges exact owner-scoped wings, preserves flight data and rejec
   const other = await create(owners[1], "Rush 4", "other");
   const unlisted = await create(owners[0], null, "null");
   expect(await wings.renameOwnWings(owners[0], { sources: [{ name: "Ozone Rush4", count: 1 }, { name: "Rush 4", count: 1 }], target: "Ozone Rush 4" })).toBe(2);
-  expect(await wings.listOwnWings(owners[0])).toEqual(expect.arrayContaining([{ name: "Ozone Rush 4", count: 3 }, { name: null, count: 1 }]));
+  expect(await wings.listOwnWings(owners[0])).toEqual(expect.arrayContaining([{ name: "Ozone Rush 4", count: 3, durationS: 360, hidden: false }, { name: null, count: 1, durationS: 120, hidden: false }]));
   expect(await prisma.flight.findUnique({ where: { id: other.id } })).toMatchObject({ glider: "Rush 4" });
   expect(await prisma.flight.findUnique({ where: { id: a.id } })).toMatchObject({ glider: "Ozone Rush 4", durationS: 120, notes: "Keep notes", visibility: "private", xcScore: { preserve: true } });
   expect(await prisma.flight.findUnique({ where: { id: b.id } })).toMatchObject({ glider: "Ozone Rush 4" });

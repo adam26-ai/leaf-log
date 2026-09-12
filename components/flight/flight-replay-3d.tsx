@@ -246,6 +246,8 @@ interface FlightReplay3DProps {
   xcRoute?: XcCandidate | null;
   flightId: string;
   primaryFlightId: string;
+  primaryOwnerId: string;
+  selectedOwnerId: string;
   replay: ReplayResponse;
   companions: LoadedReplayFlight[];
   basemap?: BasemapId;
@@ -279,6 +281,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     {
       flightId,
       primaryFlightId,
+      primaryOwnerId,
+      selectedOwnerId,
       replay: data,
       companions,
       xcRoute,
@@ -310,7 +314,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const trackRef = useRef<TimedTrackDatum[]>([]);
   const companionRef = useRef(companions);
   const badgeHeightRef = useRef(115);
-  const identityRef = useRef({ flightId, primaryFlightId });
+  const identityRef = useRef({ flightId, primaryFlightId, primaryOwnerId, selectedOwnerId });
   const groupColorsRef = useRef({ ...GROUP_REPLAY_COLORS, ...GROUP_REPLAY_ALPHAS });
   useEffect(() => {
     const updateColors = () => {
@@ -365,7 +369,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const suppressFollowRef = useRef(false);
   useEffect(() => {
     companionRef.current = companions;
-    identityRef.current = { flightId, primaryFlightId };
+    identityRef.current = { flightId, primaryFlightId, primaryOwnerId, selectedOwnerId };
     photosRef.current = photos;
     onPhotoOpenRef.current = onPhotoOpen;
     onTerrainProfileRef.current = onTerrainProfile;
@@ -394,7 +398,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     dataRef.current = data;
     timeRef.current = time;
-    identityRef.current = { flightId, primaryFlightId };
+    identityRef.current = { flightId, primaryFlightId, primaryOwnerId, selectedOwnerId };
     trackRef.current = tracksFor(data);
     groundElevationCacheRef.current.clear();
     terrainProfilesPublishedRef.current.delete(flightId);
@@ -411,7 +415,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // Time/transport changes are handled by the animation effect; a selection
     // updates the data in the existing map instead of reconstructing WebGL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, flightId, primaryFlightId]);
+  }, [data, flightId, primaryFlightId, primaryOwnerId, selectedOwnerId]);
 
   function positionAt(t: number): [number, number, number] {
     return replayPositionAt(dataRef.current!, t);
@@ -805,7 +809,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const pos = positionAt(t);
     const state = replayStateAt(d, t);
     const identities = identityRef.current;
-    const primary = identities.flightId === identities.primaryFlightId;
+    const primary = identities.selectedOwnerId === identities.primaryOwnerId;
     const nowMs = d.takeoffMs + t * 1000;
     const companions = companionRef.current;
     type PhotoIcon = { id: string; flightId: string; name: string; primary: boolean; tSec: number; position: [number, number, number] };
@@ -813,7 +817,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const f = companions.find((f) => f.id === ph.flightId);
       if (!f) return [];
       const q = ph.tSec != null ? replayPositionAt(f.replay, ph.tSec) : [ph.lon!, ph.lat!, ph.altM ?? 0];
-      return [{ id: ph.id, flightId: f.id, name: f.owner.displayName, primary: f.id === identities.primaryFlightId,
+      return [{ id: ph.id, flightId: f.id, name: f.owner.displayName, primary: f.owner.id === identities.primaryOwnerId,
         tSec: ph.tSec ?? -1, position: [q[0], q[1], zOf(q[2])] as [number, number, number] }];
     });
 
@@ -1128,7 +1132,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const state = replayStateAt(flight.replay, local);
       const point = replayPositionAt(flight.replay, local);
       const anchor: [number, number, number] = [point[0], point[1], zOf(point[2])];
-      const primary = flight.id === identityRef.current.primaryFlightId;
+      const primary = flight.owner.id === identityRef.current.primaryOwnerId;
       const banner = verticalNameBanner(displayedPilotName(flight.owner.displayName), colors.groupBadgeIdle, colors.groupBadgeText, colors.groupBadgeBorder, displayedBadgeHeight())!;
       layers.push(new ScatterplotLayer({ id: 'companion-point-' + flight.id, data: [anchor], getPosition: (p: [number, number, number]) => p,
         getFillColor: colorRgb(primary ? colors.groupPrimary : colors.groupCompanion), getRadius: 3, radiusUnits: "pixels", opacity: state === "Flying" ? 1 : 0.5,
@@ -1864,6 +1868,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       <div className="relative">
         <div
           ref={containerRef}
+          data-scored-route={xcRoute?.shape ?? "hidden"}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
         {hoverPhoto && (

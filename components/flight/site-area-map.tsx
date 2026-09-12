@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { styleFor } from "./basemaps";
+import { SiteMapControls, SiteMapLegend } from "./site-map-controls";
+import { styleFor, type BasemapId } from "./basemaps";
 import type { Boundary } from "@/lib/sites/geo";
 
 type LngLat = [number, number];
@@ -71,6 +72,8 @@ export function SiteAreaMap({
   flightPoint: { lat: number; lon: number } | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const [basemap, setBasemap] = useState<BasemapId>("monochrome");
 
   useEffect(() => {
     if (!ref.current) return;
@@ -79,36 +82,43 @@ export function SiteAreaMap({
       style: styleFor("monochrome"),
       attributionControl: { compact: true },
     });
+    mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
-    map.on("load", () => {
+    new maplibregl.Marker({ color: "#0099ff" }).setLngLat([anchor.lon, anchor.lat]).addTo(map).getElement().setAttribute("aria-label", "Site pin (blue)");
+    if (flightPoint) {
+      const el = document.createElement("div");
+      el.setAttribute("aria-label", "Flight position (green)");
+      el.style.cssText = "width:14px;height:14px;border-radius:50%;background:var(--color-success-accent, #d8ff00);border:2px solid #141414;box-sizing:border-box;";
+      new maplibregl.Marker({ element: el }).setLngLat([flightPoint.lon, flightPoint.lat]).addTo(map);
+    }
+    const observer = new ResizeObserver(() => map.resize());
+    observer.observe(ref.current);
+    let framed = false;
+    map.on("style.load", () => {
       const areaRing = boundary ? boundary.geometry.coordinates[0] : circleRing(anchor.lat, anchor.lon, radiusM);
 
       map.addSource("area", { type: "geojson", data: ringGeoJson(areaRing) });
       map.addLayer({ id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#0099ff", "fill-opacity": 0.2 } });
       map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": "#0099ff", "line-width": 2 } });
 
-      new maplibregl.Marker({ color: "#272727" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
-
-      if (flightPoint) {
-        const el = document.createElement("div");
-        el.style.cssText =
-          "width:14px;height:14px;border-radius:50%;background:#0099ff;border:2px solid #141414;box-sizing:border-box;";
-        new maplibregl.Marker({ element: el }).setLngLat([flightPoint.lon, flightPoint.lat]).addTo(map);
-      }
-
       const boundsPoints: LngLat[] = [...areaRing, [anchor.lon, anchor.lat]];
       if (flightPoint) boundsPoints.push([flightPoint.lon, flightPoint.lat]);
       const bounds = boundsOfPoints(boundsPoints);
-      if (bounds) map.fitBounds(bounds, { padding: 40, duration: 0, maxZoom: 16 });
+      if (bounds && !framed) map.fitBounds(bounds, { padding: 40, duration: 0, maxZoom: 16 });
+      framed = true;
     });
 
-    return () => map.remove();
+    return () => { observer.disconnect(); map.remove(); mapRef.current = null; };
     // Mounted fresh per site-overview visit (see NameSiteDialog) — a
     // one-time render, not a reactive viewer, so an empty dep array is
     // deliberate rather than a missed dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div ref={ref} className="h-[420px] w-full rounded-md" data-testid="site-area-map" />;
+  return <div className="flex shrink-0 flex-col gap-2">
+    <div className="relative"><div ref={ref} className="h-[clamp(240px,45vh,420px)] w-full rounded-md" data-testid="site-area-map" />
+      <div className="absolute left-2 top-2"><SiteMapControls value={basemap} onChange={next => { setBasemap(next); mapRef.current?.setStyle(styleFor(next)); }} /></div>
+    </div><SiteMapLegend flightPoint={Boolean(flightPoint)} />
+  </div>;
 }

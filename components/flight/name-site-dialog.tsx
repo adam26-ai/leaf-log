@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import {
   nameSite,
-  suggestLocationsForFlight,
+  renameFlightSiteLabel,
+  getSiteDialogData,
   getBoundLocationInfo,
   deleteSiteForFlight,
   unpublishZoneForFlight,
@@ -18,6 +20,7 @@ import {
   saveBoundaryForOwnedRow,
   clearBoundaryForOwnedRow,
   getBoundaryForOwnedRow,
+  getBoundaryForPublicRow,
   type BoundaryEditableRows,
   type BoundaryEditorInitialState,
 } from "@/app/flights/[id]/boundary-action";
@@ -31,6 +34,7 @@ import { formatDistance, formatBearing } from "@/lib/flights/format";
 import { Button } from "@/components/ui/button";
 import { BoundaryEditor, type BoundaryEditorHandle } from "@/components/flight/boundary-editor";
 import { LocationCommunityDialog } from "@/components/flight/location-community-dialog";
+import { SiteDialog } from "./site-dialog";
 import { SiteAreaMap } from "@/components/flight/site-area-map";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -58,10 +62,12 @@ export function SiteNameControl({
   isOwner,
   zonesEnabled,
   needsReview = false,
+  flightPoint = null,
   className,
   as: As = "span",
 }: {
   flightId: string;
+  flightPoint?: { lat: number; lon: number } | null;
   endpoint: SiteEndpoint;
   initialSiteName: string | null;
   initialZoneName: string | null;
@@ -121,6 +127,7 @@ export function SiteNameControl({
         {communityOpen && typeof document !== "undefined" &&
           createPortal(
             <LocationCommunityDialog
+              flightPoint={flightPoint}
               level={zoneId && zonesEnabled ? "zone" : "site"}
               id={zoneId && zonesEnabled ? zoneId : siteId}
               name={zoneId && zonesEnabled ? (zoneName ?? "this spot") : (siteName ?? "this site")}
@@ -249,7 +256,7 @@ function NameSiteDialog({
   // silently create a site from stale text). An unknown site has nothing
   // to show an overview of, so it goes straight to the create/choose flow.
   const [step, setStep] = useState<Step>(
-    zonesEnabled && currentSiteName ? "zone" : currentSiteName ? "site-overview" : "site",
+    currentSiteName ? "site-overview" : "site",
   );
   const [siteChoice, setSiteChoice] = useState<SiteChoice | null>(null);
   const [siteChoiceLabel, setSiteChoiceLabel] = useState<string | null>(currentSiteName);
@@ -270,11 +277,10 @@ function NameSiteDialog({
 
   useEffect(() => {
     let cancelled = false;
-    suggestLocationsForFlight(flightId, endpoint).then((rows) => {
-      if (!cancelled) setSuggestions(rows);
-    });
-    getBoundLocationInfo(flightId, endpoint).then((info) => {
+    getSiteDialogData(flightId, endpoint).then(({ info, suggestions }) => {
       if (cancelled) return;
+      setSuggestions(suggestions ?? []);
+      if (suggestions === null) setError("Could not load nearby sites. Close and reopen to retry.");
       setBoundInfo(info);
       // Already-bound site: pre-fill the choice so the zone step can bind
       // to it without re-resolving the site.
@@ -282,7 +288,7 @@ function NameSiteDialog({
         setSiteChoice({ mode: "reuse", id: info.site.id });
         setSiteChoiceVisibility(info.site.visibility);
       }
-    });
+    }).catch(() => { if (!cancelled) setError("Could not load site details. Close and reopen to retry."); });
     return () => {
       cancelled = true;
     };
@@ -317,6 +323,14 @@ function NameSiteDialog({
         return;
       }
       setError("Enter a name for this site.");
+      return;
+    }
+    if (boundInfo && !boundInfo.flightPoint) {
+      startTransition(async () => {
+        const result = await renameFlightSiteLabel(flightId, endpoint, siteNameInput, boundInfo.site?.id ?? null);
+        if (result.ok) { onCommunityRenamed(siteNameInput.trim(), "site"); onClose(); }
+        else setError(result.error);
+      });
       return;
     }
     setSiteChoice({ mode: "create", name: siteNameInput, visibility: siteVisibility });
@@ -408,9 +422,8 @@ function NameSiteDialog({
       return;
     }
     const siteId = boundInfo?.site?.id;
-    if (!siteId) return;
     startTransition(async () => {
-      const result = await renamePublicRow("site", siteId, trimmed);
+      const result = siteId ? await renamePublicRow("site", siteId, trimmed) : await renameFlightSiteLabel(flightId, endpoint, trimmed);
       if (result.ok) {
         setSiteChoiceLabel(trimmed);
         setBoundInfo((prev) => (prev?.site ? { ...prev, site: { ...prev.site, name: trimmed } } : prev));
@@ -528,6 +541,7 @@ function NameSiteDialog({
   if (step === "community" && communityTarget) {
     return (
       <LocationCommunityDialog
+        flightPoint={boundInfo?.flightPoint}
         level={communityTarget.level}
         id={communityTarget.id}
         name={communityTarget.name}
@@ -542,44 +556,48 @@ function NameSiteDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[90vh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <SiteDialog onClose={onClose}>
         {step === "site-overview" && (
           <SiteOverviewStep
             siteTypeLabel={SITE_TYPE_LABEL[endpoint]}
             currentSiteName={currentSiteName}
             siteInfo={boundInfo?.site ?? null}
+            loaded={boundInfo !== null}
+            error={error}
             flightPoint={boundInfo?.flightPoint ?? null}
             radiusM={radiusForKind(endpoint)}
             onEdit={openSiteEdit}
+            onManageSpot={zonesEnabled && boundInfo?.site ? () => setStep("zone") : undefined}
+            onCommunity={boundInfo?.site?.visibility === "public" ? openCommunityForCurrentSite : undefined}
             onChooseDifferent={chooseCreateDifferentSite}
             onClose={onClose}
           />
         )}
-        {step === "site-edit" && boundInfo?.site && (
+        {step === "site-edit" && boundInfo && (
           <SiteEditStep
             siteTypeLabel={SITE_TYPE_LABEL[endpoint]}
-            siteId={boundInfo.site.id}
-            initialName={boundInfo.site.name}
+            siteId={boundInfo.site?.id ?? null}
+            initialName={boundInfo.site?.name ?? currentSiteName ?? ""}
+            flightPoint={boundInfo.flightPoint}
             radiusM={radiusForKind(endpoint)}
             pending={pending}
             error={error}
             onSaveName={saveSiteName}
             onBoundarySaved={refreshBoundInfo}
-            onDelete={removeSite}
+            onDelete={boundInfo.site?.ownedByViewer ? removeSite : undefined}
             onBack={() => setStep("site-overview")}
           />
         )}
-        {step === "site" && (
+        {step === "site" && !boundInfo && <>
+          <h2 className="font-condensed text-xl font-bold text-ink">Choose a site</h2>
+          <p className="text-sm text-gray-500">{error ?? "Loading site details..."}</p>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        </>}
+        {step === "site" && boundInfo && (
           <SiteStep
             endpointLabel={ENDPOINT_LABEL[endpoint]}
             currentSiteName={currentSiteName}
+            hasPoint={Boolean(boundInfo?.flightPoint)}
             suggestions={suggestions}
             selectedSiteId={siteChoice?.mode === "reuse" ? siteChoice.id : null}
             pending={pending}
@@ -645,8 +663,7 @@ function NameSiteDialog({
             onClose={onClose}
           />
         )}
-      </div>
-    </div>
+    </SiteDialog>
   );
 }
 
@@ -663,18 +680,26 @@ function SiteOverviewStep({
   siteTypeLabel,
   currentSiteName,
   siteInfo,
+  loaded,
+  error,
   flightPoint,
   radiusM,
   onEdit,
+  onManageSpot,
+  onCommunity,
   onChooseDifferent,
   onClose,
 }: {
   siteTypeLabel: string;
   currentSiteName: string | null;
   siteInfo: BoundSiteInfo | null;
+  loaded: boolean;
+  error: string | null;
   flightPoint: { lat: number; lon: number } | null;
   radiusM: number;
   onEdit: () => void;
+  onManageSpot?: () => void;
+  onCommunity?: () => void;
   onChooseDifferent: () => void;
   onClose: () => void;
 }) {
@@ -697,18 +722,22 @@ function SiteOverviewStep({
           flightPoint={flightPoint}
         />
       ) : (
-        <p className="text-sm text-gray-500">Loading site details…</p>
+        <p className="text-sm leading-relaxed text-gray-500">{error ?? (loaded ? "This flight has a saved site name, with no mapped site linked yet. Edit the name or choose a mapped site." : "Loading site details...")}</p>
       )}
 
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
+      {(onManageSpot || onCommunity) && <div className="flex flex-wrap gap-3">
+        {onManageSpot && <button type="button" onClick={onManageSpot} className="text-sm text-brand-blue-strong underline">Manage takeoff or landing spot</button>}
+        {onCommunity && <button type="button" onClick={onCommunity} className="text-sm text-brand-blue-strong underline">Community &amp; history</button>}
+      </div>}
+      <div className="shrink-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Cancel
         </Button>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={onChooseDifferent}>
+          <Button type="button" variant="outline" size="sm" onClick={onChooseDifferent} disabled={!loaded}>
             Choose a different site
           </Button>
-          {siteInfo?.ownedByViewer && (
+          {loaded && (!siteInfo || siteInfo.ownedByViewer || siteInfo.visibility === "public") && (
             <Button type="button" size="sm" onClick={onEdit}>
               Edit this site
             </Button>
@@ -731,6 +760,7 @@ function SiteOverviewStep({
 function SiteEditStep({
   siteTypeLabel,
   siteId,
+  flightPoint,
   initialName,
   radiusM,
   pending,
@@ -741,7 +771,8 @@ function SiteEditStep({
   onBack,
 }: {
   siteTypeLabel: string;
-  siteId: string;
+  siteId: string | null;
+  flightPoint: { lat: number; lon: number } | null;
   initialName: string;
   radiusM: number;
   pending: boolean;
@@ -751,7 +782,7 @@ function SiteEditStep({
    *  screen returns to on a successful Save otherwise keeps showing
    *  whatever boundary existed when the dialog first opened. */
   onBoundarySaved: () => void | Promise<void>;
-  onDelete: () => void;
+  onDelete?: () => void;
   onBack: () => void;
 }) {
   const [nameInput, setNameInput] = useState(initialName);
@@ -769,17 +800,19 @@ function SiteEditStep({
   const [boundaryError, setBoundaryError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!siteId) return;
     let cancelled = false;
-    getBoundaryForOwnedRow("site", siteId).then((result) => {
+    getBoundaryForPublicRow("site", siteId).then((result) => {
       if (!cancelled) setBoundaryInitial(result);
-    });
+    }).catch(() => { if (!cancelled) { setBoundaryInitial(null); setBoundaryError("Could not load the boundary. Reopen the editor to retry."); } });
     return () => {
       cancelled = true;
     };
   }, [siteId]);
 
   function refreshBoundary() {
-    getBoundaryForOwnedRow("site", siteId).then((result) => {
+    if (!siteId) return;
+    getBoundaryForPublicRow("site", siteId).then((result) => {
       setBoundaryInitial(result);
       setBoundaryVersion((v) => v + 1);
     });
@@ -793,8 +826,10 @@ function SiteEditStep({
   async function handleSaveAll() {
     setBoundaryError(null);
     setCombinedSaving(true);
-    const result = await boundaryRef.current?.commitIfDirty();
-    setCombinedSaving(false);
+    let result;
+    try { result = await boundaryRef.current?.commitIfDirty(); }
+    catch { setBoundaryError("Could not save the boundary. Please try again."); return; }
+    finally { setCombinedSaving(false); }
     // "invalid" means the draft failed live client-side validation — the
     // boundary editor already shows that inline, so block silently rather
     // than repeat it in a second, duplicate error banner here.
@@ -810,8 +845,8 @@ function SiteEditStep({
   return (
     <>
       <div className="flex flex-col gap-1">
-        <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Editing this site</h2>
-        <p className="text-sm text-gray-500">This is your {siteTypeLabel.toLocaleLowerCase()}.</p>
+        <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Edit this site</h2>
+        <p className="text-sm text-gray-500">{siteTypeLabel}{!siteId ? " - name saved on this flight" : " - mapped site"}</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -826,7 +861,7 @@ function SiteEditStep({
         />
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-gray-200 pt-4">
+      {siteId && <div className="flex flex-col gap-2 border-t border-gray-200 pt-4">
         <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Boundary</p>
         {boundaryInitial === undefined ? (
           <p className="text-sm text-gray-500">Loading…</p>
@@ -841,6 +876,7 @@ function SiteEditStep({
             ref={boundaryRef}
             anchor={boundaryInitial.anchor}
             initialBoundary={boundaryInitial.boundary}
+            flightPoint={flightPoint}
             level="site"
             referenceRadiusM={radiusM}
             nearby={boundaryInitial.nearby}
@@ -852,18 +888,19 @@ function SiteEditStep({
             showSaveButton={false}
           />
         )}
-      </div>
+      </div>}
+      {!siteId && <p className="text-sm text-gray-500">This changes the site name on this flight. To add a pin and boundary, choose a mapped site or create one in <Link href="/settings/sites" className="text-brand-blue-strong underline">Site settings</Link>.</p>}
 
       {(boundaryError ?? error) && <p className="text-sm text-red-600">{boundaryError ?? error}</p>}
 
-      <div className="sticky bottom-0 -mx-6 -mb-6 flex items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
+      <div className="shrink-0 -mx-6 -mb-6 flex items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
         <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={pending || combinedSaving}>
           Cancel
         </Button>
         <div className="flex gap-2">
-          <Button type="button" variant="danger" size="sm" onClick={onDelete} disabled={pending || combinedSaving}>
+          {onDelete && <Button type="button" variant="danger" size="sm" onClick={onDelete} disabled={pending || combinedSaving}>
             Delete
-          </Button>
+          </Button>}
           <Button type="button" size="sm" onClick={handleSaveAll} disabled={pending || combinedSaving}>
             {pending || combinedSaving ? "Saving…" : "Save"}
           </Button>
@@ -875,6 +912,7 @@ function SiteEditStep({
 
 function SiteStep({
   endpointLabel,
+  hasPoint,
   currentSiteName,
   suggestions,
   selectedSiteId,
@@ -890,6 +928,7 @@ function SiteStep({
   onClose,
 }: {
   endpointLabel: string;
+  hasPoint: boolean;
   currentSiteName: string | null;
   suggestions: SiteSuggestion[] | null;
   /** The site `siteChoice` currently points at — null once the pilot starts
@@ -912,7 +951,7 @@ function SiteStep({
     <>
       <div className="flex flex-col gap-1">
         <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">
-          Name this {endpointLabel}
+          Choose {endpointLabel === "takeoff" ? "flying" : "landing"} site
         </h2>
         {currentSiteName && (
           <p className="text-sm text-gray-500">Currently named &ldquo;{currentSiteName}&rdquo;.</p>
@@ -923,7 +962,7 @@ function SiteStep({
         <p className="text-sm text-gray-500">Checking for nearby sites…</p>
       ) : suggestions.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Nearby sites</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">{hasPoint ? "Nearby sites" : "Available sites"}</p>
           <ul className="flex flex-col gap-2">
             {suggestions.map((s) => {
               // The site siteChoice currently points at — not necessarily
@@ -943,7 +982,7 @@ function SiteStep({
                     <div className="flex flex-col">
                       <span className="font-condensed font-bold text-ink">{s.name}</span>
                       <span className="text-xs text-gray-500">
-                        {formatDistance(s.distanceM)} {formatBearing(s.bearingDeg)} · {s.kind} ·{" "}
+                        {hasPoint ? `${formatDistance(s.distanceM)} ${formatBearing(s.bearingDeg)} - ` : ""}{s.kind} -{" "}
                         {s.visibility === "public" ? "public" : "private"}
                       </span>
                     </div>
@@ -993,7 +1032,7 @@ function SiteStep({
           className="h-10 rounded-md border border-gray-300 bg-paper px-3 text-sm text-ink outline-none focus:border-brand-blue"
         />
 
-        <div className="grid grid-cols-2 gap-1 rounded-md bg-gray-100 p-1">
+        {hasPoint && <div className="grid grid-cols-2 gap-1 rounded-md bg-gray-100 p-1">
           {(["public", "private"] as const).map((option) => (
             <button
               key={option}
@@ -1009,12 +1048,13 @@ function SiteStep({
               {option === "public" ? "Public" : "Private"}
             </button>
           ))}
-        </div>
-        <p className="text-xs text-gray-500">
+        </div>}
+        {!hasPoint && <p className="text-xs text-gray-500">Choose a mapped site above, or save just a name on this flight. Add a new mapped site in <Link href="/settings/sites" className="text-brand-blue-strong underline">Site settings</Link>.</p>}
+        {hasPoint && <p className="text-xs text-gray-500">
           {siteVisibility === "public"
             ? "Public shares this name and location with every pilot — anyone flying nearby will see it too."
             : "Private keeps this name for you only. Other pilots will still see “Unknown site” on flights bound to it."}
-        </p>
+        </p>}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 

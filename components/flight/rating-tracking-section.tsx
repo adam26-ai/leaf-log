@@ -54,7 +54,7 @@ export async function RatingTrackingSection({ flight }: { flight: Flight }) {
           on your Ratings page.
         </p>
         <div className="mt-3">
-          <FlightDetailsEditor flightId={flight.id} details={details} />
+          <FlightDetailsEditor key={JSON.stringify(details)} flightId={flight.id} details={details} />
         </div>
       </div>
 

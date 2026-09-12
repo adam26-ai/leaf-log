@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, ArrowUp, Eye } from "lucide-react";
+import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud, Eye } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
 import { WingIcon } from "@/components/icons/wing-icon";
 import { ResponsiveTrophies } from "./responsive-trophies";
@@ -79,13 +79,13 @@ export function FlightRow({
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
         className="grid min-h-[45px] grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem_auto] sm:grid-cols-[8.5rem_minmax(10rem,1fr)_2.75rem_minmax(2.75rem,1.4fr)_auto] sm:gap-2 sm:px-3 sm:py-1 sm:text-sm">
-        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
+        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] font-bold leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
         <span className="flex min-w-0 items-center gap-2">
         <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
           <span className="block max-w-full truncate font-condensed text-base font-bold leading-4 text-ink">{site}</span>
           {showLanding && <span title={`Landing: ${landing}`} className="block max-w-full truncate text-xs leading-4 text-gray-600">→ {landing}</span>}
         </span>
-          <span title="Maximum altitude" className="hidden shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-gray-700 sm:inline-flex"><ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
+          <span title="Maximum altitude" className="hidden shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-brand-blue-strong sm:inline-flex"><Cloud className="h-3.5 w-3.5" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
         </span>
         <span className="flex h-6 w-11 shrink-0 items-center justify-center">
           {friendFlightsFound && <span title="Friend flights found" aria-label="Friend flights found" className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-brand-blue bg-brand-blue px-1.5 text-white"><WingIcon aria-hidden="true" className="h-4 w-4" /><Users aria-hidden="true" className="h-3.5 w-3.5" /></span>}
@@ -122,7 +122,7 @@ export function FlightRow({
         <span className="truncate font-condensed text-lg font-bold text-ink hover:text-brand-blue-strong">
           {formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site"}
         </span>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm font-bold text-gray-500">
           {formatLocalDate(
             flight.takeoffAt ?? flight.flightDate,
             flight.takeoffAt ? flight.localUtcOffsetMinutes : 0,
@@ -134,8 +134,8 @@ export function FlightRow({
       ) : (
         <div className="flex items-center gap-4 text-sm text-gray-700 sm:gap-6">
           <span className="tabular-nums">{formatDuration(flight.durationS)}</span>
-          <span title="Maximum altitude" className="hidden items-center gap-1 tabular-nums sm:inline-flex">
-            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          <span title="Maximum altitude" className="hidden items-center gap-1 tabular-nums text-brand-blue-strong sm:inline-flex">
+            <Cloud className="h-3.5 w-3.5" aria-hidden="true" />
             {formatAltitude(flight.maxAltM, units)}
           </span>
           {typeof kudoCount === "number" && (

@@ -26,12 +26,12 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
   if (!metrics) throw new EntryError("This file has no usable GPS track. Your manual entry has not changed.");
   const measurements = repairedMeasurements(parsed, metrics);
   const recordedDay = new Date(metrics.takeoffAtMs + (metrics.localUtcOffsetMinutes ?? 0) * 60000).toISOString().slice(0, 10);
-  const recorded = { date: recordedDay, durationS: metrics.durationS, maxAltM: measurements.maxAltM, launchAltM: measurements.launchAltM,
+  const recorded = { recorder: parsed.headers.recorder, localUtcOffsetMinutes: metrics.localUtcOffsetMinutes, date: recordedDay, durationS: metrics.durationS, maxAltM: measurements.maxAltM, launchAltM: measurements.launchAltM,
     altGainM: metrics.altGainM, maxClimbMs: metrics.maxClimbMs, maxSinkMs: metrics.maxSinkMs,
     takeoffAt: new Date(metrics.takeoffAtMs).toISOString(), landingAt: new Date(metrics.landingAtMs).toISOString(),
     takeoffLat: metrics.takeoff.lat, takeoffLon: metrics.takeoff.lon, landingLat: metrics.landing.lat, landingLon: metrics.landing.lon };
   if (!commit) return { attached: false as const, mergeable: flight.recordingKind === "logbook", hash, expectedUpdatedAt: flight.updatedAt.toISOString(), warnings: parsed.warnings,
-    previous: { date: duplicateKey(flight), durationS: flight.durationS, maxAltM: flight.maxAltM, launchAltM: flight.launchAltM,
+    previous: { recorder: flight.recorder, localUtcOffsetMinutes: flight.localUtcOffsetMinutes, date: duplicateKey(flight), durationS: flight.durationS, maxAltM: flight.maxAltM, launchAltM: flight.launchAltM,
       altGainM: flight.altGainM, maxClimbMs: flight.maxClimbMs, maxSinkMs: flight.maxSinkMs,
       takeoffAt: flight.takeoffAt?.toISOString() ?? null, landingAt: flight.landingAt?.toISOString() ?? null,
       takeoffLat: flight.takeoffLat, takeoffLon: flight.takeoffLon, landingLat: flight.landingLat, landingLon: flight.landingLon }, recorded };

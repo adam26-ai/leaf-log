@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { openSiteChooser, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -169,8 +169,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
   const siteName = `E2E Boundary Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
@@ -189,8 +188,7 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
 
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.getByRole("button", { name: /Edit a boundary on one of my sites/i }).click();
   await expect(page.getByText(siteName)).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("My spots")).not.toBeVisible();
@@ -279,8 +277,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Excluded Anchor Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   // SPRINT-008: zones hidden — "Next" saves and closes the dialog
@@ -363,8 +360,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   // SPRINT-008: zones hidden — "Next" saves and closes the dialog
@@ -457,8 +453,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Midpoint Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   // SPRINT-008: zones hidden — "Next" saves and closes the dialog
@@ -582,8 +577,7 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Vertex Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   // SPRINT-008: zones hidden — "Next" saves and closes the dialog

@@ -1,3 +1,5 @@
+import { flightFlags } from "@/lib/flights/type-flags";
+import { FlightTypeEditor } from "./type-flags-editor";
 import { Eye, FilePenLine, GraduationCap, Images, StickyNote, TriangleAlert, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Flight } from "@prisma/client";
@@ -42,12 +44,13 @@ export async function FlightEditSections({
     <div className="flex flex-col gap-4">
         {entryOptions ? <Card className={cardClass}>
           <SectionTitle icon={FilePenLine}>Flight details</SectionTitle>
-          <ManualEntryForm options={entryOptions} initial={flightToEntryDraft(flight)} flightId={flight.id} expectedUpdatedAt={flight.updatedAt.toISOString()} defaultVisibility={flight.visibility} />
+          <ManualEntryForm key={flight.updatedAt.toISOString()} options={entryOptions} initial={flightToEntryDraft(flight)} flightId={flight.id} expectedUpdatedAt={flight.updatedAt.toISOString()} defaultVisibility={flight.visibility} />
         </Card> : <>
         <Card className={cardClass}>
           <SectionTitle icon={FilePenLine}>Wing</SectionTitle>
           <FlightWingEditor flightId={flight.id} glider={flight.glider ?? ""} gliders={options.gliders} />
         </Card>
+        <Card className={cardClass}><SectionTitle icon={FilePenLine}>Flight type</SectionTitle><FlightTypeEditor key={flightFlags(flight).join(",")} flightId={flight.id} initial={flightFlags(flight)} /></Card>
         {options.recording && <Card className={cardClass}><RecordingDetails details={options.recording} /></Card>}
         <Card className={cardClass}>
           <SectionTitle icon={Eye}>Visibility</SectionTitle>

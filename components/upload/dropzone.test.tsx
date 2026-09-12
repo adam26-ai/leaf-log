@@ -29,7 +29,7 @@ const facts = {
   landingLon: -122.47,
 };
 
-it("stops an overlapping upload for read-only comparison before keeping the new flight", async () => {
+it("offers attaching to a logbook entry while allowing a separate upload", async () => {
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const body = init?.body as FormData;
@@ -83,13 +83,13 @@ it("stops an overlapping upload for read-only comparison before keeping the new 
   fireEvent.change(screen.getByLabelText("IGC files"), { target: { files: [file] } });
 
   expect(await screen.findByText("Overlapping flight found")).toBeInTheDocument();
-  expect(screen.getByText(/No new flight has been created yet/)).toBeInTheDocument();
+  expect(screen.getByText(/Compare the recording with your existing flight/)).toBeInTheDocument();
   expect(mocks.push).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: "Compare" }));
   expect(await screen.findByRole("columnheader", { name: "Existing flight" })).toBeInTheDocument();
-  expect(screen.getByText(/comparison is read-only/i)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /merge|attach/i })).not.toBeInTheDocument();
+  expect(screen.getByText(/Your wing, flight types, chosen site names, notes, photos/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Add uploaded IGC to this flight" })).toBeEnabled();
 
   fireEvent.click(screen.getByRole("button", { name: "Keep this uploaded flight" }));
   await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/flights/new-flight"));
@@ -114,4 +114,25 @@ it("discards only the upload and leaves the existing flight untouched", async ()
   expect(screen.queryByText("Overlapping flight found")).not.toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(mocks.push).not.toHaveBeenCalled();
+});
+
+it("attaches the reviewed file to the existing id and sends concurrency guards", async () => {
+  const preview = { mergeable: true, hash: "verified-hash", expectedUpdatedAt: "2026-09-12T12:00:00.000Z", warnings: [], previous: { ...facts, recorder: null }, recorded: { ...facts, recorder: "XLF123", localUtcOffsetMinutes: -420 } };
+  const fetch = vi.fn()
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ results: [{ filename: "found.igc", possibleDuplicates: [{ id: "original", date: facts.date, recordingKind: "logbook" }] }] }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => preview })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "original", attached: true }) });
+  vi.stubGlobal("fetch", fetch);
+  render(<Dropzone />);
+  const file = new File(["igc"], "found.igc");
+  fireEvent.change(screen.getByLabelText("IGC files"), { target: { files: [file] } });
+  fireEvent.click(await screen.findByRole("button", { name: "Compare" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Add uploaded IGC to this flight" }));
+  await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/flights/original"));
+  const body = fetch.mock.calls[2][1].body as FormData;
+  expect(fetch.mock.calls[2][0]).toBe("/api/flights/original/attach-igc");
+  expect(body.get("operation")).toBe("commit");
+  expect(body.get("hash")).toBe("verified-hash");
+  expect(body.get("expectedUpdatedAt")).toBe(preview.expectedUpdatedAt);
+  expect(body.get("file")).toBe(file);
 });

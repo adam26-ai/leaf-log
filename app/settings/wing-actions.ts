@@ -1,5 +1,6 @@
 "use server";
 
+import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { getCurrentUserId } from "@/lib/profile";
@@ -21,4 +22,17 @@ export async function saveWingNames(input: unknown): Promise<{ count?: number; e
     }
     return { error: "Couldn't save the wing names. Please try again." };
   }
+}
+
+export async function setWingVisibility(name: string, hidden: boolean): Promise<{ error?: string }> {
+  const ownerId = await getCurrentUserId();
+  if (!ownerId) return { error: "Please sign in to edit your wings." };
+  if (typeof name !== "string" || typeof hidden !== "boolean" || !await prisma.flight.count({ where: { ownerId, glider: name } })) return { error: "Wing not found." };
+  if (hidden) {
+    await prisma.profile.updateMany({ where: { id: ownerId, NOT: { hiddenWings: { has: name } } }, data: { hiddenWings: { push: name } } });
+  } else {
+    await prisma.$executeRaw`UPDATE "Profile" SET "hiddenWings" = array_remove("hiddenWings", ${name}), "updatedAt" = NOW() WHERE "id" = ${ownerId}`;
+  }
+  revalidatePath("/", "layout");
+  return {};
 }

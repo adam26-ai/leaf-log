@@ -41,6 +41,7 @@ export async function saveLogbookEntry(ownerId: string, value: unknown) {
     } else {
       const current = await tx.flight.findFirst({ where: { id: request.flightId, ownerId, recordingKind: "logbook" } });
       if (!current) throw new EntryError("This manual entry is not available to edit.", 404);
+      parsed.data.launchTypes = [...current.launchTypes.filter(tag => tag !== "ST"), ...parsed.data.launchTypes];
       if (current.updatedAt.toISOString() !== request.expectedUpdatedAt) throw new EntryError("This flight changed in another tab. Reload it before saving.", 409);
     }
     const locations = await locationData(tx, ownerId, parsed.draft).catch(error => { throw new EntryError(error.message, 409); });

@@ -1,4 +1,5 @@
 import type { Flight } from "@prisma/client";
+import { flightFlags } from "@/lib/flights/type-flags";
 import { emptyEntry } from "./entry";
 
 export function flightToEntryDraft(flight: Flight) {
@@ -11,6 +12,6 @@ export function flightToEntryDraft(flight: Flight) {
     maxAltitude: s(flight.maxAltM), launchAltitude: s(flight.launchAltM), heightGained: s(flight.altGainM), maxClimb: s(flight.maxClimbMs), maxSink: s(flight.maxSinkMs),
     xcDistance: flight.reportedXcDistanceM == null ? "" : String(flight.reportedXcDistanceM / 1000), xcType: flight.reportedXcType ?? "",
     takeoffLat: s(flight.takeoffLat), takeoffLon: s(flight.takeoffLon), landingLat: s(flight.landingLat), landingLon: s(flight.landingLon),
-    notes: flight.notes ?? "", occupancy: flight.occupancy ?? "",
+    flightTypes: flightFlags(flight).join(";"), notes: flight.notes ?? "", occupancy: flight.occupancy ?? "",
   };
 }

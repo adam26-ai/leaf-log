@@ -22,6 +22,7 @@ import { XcPendingRefresh } from "./xc-pending-refresh";
 import { XcStatistic } from "./xc-statistic";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { WingIcon } from "@/components/icons/wing-icon";
+import type { XcCandidate } from "@/lib/igc/xc-types";
 import { isLogbookEntry } from "@/lib/flights/recording";
 
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
@@ -56,11 +57,13 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
 }
 
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */
-export function KeyStatistics({ flight, canCalculateXc = false, friend = false, onRefresh }: {
+export function KeyStatistics({ flight, canCalculateXc = false, friend = false, onRefresh, xcRoute, onCycleXc }: {
   flight: FlightStatistics;
   canCalculateXc?: boolean;
   friend?: boolean;
   onRefresh?: () => void;
+  xcRoute?: XcCandidate;
+  onCycleXc?: () => void;
 }) {
   const { units } = useUnits();
   const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
@@ -79,7 +82,7 @@ export function KeyStatistics({ flight, canCalculateXc = false, friend = false, 
         style={friend ? { "--replay-icon": "var(--replay-group-companion)" } as CSSProperties : undefined}>
         <XcPendingRefresh pending={analysisPending(flight.xcStatus)} onRefresh={onRefresh} />
         {statistics.map(([label, Icon, value, seek]) => (
-          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} onRefresh={onRefresh} /> :
+          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} selectedRoute={xcRoute} onCycle={onCycleXc} owner={canCalculateXc} onRefresh={onRefresh} /> :
           <Stat key={label} label={label} icon={Icon} value={value} seek={isLogbookEntry(flight) ? undefined : seek} />
         ))}
     </div>

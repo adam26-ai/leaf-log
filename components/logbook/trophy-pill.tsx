@@ -8,7 +8,7 @@ const icons = { duration: Clock, altitude: Cloud, "launch-gain": Mountain, open:
 const medals = { 1: "Gold", 2: "Silver", 3: "Bronze" };
 const colors = { 1: "bg-[#f5cd57] text-[#563b00]", 2: "bg-[#dce2e8] text-[#394452]", 3: "bg-[#c99362] text-[#40240e]" };
 
-export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
+export function TrophyPill({ trophies, onActivate }: { trophies: FlightTrophy[]; onActivate?: () => void }) {
   const { units } = useUnits();
   if (!trophies.length) return null;
   const first = trophies[0], multiple = trophies.length > 1;
@@ -18,7 +18,7 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
     valueLabel: t.category === "duration" ? formatDuration(t.value) : t.category === "altitude" || t.category === "launch-gain" ? formatAltitude(t.value, units) : formatDistance(t.value, units),
   }));
   const descriptions = records.map(t => `${medals[t.rank]} — ${TROPHY_LABELS[t.category]}: ${t.valueLabel}${t.reported ? " (reported)" : t.approximate ? " (best found)" : ""}`);
-  return <span tabIndex={0} aria-label={descriptions.join("; ")} className="group/trophy relative inline-flex justify-center outline-none">
+  return <span tabIndex={0} role={onActivate ? "button" : undefined} onClick={onActivate} onKeyDown={onActivate ? event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onActivate(); } } : undefined} aria-label={descriptions.join("; ")} className={`group/trophy relative inline-flex justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-brand-blue ${onActivate ? "cursor-pointer" : ""}`}>
     <span data-medal={medals[bestRank].toLowerCase()} className={`inline-flex h-6 w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-black/20 ${colors[bestRank]}`}>
       <Trophy className="h-3.5 w-3.5" />{multiple ? <Plus className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
     </span>

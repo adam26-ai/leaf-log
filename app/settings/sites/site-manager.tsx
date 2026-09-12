@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
 import { Button } from "@/components/ui/button";
@@ -61,8 +61,16 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [boundary, setBoundary] = useState<BoundaryEditorInitialState | null | undefined>(undefined);
+  const [editingMode, setEditingMode] = useState<"anchor" | "boundary">("anchor");
   const [candidates, setCandidates] = useState<SiteFlightCandidate[] | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    getBoundaryForOwnedRow("site", selected.id).then(value => { if (!cancelled) setBoundary(value); }).catch(() => { if (!cancelled) setError("Could not load the site map. Reload this page to retry."); });
+    return () => { cancelled = true; };
+  }, [selected]);
 
   const anchorPoint = selected
     ? anchorDraft?.siteId === selected.id
@@ -71,9 +79,11 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     : null;
 
   function chooseSite(siteId: string) {
+    if (siteId === selected?.id) return;
     setSelectedId(siteId);
     setAnchorDraft(null);
     setBoundary(undefined);
+    setEditingMode("anchor");
     setCandidates(null);
     setChecked(new Set());
     setMessage(null);
@@ -92,7 +102,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   function run(task: () => Promise<void>) {
     setMessage(null);
     setError(null);
-    startTransition(() => void task());
+    startTransition(async () => { try { await task(); } catch { setError("Could not save changes. Please try again."); } });
   }
 
   function createSite(formData: FormData) {
@@ -116,17 +126,9 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     run(async () => {
       const result = await moveSiteAnchorAction({ siteId: selected.id, ...anchorPoint });
       if (!result.ok) return setError(result.error);
+      setCandidates(null);
       setMessage("Site anchor updated. Existing flight coordinates were not changed.");
       router.refresh();
-    });
-  }
-
-  function editBoundary() {
-    if (!selected) return;
-    run(async () => {
-      const value = await getBoundaryForOwnedRow("site", selected.id);
-      if (!value) return setError("This site is not available to edit.");
-      setBoundary(value);
     });
   }
 
@@ -207,37 +209,33 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
             <h2 className="font-condensed text-2xl font-bold text-ink">{selected.name}</h2>
             <p className="mt-1 text-sm text-gray-600">The anchor describes the site. It is separate from every flight’s recorded takeoff or landing coordinates.</p>
             {anchorPoint && <div className="mt-4 flex flex-col gap-3">
-              <EntryMap lat={anchorPoint.lat} lon={anchorPoint.lon} label={`${selected.name} anchor`} draggable onPick={(lat, lon) => setAnchorPoint({ lat, lon })} />
+              <div role="group" aria-label="Site editing tool" className="flex gap-2">
+                <Button type="button" variant="outline" className="aria-pressed:border-brand-blue aria-pressed:bg-blue-50 aria-pressed:text-brand-blue-strong" aria-pressed={editingMode === "anchor"} onClick={() => setEditingMode("anchor")}>Move site pin</Button>
+                <Button type="button" variant="outline" className="aria-pressed:border-brand-blue aria-pressed:bg-blue-50 aria-pressed:text-brand-blue-strong" aria-pressed={editingMode === "boundary"} onClick={() => setEditingMode("boundary")} disabled={anchorPoint.lat !== selected.lat || anchorPoint.lon !== selected.lon}>{selected.hasBoundary ? "Edit boundary" : "Draw boundary"}</Button>
+              </div>
+              {boundary ? <BoundaryEditor
+                key={`${selected.id}:${JSON.stringify(boundary.boundary)}`}
+                anchor={anchorPoint} initialBoundary={boundary.boundary} level="site"
+                editingMode={editingMode} onAnchorChange={setAnchorPoint}
+                referenceRadiusM={radiusForKind(selected.kind === "landing" ? "landing" : "takeoff")} nearby={boundary.nearby}
+                onSave={raw => saveBoundaryForOwnedRow("site", selected.id, raw)}
+                onClear={() => clearBoundaryForOwnedRow("site", selected.id)}
+                onCancel={() => setEditingMode("anchor")} showCancel={false} saveLabel="Save boundary"
+                onSaved={async () => { setBoundary(await getBoundaryForOwnedRow("site", selected.id)); setCandidates(null); setMessage("Boundary updated. No flights were reassigned."); router.refresh(); }}
+              /> : <p className="text-sm text-gray-500">{boundary === null ? "This site is unavailable to edit." : "Loading site map..."}</p>}
+              {editingMode === "anchor" && <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm font-medium text-gray-700">Latitude<input type="number" step="any" min={-90} max={90} value={anchorPoint.lat} onChange={(event) => setAnchorPoint({ ...anchorPoint, lat: Number(event.target.value) })} className={`${inputClass} mt-1.5`} /></label>
                 <label className="text-sm font-medium text-gray-700">Longitude<input type="number" step="any" min={-180} max={180} value={anchorPoint.lon} onChange={(event) => setAnchorPoint({ ...anchorPoint, lon: Number(event.target.value) })} className={`${inputClass} mt-1.5`} /></label>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" onClick={moveAnchor} disabled={pending || (anchorPoint.lat === selected.lat && anchorPoint.lon === selected.lon)}>Save anchor</Button>
-                <Button type="button" variant="outline" onClick={editBoundary} disabled={pending}>{selected.hasBoundary ? "Edit boundary" : "Draw boundary"}</Button>
+
               </div>
+              </>}
               {selected.hasBoundary && <p className="text-xs text-gray-500">To move the anchor outside the saved boundary, remove the boundary first, save the anchor, then redraw it.</p>}
             </div>}
           </Card>
-
-          {boundary && <Card className="p-5">
-            <div className="mb-4">
-              <h3 className="font-condensed text-xl font-bold text-ink">Boundary for {selected.name}</h3>
-              <p className="mt-1 text-sm text-gray-600">The shape must include the movable site anchor. Saving it does not reassign any flights.</p>
-            </div>
-            <BoundaryEditor
-              key={`${selected.id}:${boundary.anchor.lat}:${boundary.anchor.lon}:${JSON.stringify(boundary.boundary)}`}
-              anchor={boundary.anchor}
-              initialBoundary={boundary.boundary}
-              level="site"
-              referenceRadiusM={radiusForKind(selected.kind === "landing" ? "landing" : "takeoff")}
-              nearby={boundary.nearby}
-              onSave={(raw) => saveBoundaryForOwnedRow("site", selected.id, raw)}
-              onClear={() => clearBoundaryForOwnedRow("site", selected.id)}
-              onCancel={() => setBoundary(undefined)}
-              onSaved={() => { setBoundary(undefined); setMessage("Boundary updated. No flights were reassigned."); router.refresh(); }}
-            />
-          </Card>}
 
           <Card className="p-5">
             <h3 className="font-condensed text-xl font-bold text-ink">Review matching flights</h3>

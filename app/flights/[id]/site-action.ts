@@ -6,6 +6,7 @@ import { getCurrentUserId } from "@/lib/profile";
 import {
   createOrAttachSiteFromFlight,
   suggestNearbyLocations,
+  siteVisibleWhere,
   type SiteSuggestion,
   type SiteChoice,
   type ZoneChoice,
@@ -17,6 +18,8 @@ import {
   deleteZone as deleteZoneRow,
   type SiteEndpoint,
 } from "@/lib/sites/associate";
+import { validateSiteName } from "@/lib/sites/name";
+import { assignmentPatch } from "@/lib/sites/assignment";
 import { SITE_VISIBILITIES, type SiteVisibility } from "@/lib/sites/visibility";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
 import type { Boundary } from "@/lib/sites/geo";
@@ -137,7 +140,10 @@ export async function suggestLocationsForFlight(
 
   const lat = endpoint === "takeoff" ? flight.takeoffLat : flight.landingLat;
   const lon = endpoint === "takeoff" ? flight.takeoffLon : flight.landingLon;
-  if (lat == null || lon == null) return [];
+  if (lat == null || lon == null) {
+    const sites = await prisma.site.findMany({ where: siteVisibleWhere(userId), orderBy: { name: "asc" }, take: 100, select: { id: true, name: true, kind: true, visibility: true } });
+    return sites.map(site => ({ ...site, visibility: site.visibility === "public" ? "public" : "private", distanceM: 0, bearingDeg: 0, zones: [] }));
+  }
 
   return suggestNearbyLocations(lat, lon, userId);
 }
@@ -203,8 +209,8 @@ export async function getBoundLocationInfo(
 
   const [siteRow, zoneRow] = await Promise.all([
     siteId
-      ? prisma.site.findUnique({
-          where: { id: siteId },
+      ? prisma.site.findFirst({
+          where: { id: siteId, ...siteVisibleWhere(userId) },
           select: { id: true, name: true, ownerId: true, visibility: true, lat: true, lon: true, boundary: true },
         })
       : null,
@@ -238,6 +244,15 @@ export async function getBoundLocationInfo(
       : null,
     flightPoint: flightLat != null && flightLon != null ? { lat: flightLat, lon: flightLon } : null,
   };
+}
+
+/** Load the dialog in one request; client-side Server Actions are queued. */
+export async function getSiteDialogData(flightId: string, endpoint: SiteEndpoint) {
+  const [info, suggestions] = await Promise.all([
+    getBoundLocationInfo(flightId, endpoint),
+    suggestLocationsForFlight(flightId, endpoint).catch(() => null),
+  ]);
+  return { info, suggestions };
 }
 
 export type SiteUndoResult = { ok: true } | { ok: false; error: string };
@@ -366,4 +381,20 @@ export async function deleteZoneForFlight(
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
   }
+}
+
+/** Edit a name-only entry without creating a fictitious mapped site. */
+export async function renameFlightSiteLabel(flightId: string, endpoint: SiteEndpoint, raw: string, expectedSiteId: string | null = null): Promise<SiteUndoResult> {
+  const ownerId = await getCurrentUserId();
+  if (!ownerId) return { ok: false, error: "You must be signed in." };
+  if (!["takeoff", "landing"].includes(endpoint) || typeof raw !== "string" || (expectedSiteId !== null && typeof expectedSiteId !== "string")) return { ok: false, error: "Invalid site details." };
+  const parsed = validateSiteName(raw);
+  if (!parsed.ok) return { ok: false, error: "Enter a site name of 2-60 characters." };
+  const updated = await prisma.flight.updateMany({ where: { id: flightId, ownerId, [`${endpoint}SiteId`]: expectedSiteId }, data: {
+    [`${endpoint}SiteId`]: null, [`${endpoint}ZoneId`]: null, [`${endpoint}ZoneName`]: null,
+    [`${endpoint}SiteName`]: parsed.name, ...assignmentPatch(endpoint, "custom_name"),
+  } });
+  if (!updated.count) return { ok: false, error: "This flight changed. Reopen its site details before editing." };
+  revalidatePath("/", "layout");
+  return { ok: true };
 }

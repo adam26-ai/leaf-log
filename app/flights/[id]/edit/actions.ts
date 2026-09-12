@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { OCCUPANCIES, FLIGHT_TYPE_TAGS, LAUNCH_TYPES } from "@/lib/ratings/skill-tags";
+import { flightFlagsSchema } from "@/lib/flights/type-flags";
 import { canAssignInstructor } from "@/lib/ratings/authz";
 
 export type NotesState = { error?: string; ok?: boolean };
@@ -85,11 +86,18 @@ export async function updateFlightDetails(
   const flightTypeTags = pickMultiSelect(formData, "flightTypeTags", FLIGHT_TYPE_TAGS);
   const launchTypes = pickMultiSelect(formData, "launchTypes", LAUNCH_TYPES);
   const restrictedLandingField = formData.get("restrictedLandingField") === "on";
+  const current = await prisma.flight.findFirst({ where: { id: flightId, ownerId: userId }, select: { flightFlags: true } });
+  if (!current) return { error: "Flight not found." };
 
   const res = await prisma.flight.updateMany({
     where: { id: flightId, ownerId: userId },
     data: {
       occupancy: occupancyRaw,
+      flightFlags: [
+        ...current.flightFlags.filter(flag => flag !== "tandem" && flag !== "tow"),
+        ...(occupancyRaw === "tandem" ? ["tandem"] : []),
+        ...(launchTypes.includes("ST") ? ["tow"] : []),
+      ],
       flightTypeTags,
       launchTypes,
       restrictedLandingField,
@@ -145,5 +153,20 @@ export async function updateInstructor(
 
   revalidatePath(`/flights/${flightId}`);
   revalidatePath(`/flights/${flightId}/edit`);
+  return { ok: true };
+}
+
+export async function saveFlightFlags(flightId: string, input: unknown): Promise<NotesState> {
+  const ownerId = await getCurrentUserId();
+  if (!ownerId) return { error: "Not signed in." };
+  const parsed = flightFlagsSchema.safeParse(input);
+  if (!parsed.success) return { error: "Choose a valid flight type." };
+  const current = await prisma.flight.findFirst({ where: { id: flightId, ownerId }, select: { launchTypes: true } });
+  if (!current) return { error: "Flight not found." };
+  await prisma.flight.updateMany({ where: { id: flightId, ownerId }, data: {
+    flightFlags: parsed.data, occupancy: parsed.data.includes("tandem") ? "tandem" : "solo",
+    launchTypes: parsed.data.includes("tow") ? [...new Set([...current.launchTypes, "ST"])] : current.launchTypes.filter(tag => tag !== "ST"),
+  } });
+  revalidatePath("/", "layout");
   return { ok: true };
 }

@@ -23,6 +23,18 @@ export default async function SettingsPage() {
         </p>
 
         <div className="flex flex-col gap-6">
+            <SettingsForm
+              handle={profile.handle}
+              displayName={profile.displayName}
+              avatarUpdatedAt={profile.avatarUpdatedAt}
+              bio={profile.bio ?? ""}
+              defaultVisibility={profile.defaultVisibility}
+              defaultUnits={profile.defaultUnits}
+              customUnits={profile.customUnits}
+              mapDefaults={profile.mapDefaults}
+              ratingsTrackingEnabled={profile.ratingsTrackingEnabled}
+              afterProfile={<WingEditor wings={wings} />}
+            />
           <Link href="/settings/sites" className="group block">
             <Card className="p-6 transition-colors group-hover:border-brand-blue">
               <div className="flex items-start gap-4">
@@ -56,18 +68,6 @@ export default async function SettingsPage() {
             </Card>
           </Link>
 
-            <SettingsForm
-              handle={profile.handle}
-              displayName={profile.displayName}
-              avatarUpdatedAt={profile.avatarUpdatedAt}
-              bio={profile.bio ?? ""}
-              defaultVisibility={profile.defaultVisibility}
-              defaultUnits={profile.defaultUnits}
-              customUnits={profile.customUnits}
-              mapDefaults={profile.mapDefaults}
-              ratingsTrackingEnabled={profile.ratingsTrackingEnabled}
-              afterProfile={<WingEditor wings={wings} />}
-            />
         </div>
       </main>
     </div>
