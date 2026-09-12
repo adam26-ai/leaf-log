@@ -246,6 +246,15 @@ export async function getBoundLocationInfo(
   };
 }
 
+/** Load the dialog in one request; client-side Server Actions are queued. */
+export async function getSiteDialogData(flightId: string, endpoint: SiteEndpoint) {
+  const [info, suggestions] = await Promise.all([
+    getBoundLocationInfo(flightId, endpoint),
+    suggestLocationsForFlight(flightId, endpoint).catch(() => null),
+  ]);
+  return { info, suggestions };
+}
+
 export type SiteUndoResult = { ok: true } | { ok: false; error: string };
 
 /** Exported for app/flights/[id]/boundary-action.ts — the same

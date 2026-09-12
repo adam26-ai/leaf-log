@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import {
   nameSite,
   renameFlightSiteLabel,
-  suggestLocationsForFlight,
+  getSiteDialogData,
   getBoundLocationInfo,
   deleteSiteForFlight,
   unpublishZoneForFlight,
@@ -277,11 +277,10 @@ function NameSiteDialog({
 
   useEffect(() => {
     let cancelled = false;
-    suggestLocationsForFlight(flightId, endpoint).then((rows) => {
-      if (!cancelled) setSuggestions(rows);
-    }).catch(() => { if (!cancelled) { setSuggestions([]); setError("Could not load nearby sites. Close and reopen to retry."); } });
-    getBoundLocationInfo(flightId, endpoint).then((info) => {
+    getSiteDialogData(flightId, endpoint).then(({ info, suggestions }) => {
       if (cancelled) return;
+      setSuggestions(suggestions ?? []);
+      if (suggestions === null) setError("Could not load nearby sites. Close and reopen to retry.");
       setBoundInfo(info);
       // Already-bound site: pre-fill the choice so the zone step can bind
       // to it without re-resolving the site.

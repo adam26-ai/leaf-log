@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { openSiteChooser, uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -92,8 +92,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
   // submit button saves and closes the dialog directly. No "Which spot?"
   // step, no "Skip — just the site" button (there's nothing to skip).
   const siteName = `E2E No-Zone Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -138,8 +137,7 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
+  await openSiteChooser(page);
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { uploadFlight } from "./helpers";
+import { openSiteChooser, uploadFlight } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -24,6 +24,37 @@ async function signUp(page: Page) {
   await expect(page).toHaveURL(/\/logbook/);
   return handle;
 }
+
+test("site naming waits for delayed details before enabling the form", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const flight = await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "manual", flightDate: new Date("2024-07-13"), durationS: 900 } });
+    await page.goto(`/flights/${flight.id}`);
+    // Hold the actual dialog lookup beyond the former five-second deadline.
+    let delayedRequests = 0;
+    await page.route(`**/flights/${flight.id}`, async route => {
+      const request = route.request();
+      if (request.method() === "POST" && request.postData()?.includes('"takeoff"')) {
+        delayedRequests++;
+        await new Promise(resolve => setTimeout(resolve, 6_000));
+      }
+      await route.continue();
+    });
+    const opening = openSiteChooser(page);
+    const dialog = page.getByRole("dialog", { name: "Site details" });
+    await expect(dialog.getByText("Loading site details...")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+    const chooser = await opening;
+    expect(delayedRequests).toBeGreaterThan(0);
+    await page.unroute(`**/flights/${flight.id}`);
+    await chooser.name.fill("Delayed lookup hill");
+    await chooser.dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator("h1")).toHaveText("Delayed lookup hill");
+    expect((await db.flight.findUniqueOrThrow({ where: { id: flight.id } })).takeoffSiteName).toBe("Delayed lookup hill");
+  } finally { await db.$disconnect(); }
+});
 
 test("CSV site names can be edited, linked, and mapped using one boundary editor", async ({ page }) => {
   test.setTimeout(120000);
