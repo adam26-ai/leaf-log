@@ -23,16 +23,20 @@ export const FLIGHT_TYPE_TAG_LABELS: Record<FlightTypeTag, string> = {
   XC: "Cross Country",
 };
 
-export const LAUNCH_TYPES = ["CL", "RS", "FSL", "TUR", "HA", "AWCL", "ST"] as const;
+// USHPA SOP-12-02 (V.2024-03-01) 12-02.18.A — Special Skills attainable by
+// Novice and above (P2-P5). AWCL (Assisted Windy Cliff/Ramp Launch) is
+// deliberately excluded: per 12-02.11.B it's a hang-gliding-only special
+// skill (Intermediate and above, H3-H5), not a paragliding one — leaf-log
+// is paragliding-only, so it never belonged in this list.
+export const LAUNCH_TYPES = ["CL", "RS", "FSL", "TUR", "HA", "ST"] as const;
 export type LaunchType = (typeof LAUNCH_TYPES)[number];
 
 export const LAUNCH_TYPE_LABELS: Record<LaunchType, string> = {
-  CL: "Light Wind Cliff Launch",
+  CL: "Light Wind Cliff or Ramp Launch",
   RS: "Ridge Soaring",
   FSL: "Flat Slope Launch",
   TUR: "Turbulence",
   HA: "High Altitude Launch",
-  AWCL: "Assisted Windy Launch",
   ST: "Surface Tow",
 };
 

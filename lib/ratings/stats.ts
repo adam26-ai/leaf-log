@@ -15,7 +15,10 @@ export interface RatingStats {
   // (every pre-existing row) counts as solo-equivalent.
   soloAirtimeSeconds: number;
   soloAirtimeIsExact: boolean;
-  siteCount: number;
+  // USHPA P4 (SOP-12-02 12-02.16.B.1.b) requires 5 flights AT EACH of 5
+  // different sites, not merely 5 distinct sites visited — this counts
+  // sites clearing that per-site flight-count bar, not just distinct sites.
+  sitesWithFiveFlights: number;
   gliderCount: number;
   // Self-reported USHPA Special-Skill tags, tallied across ready flights —
   // how many flights carry each tag. Display-only context on /ratings, never
@@ -47,9 +50,15 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
       .filter((d): d is string => d !== null),
   ).size;
 
-  const siteCount = new Set(
-    ready.map(siteKey).filter((k): k is string => k !== null),
-  ).size;
+  const siteFlightCounts = new Map<string, number>();
+  for (const f of ready) {
+    const key = siteKey(f);
+    if (key === null) continue;
+    siteFlightCounts.set(key, (siteFlightCounts.get(key) ?? 0) + 1);
+  }
+  const sitesWithFiveFlights = Array.from(siteFlightCounts.values()).filter(
+    (count) => count >= 5,
+  ).length;
 
   const gliderCount = new Set(
     ready.map(gliderKey).filter((k): k is string => k !== null),
@@ -78,7 +87,7 @@ export function ratingStatsFrom(flights: FlightListItem[]): RatingStats {
     totalAirtimeSeconds,
     soloAirtimeSeconds,
     soloAirtimeIsExact: !ready.some(f => f.durationS === null || (isLogbookEntry(f) && !f.occupancy)),
-    siteCount,
+    sitesWithFiveFlights,
     gliderCount,
     skillTagCounts,
   };
