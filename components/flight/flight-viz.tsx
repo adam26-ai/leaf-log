@@ -1,6 +1,7 @@
 "use client";
 import { useMapDefaults } from "@/components/map-defaults-provider";
-import { readXcScore } from "@/lib/igc/xc-types";
+import { nextXcShape, replayXcRoutes } from "@/lib/flights/xc-selection";
+import type { XcShape } from "@/lib/igc/xc-types";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -48,7 +49,7 @@ import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ReplayPaletteLab } from "./replay-palette-lab";
-import { REPLAY_SEEK_EVENT, REPLAY_XC_TOGGLE_EVENT, type ReplayMetric } from "@/lib/flights/replay-events";
+import { REPLAY_SEEK_EVENT, REPLAY_XC_TOGGLE_EVENT, REPLAY_XC_SELECT_EVENT, type XcSelection, type ReplayMetric } from "@/lib/flights/replay-events";
 
 /** Small square icon button for the map's own control overlay — distinct
  *  from the flat `title`-only text buttons used elsewhere in the app since
@@ -308,7 +309,7 @@ export function FlightViz({
   const [cameraMode, setCameraMode] = useState<CameraMode>(defaults.camera);
   const [trackDisplay, setTrackDisplay] = useState<TrackDisplayMode>(defaults.track);
   const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
-  const [showXc, setShowXc] = useState(false);
+  const [xcSelection, setXcSelection] = useState<{ flightId: string; shape: XcShape | null } | null>(null);
   const [altitudeMode, setAltitudeMode] = useState<AltitudeMode>(defaults.altitude);
 
   // Shared replay timeline (seconds from takeoff).
@@ -335,6 +336,30 @@ export function FlightViz({
   const group = useGroupReplay(primary, viewerId, takeoffMs + time * 1000);
   const replay = group.primaryReplay;
   const selected = group.selected;
+  const selectedXcShape = xcSelection?.flightId === selected?.id ? xcSelection?.shape ?? null : null;
+  const selectedXcRoute = replayXcRoutes(selected?.xcScore).find(route => route.shape === selectedXcShape);
+  const cycleXc = useCallback(() => {
+    if (!selected) return;
+    setXcSelection(current => ({ flightId: selected.id, shape: nextXcShape(selected.xcScore, current?.flightId === selected.id ? current.shape : null) }));
+  }, [selected]);
+  const selectReplayPilot = group.select;
+  useEffect(() => {
+    const selectRoute = (event: Event) => {
+      const detail = (event as CustomEvent<XcSelection>).detail;
+      if (detail.flightId !== flightId || !replayXcRoutes(xcScore).some(route => route.shape === detail.shape)) return;
+      selectReplayPilot(primaryPilot, flightId);
+      if (replay && (timeRef.current < 0 || timeRef.current >= replay.durationS)) {
+        setPlaying(false); setTime(0); timeRef.current = 0;
+      }
+      setXcSelection(detail);
+    };
+    window.addEventListener(REPLAY_XC_SELECT_EVENT, selectRoute);
+    return () => window.removeEventListener(REPLAY_XC_SELECT_EVENT, selectRoute);
+  }, [flightId, xcScore, primaryPilot, selectReplayPilot, replay]);
+  useEffect(() => {
+    window.addEventListener(REPLAY_XC_TOGGLE_EVENT, cycleXc);
+    return () => window.removeEventListener(REPLAY_XC_TOGGLE_EVENT, cycleXc);
+  }, [cycleXc]);
   const discover = group.discover;
   const refreshCompanionStatistics = useCallback(() => { void discover(); }, [discover]);
   const selectedReplay = selected?.replay ?? replay;
@@ -343,10 +368,10 @@ export function FlightViz({
   const selectedState = selectedReplay ? replayStateAt(selectedReplay, selectedTime) : "Recording gap";
   const startS = (group.bounds.startMs - takeoffMs) / 1000;
   const endS = Math.max(startS, (group.bounds.endMs - takeoffMs) / 1000);
-  const photos = useMemo(() => group.visibleFlights.flatMap((f) => f.photos.map((p) => ({ ...p, flightId: f.id, ownerName: f.owner.displayName, isPrimary: f.id === flightId }))).sort((a, b) => {
+  const photos = useMemo(() => group.visibleFlights.flatMap((f) => f.photos.map((p) => ({ ...p, flightId: f.id, ownerName: f.owner.displayName, isPrimary: f.owner.id === primaryPilot.id }))).sort((a, b) => {
     const stamp = (p: FlightPhoto) => p.takenAt ? Date.parse(p.takenAt) : Infinity;
     return stamp(a) - stamp(b) || a.id.localeCompare(b.id);
-  }), [group.visibleFlights, flightId]);
+  }), [group.visibleFlights, primaryPilot.id]);
   const profiles = useMemo<ProfileFlight[]>(() => group.visibleFlights.map((flight) => {
     const own = flight.owner.id === primaryPilot.id;
     const chosen = flight.owner.id === selected?.owner.id;
@@ -500,12 +525,11 @@ export function FlightViz({
       applyTime(selectedOffset + selectedReplay.samples[sampleIndex][3]);
       requestAnimationFrame(() => replayRef.current?.centerOnPilot());
     }
-    const toggleXcRoute = () => setShowXc((shown) => !shown);
     window.addEventListener(REPLAY_SEEK_EVENT, seekToMetric);
-    window.addEventListener(REPLAY_XC_TOGGLE_EVENT, toggleXcRoute);
+
     return () => {
       window.removeEventListener(REPLAY_SEEK_EVENT, seekToMetric);
-      window.removeEventListener(REPLAY_XC_TOGGLE_EVENT, toggleXcRoute);
+
     };
   }, [applyTime, selected, selectedReplay, selectedOffset, selectPilot]);
   function changeBasemap(id: BasemapId) {
@@ -568,7 +592,7 @@ export function FlightViz({
   const statisticsOwnerId = selected?.owner.id ?? primaryPilot.id;
   const statistics = displayedStatistics && (
     <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
-      <KeyStatistics flight={displayedStatistics} canCalculateXc={statisticsOwnerId === viewerId}
+      <KeyStatistics xcRoute={selectedXcRoute} onCycleXc={cycleXc} flight={displayedStatistics} canCalculateXc={statisticsOwnerId === viewerId}
         friend={statisticsOwnerId !== viewerId}
         onRefresh={displayedStatistics.id !== flightId ? refreshCompanionStatistics : undefined} />
     </div>
@@ -635,10 +659,12 @@ export function FlightViz({
             }}
           >
             <FlightReplay3D
-              xcRoute={showXc ? readXcScore(selected.xcScore)?.best : undefined}
+              xcRoute={selectedXcRoute}
               ref={replayRef}
               flightId={selected.id}
               primaryFlightId={flightId}
+              primaryOwnerId={primaryPilot.id}
+              selectedOwnerId={selected.owner.id}
               replay={selectedReplay}
               companions={group.visibleFlights}
               basemap={basemap}

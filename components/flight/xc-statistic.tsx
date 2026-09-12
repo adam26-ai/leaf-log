@@ -7,22 +7,25 @@ import { analysisPending, analysisState } from "@/lib/flights/analysis-state";
 import { formatDistance } from "@/lib/flights/format";
 import { toggleReplayXcRoute } from "@/lib/flights/replay-events";
 import { useUnits } from "@/lib/flights/use-units";
+import type { XcCandidate } from "@/lib/igc/xc-types";
 import { readXcScore } from "@/lib/igc/xc-types";
 import { CalculateXcButton } from "./calculate-xc-button";
 import { isLogbookEntry, reportedXc } from "@/lib/flights/recording";
 
 /** Keep every state inside the same two lines as the other replay metrics. */
-export function XcStatistic({ flight, owner, onRefresh }: { flight: FlightStatistics; owner: boolean; onRefresh?: () => void }) {
+export function XcStatistic({ flight, owner, onRefresh, selectedRoute, onCycle }: { flight: FlightStatistics; owner: boolean; onRefresh?: () => void; selectedRoute?: XcCandidate; onCycle?: () => void }) {
   const { units } = useUnits();
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const xc = readXcScore(flight.xcScore);
+  const route = selectedRoute ?? xc?.best;
   const reported = reportedXc(flight);
+  const ReportedValue = xc ? "button" : "span";
   const state = analysisState(flight);
   const pending = analysisPending(flight.xcStatus);
-  const Icon = xc?.best.shape === "fai-triangle" ? Triangle : xc?.best.shape === "free-triangle" ? TriangleRight : Waypoints;
+  const Icon = route?.shape === "fai-triangle" ? Triangle : route?.shape === "free-triangle" ? TriangleRight : Waypoints;
   const showDetails = state.label !== "Calculated";
 
   useEffect(() => {
@@ -45,15 +48,15 @@ export function XcStatistic({ flight, owner, onRefresh }: { flight: FlightStatis
 
   return <div ref={container} className="relative flex min-w-0 flex-col gap-0.5 px-2 py-1.5">
     <div className="flex h-5 min-w-0 items-center gap-1">
-      {reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? <span title={`${reported.name} — reported by the pilot`} className="flex min-w-0 items-center gap-1.5 font-condensed text-base font-bold text-ink">
+      {!selectedRoute && reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? <ReportedValue onClick={xc ? onCycle ?? toggleReplayXcRoute : undefined} title={`${reported.name} — reported by the pilot`} className="flex min-w-0 items-center gap-1.5 font-condensed text-base font-bold text-ink">
         {formatDistance(reported.distanceM, units)}<span className="text-[10px] font-normal text-gray-500">reported</span>
-      </span> : xc ? <button type="button" onClick={toggleReplayXcRoute}
-        title={`${xc.best.name}: ${formatDistance(xc.best.distanceM, units)} credited distance. Click to show or hide the scored route.`}
+      </ReportedValue> : xc ? <button type="button" onClick={onCycle ?? toggleReplayXcRoute} aria-pressed={Boolean(selectedRoute)}
+        title={`${route!.name}: ${formatDistance(route!.distanceM, units)} credited distance. Click to cycle scored routes, then hide the route.`}
         className="flex min-w-0 items-center gap-1.5 rounded-md text-left hover:bg-gray-100">
         <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
           <Icon className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
         </span>
-        <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">{formatDistance(xc.best.distanceM, units)}</span>
+        <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">{formatDistance(route!.distanceM, units)}</span>
       </button> : state.action && owner
         ? <CalculateXcButton flightId={flight.id} label={state.label} onQueued={onRefresh} inline />
         : <span className="font-condensed text-base font-bold text-ink">—</span>}
@@ -66,7 +69,7 @@ export function XcStatistic({ flight, owner, onRefresh }: { flight: FlightStatis
           : <Info aria-hidden="true" className="h-3.5 w-3.5" />}
       </button>}
     </div>
-    <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">{reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? reported.name : xc?.best.name ?? "XC distance"}</span>
+    <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">{!selectedRoute && reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? reported.name : route?.name ?? "XC distance"}</span>
     {open && showDetails && <div id={panelId} role="region" aria-label="XC calculation details"
       className="absolute left-0 top-full z-50 mt-1 w-64 max-w-[80vw] rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg">
       <div className="mb-1 flex items-center justify-between gap-2">

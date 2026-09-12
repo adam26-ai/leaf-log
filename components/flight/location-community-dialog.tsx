@@ -28,6 +28,8 @@ import type { BoundaryLevel } from "@/lib/sites/boundary";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { Button } from "@/components/ui/button";
+import { SiteDialog } from "./site-dialog";
+import { SiteAreaMap } from "./site-area-map";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
 
 function relativeTime(d: Date): string {
@@ -69,12 +71,14 @@ export function LocationCommunityDialog({
   endpoint,
   onClose,
   onRenamed,
+  flightPoint = null,
 }: {
   level: BoundaryLevel;
   id: string;
   name: string;
   endpoint: SiteEndpoint;
   onClose: () => void;
+  flightPoint?: { lat: number; lon: number } | null;
   /** Called with the new name right after a successful rename — lets the
    *  PARENT (SiteNameControl's own h1/label) update live, without which a
    *  successful rename would only show up after a full page reload even
@@ -93,6 +97,7 @@ export function LocationCommunityDialog({
 
   useEffect(() => {
     let cancelled = false;
+    getBoundaryForPublicRow(level, id).then(result => { if (!cancelled) setBoundaryState(result); }).catch(() => { if (!cancelled) setError("Could not load the site map."); });
     getCommunityInfoForRow(level, id).then((result) => {
       if (!cancelled) setInfo(result);
     });
@@ -142,13 +147,10 @@ export function LocationCommunityDialog({
 
   if (editingBoundary && boundaryState) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4" onClick={() => setEditingBoundary(false)}>
-        <div
-          className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <SiteDialog onClose={() => setEditingBoundary(false)}>
           <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Boundary for &ldquo;{displayName}&rdquo;</h2>
           <BoundaryEditor
+            flightPoint={flightPoint}
             anchor={boundaryState.anchor}
             initialBoundary={boundaryState.boundary}
             level={level}
@@ -157,22 +159,17 @@ export function LocationCommunityDialog({
             onSave={(raw) => saveBoundaryForOwnedRow(level, id, raw)}
             onClear={() => clearBoundaryForOwnedRow(level, id)}
             onCancel={() => setEditingBoundary(false)}
-            onSaved={() => {
+            onSaved={() => { getBoundaryForPublicRow(level, id).then(setBoundaryState);
               setEditingBoundary(false);
               getCommunityInfoForRow(level, id).then(setInfo);
             }}
           />
-        </div>
-      </div>
+      </SiteDialog>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4" onClick={onClose}>
-      <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <SiteDialog onClose={onClose}>
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">{displayName}</h2>
@@ -183,6 +180,7 @@ export function LocationCommunityDialog({
           </button>
         </div>
 
+        {boundaryState && <SiteAreaMap key={JSON.stringify(boundaryState.boundary)} anchor={boundaryState.anchor} boundary={boundaryState.boundary} radiusM={level === "site" ? radiusForKind(endpoint) : zoneRadiusForKind(endpoint)} flightPoint={flightPoint} />}
         {info === undefined && <p className="text-sm text-gray-500">Loading…</p>}
         {info === null && <p className="text-sm text-gray-500">Not available.</p>}
 
@@ -269,7 +267,6 @@ export function LocationCommunityDialog({
             </div>
           </>
         )}
-      </div>
-    </div>
+    </SiteDialog>
   );
 }

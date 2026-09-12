@@ -6,7 +6,8 @@ import { WingIcon } from "@/components/icons/wing-icon";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { WingSummary } from "@/lib/flights/wings";
-import { saveWingNames } from "./wing-actions";
+import { Eye, EyeOff } from "lucide-react";
+import { saveWingNames, setWingVisibility } from "./wing-actions";
 
 export function WingEditor({ wings }: { wings: WingSummary[] }) {
   const [selected, setSelected] = useState<(string | null)[]>([]);
@@ -40,6 +41,17 @@ export function WingEditor({ wings }: { wings: WingSummary[] }) {
     finally { setSaving(false); }
   }
 
+  async function toggleVisibility(wing: WingSummary) {
+    if (wing.name == null) return;
+    setSaving(true); setMessage(""); setError(false);
+    try {
+      const result = await setWingVisibility(wing.name, !wing.hidden);
+      if (result.error) { setError(true); setMessage(result.error); }
+      else { setMessage(wing.hidden ? "Wing shown in flight selections." : "Wing hidden from flight selections."); router.refresh(); }
+    } catch { setError(true); setMessage("Could not update wing visibility. Please try again."); }
+    finally { setSaving(false); }
+  }
+
   // This card sits between the profile form's cards. Its unnamed inputs and
   // isolated events keep these bulk edits separate from profile autosaving.
   return <Card className="p-6" onChange={event => event.stopPropagation()} onKeyDown={event => {
@@ -50,17 +62,20 @@ export function WingEditor({ wings }: { wings: WingSummary[] }) {
     {!wings.length ? <p className="mt-4 text-sm text-gray-500">Wings will appear here after you add flights.</p> : <fieldset disabled={saving} className="mt-4 min-w-0 space-y-4">
       <legend className="sr-only">Edit logbook wings</legend>
       <div className="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
-        {wings.map(wing => <label key={JSON.stringify(wing.name)} className={`flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-0 hover:bg-gray-50 ${mergeSelection ? "has-[:checked]:bg-emergency-orange-light" : "has-[:checked]:bg-brand-blue/5"}`}>
-          <input type="checkbox" aria-label={`${wing.name?.trim() || "Unspecified wing"}, ${wing.count} ${wing.count === 1 ? "flight" : "flights"}`} checked={selected.includes(wing.name)} className={`h-4 w-4 shrink-0 ${mergeSelection ? "accent-emergency-orange" : "accent-brand-blue"}`} onChange={event => {
+        {wings.map((wing, index) => <div key={JSON.stringify(wing.name)} className={`flex items-center gap-3 border-b border-gray-100 px-3 py-2.5 last:border-0 hover:bg-gray-50 ${mergeSelection ? "has-[:checked]:bg-emergency-orange-light" : "has-[:checked]:bg-brand-blue/5"}`}>
+          <input id={`${id}-wing-${index}`} type="checkbox" aria-label={`${wing.name?.trim() || "Unspecified wing"}, ${wing.count} ${wing.count === 1 ? "flight" : "flights"}`} checked={selected.includes(wing.name)} className={`h-4 w-4 shrink-0 ${mergeSelection ? "accent-emergency-orange" : "accent-brand-blue"}`} onChange={event => {
             setMessage("");
             if (event.target.checked) {
               if (!selected.length) setTarget(wing.name?.trim() ?? "");
               setSelected(previous => [...previous, wing.name]);
             } else setSelected(previous => previous.filter(value => value !== wing.name));
           }} />
-          <span className="min-w-0 flex-1 break-words text-sm text-ink">{selected.includes(wing.name) && <span className={`font-semibold ${modeText}`}>{mergeSelection ? "Merge: " : "Rename: "}</span>}{wing.name?.trim() || "Unspecified wing"}</span>
-          <span className="shrink-0 text-xs tabular-nums text-gray-500">{wing.count} {wing.count === 1 ? "flight" : "flights"}</span>
-        </label>)}
+          {wing.name != null && <button type="button" onClick={() => void toggleVisibility(wing)} aria-label={`${wing.hidden ? "Show" : "Hide"} ${wing.name} in flight selections`} aria-pressed={!wing.hidden} title={wing.hidden ? "Hidden from flight selections" : "Shown in flight selections"} className="grid h-7 w-7 shrink-0 place-items-center rounded text-gray-500 hover:bg-gray-200">
+            {wing.hidden ? <EyeOff aria-hidden="true" className="h-4 w-4" /> : <Eye aria-hidden="true" className="h-4 w-4" />}
+          </button>}
+          <label htmlFor={`${id}-wing-${index}`} className="min-w-0 flex-1 cursor-pointer break-words text-sm text-ink">{selected.includes(wing.name) && <span className={`font-semibold ${modeText}`}>{mergeSelection ? "Merge: " : "Rename: "}</span>}{wing.name?.trim() || "Unspecified wing"}</label>
+          <span className="shrink-0 text-xs tabular-nums text-gray-500">{wing.count} {wing.count === 1 ? "flight" : "flights"} · {((wing.durationS ?? 0) / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })} h</span>
+        </div>)}
       </div>
       {sources.length > 0 && <div className="space-y-3">
         <label htmlFor={`${id}-name`} className={`block text-sm font-semibold ${modeText}`}>{mergeSelection ? "Merged wing name:" : "Rename wing to:"}</label>
@@ -78,6 +93,6 @@ export function WingEditor({ wings }: { wings: WingSummary[] }) {
       </div>}
     </fieldset>}
     {message && <p role={error ? "alert" : "status"} className={`mt-3 text-sm ${error ? "text-red-600" : "text-gray-600"}`}>{message}</p>}
-    {wings.length > 0 && <p className="mt-3 text-xs text-gray-500">Applies to existing flights. Future uploads use the wing name recorded in their file.</p>}
+    {wings.length > 0 && <p className="mt-3 text-xs text-gray-500">Hide retired wings with the eye button to remove them from flight selections. Existing flights and wing hours are kept. Future IGC uploads use the wing name recorded in their file.</p>}
   </Card>;
 }

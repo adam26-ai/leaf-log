@@ -2,9 +2,9 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { WingEditor } from "./wing-editor";
 import { SettingsForm } from "./settings-form";
-import { saveWingNames } from "./wing-actions";
+import { saveWingNames, setWingVisibility } from "./wing-actions";
 import { updateProfile } from "./actions";
-vi.mock("./wing-actions", () => ({ saveWingNames: vi.fn() }));
+vi.mock("./wing-actions", () => ({ saveWingNames: vi.fn(), setWingVisibility: vi.fn() }));
 vi.mock("./actions", () => ({ updateProfile: vi.fn() }));
 vi.mock("./avatar-uploader", () => ({ AvatarUploader: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -39,4 +39,14 @@ it("previews a merge into an existing name and allows cancellation without savin
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("button", { name: "Rename wing" })).not.toBeInTheDocument();
   expect(saveWingNames).not.toHaveBeenCalled();
+});
+
+it("shows wing hours and hides a wing without renaming or selecting it", async () => {
+  vi.mocked(setWingVisibility).mockResolvedValue({});
+  render(<WingEditor wings={[{ name: "Retired wing", count: 2, durationS: 9000, hidden: false }]} />);
+  expect(screen.getByText(/2.5 h/)).toBeInTheDocument();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Hide Retired wing in flight selections" })));
+  expect(setWingVisibility).toHaveBeenCalledWith("Retired wing", true);
+  expect(saveWingNames).not.toHaveBeenCalled();
+  expect(screen.getByRole("checkbox")).not.toBeChecked();
 });

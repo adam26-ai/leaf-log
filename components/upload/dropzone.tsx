@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { FlightTypeFields } from "@/components/flight/type-flags";
+import type { FlightFlag } from "@/lib/flights/type-flags";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ type ActiveComparison = {
 };
 
 export function Dropzone() {
+  const [flags, setFlags] = useState<FlightFlag[]>([]);
   const hydrated = useHydrated();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +68,7 @@ export function Dropzone() {
     }
     const form = new FormData();
     list.forEach((file) => form.append("files", file));
+    flags.forEach(flag => form.append("flightFlags", flag));
     if (allowPossibleDuplicate) form.set("allowPossibleDuplicate", "true");
 
     try {
@@ -112,8 +116,35 @@ export function Dropzone() {
     }
   }
 
+  async function attach(active: ActiveComparison) {
+    const file = files[active.resultIndex];
+    if (!file || !active.preview.mergeable) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      body.set("operation", "commit");
+      body.set("hash", active.preview.hash);
+      body.set("expectedUpdatedAt", active.preview.expectedUpdatedAt);
+      const response = await fetch(`/api/flights/${active.candidateId}/attach-igc`, { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok) {
+        if (response.status === 409) setComparison(null);
+        throw new Error(result.error ?? "Could not attach this recording.");
+      }
+      setResults(current => current?.map((row, index) => index === active.resultIndex ? { filename: row.filename, flightId: result.id, status: "ready" } : row) ?? null);
+      setComparison(null);
+      if (results?.length === 1) openFlight(result.id);
+      else router.refresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not attach this recording.");
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="flex flex-col gap-5">
+      <FlightTypeFields value={flags} onChange={setFlags} disabled={busy || Boolean(results)} />
       <div
         onDragOver={(event) => {
           event.preventDefault();
@@ -162,7 +193,7 @@ export function Dropzone() {
                   <p className="break-all font-mono text-gray-700">{result.filename}</p>
                   <h3 className="mt-3 font-condensed text-lg font-bold text-ink">Overlapping flight found</h3>
                   <p className="mt-1 text-gray-600">
-                    No new flight has been created yet. Compare it with the existing flight, then keep or discard only this upload. The existing flight will not be changed.
+                    Compare the recording with your existing flight. Attach it to an entry without an IGC, keep it as a separate flight, or discard the upload.
                   </p>
                   <div className="mt-4 flex flex-col gap-3">
                     {result.possibleDuplicates.map((candidate) => (
@@ -192,6 +223,8 @@ export function Dropzone() {
                               pending={busy}
                               existingColumnLabel="Existing flight"
                               uploadedColumnLabel="Uploaded IGC"
+                              onMerge={() => void attach(active)}
+                              mergeLabel="Add uploaded IGC to this flight"
                             />
                           </div>
                         )}

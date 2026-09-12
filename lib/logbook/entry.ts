@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { flightFlagsSchema } from "@/lib/flights/type-flags";
 import { XC_TYPE_LABELS } from "@/lib/flights/recording";
 
 export const ENTRY_FIELDS = {
@@ -8,7 +9,7 @@ export const ENTRY_FIELDS = {
   altitudeUnit: "Altitude unit", xcDistance: "XC distance", xcType: "XC type", distanceUnit: "Distance unit",
   maxClimb: "Best climb", maxSink: "Max sink", varioUnit: "Vertical speed unit",
   takeoffLat: "Site latitude", takeoffLon: "Site longitude", landingLat: "Landing latitude", landingLon: "Landing longitude",
-  occupancy: "Solo or tandem", notes: "Notes",
+  flightTypes: "Flight types", occupancy: "Solo or tandem", notes: "Notes",
 } as const;
 export type EntryField = keyof typeof ENTRY_FIELDS;
 export type EntryDraft = Record<EntryField, string> & { takeoffSiteId: string; landingSiteId: string };
@@ -16,7 +17,7 @@ export const emptyEntry = (imperial = false): EntryDraft => ({
   date: "", durationMinutes: "", glider: "", takeoffSiteName: "", landingSiteName: "", takeoffSiteId: "", landingSiteId: "",
   takeoffTime: "", timeZone: "", maxAltitude: "", launchAltitude: "", heightGained: "", altitudeUnit: imperial ? "ft" : "m",
   xcDistance: "", xcType: "", distanceUnit: imperial ? "mi" : "km", maxClimb: "", maxSink: "", varioUnit: imperial ? "ft/min" : "m/s",
-  takeoffLat: "", takeoffLon: "", landingLat: "", landingLon: "", occupancy: "", notes: "",
+  takeoffLat: "", takeoffLon: "", landingLat: "", landingLon: "", flightTypes: "", occupancy: "", notes: "",
 });
 
 export const draftSchema = z.object(Object.fromEntries(Object.keys(emptyEntry()).map(key => [key, z.string().max(key === "notes" ? 2000 : 200)])) as Record<keyof EntryDraft, z.ZodString>).strict();
@@ -68,7 +69,9 @@ export function parseEntry(value: unknown) {
       } catch (error) { issue("timeZone", error instanceof Error ? error.message : "Invalid time zone."); }
     }
   }
-  if (issues.length) return { ok: false as const, issues };
+  const flags = flightFlagsSchema.safeParse([...new Set([...(draft.flightTypes ? draft.flightTypes.split(";") : []), ...(draft.occupancy === "tandem" ? ["tandem"] : [])])]);
+  if (!flags.success) issue("flightTypes", "Choose Tandem, SIV, Competition, or Tow.");
+  if (issues.length || !flags.success) return { ok: false as const, issues };
   return { ok: true as const, draft, data: {
     flightDate, takeoffAt, landingAt: takeoffAt && durationMinutes !== null ? new Date(takeoffAt.getTime() + Math.round(durationMinutes * 60) * 1000) : null,
     localTz: draft.timeZone || null, localUtcOffsetMinutes: offset,
@@ -77,7 +80,7 @@ export function parseEntry(value: unknown) {
     maxClimbMs: climb == null ? null : climb * varioFactor, maxSinkMs: sink == null ? null : -Math.abs(sink * varioFactor),
     reportedXcDistanceM: distance == null ? null : Math.round(distance * (draft.distanceUnit === "mi" ? 1609.344 : draft.distanceUnit === "nmi" ? 1852 : 1000)),
     reportedXcType: distance == null ? null : draft.xcType,
-    takeoffLat, takeoffLon, landingLat, landingLon, notes: draft.notes || null, occupancy: draft.occupancy || null,
+    takeoffLat, takeoffLon, landingLat, landingLon, notes: draft.notes || null, flightFlags: flags.data, launchTypes: flags.data.includes("tow") ? ["ST"] : [], occupancy: flags.data.includes("tandem") ? "tandem" : draft.occupancy || null,
     takeoffSiteName: draft.takeoffSiteName || null, landingSiteName: draft.landingSiteName || null,
   } };
 }

@@ -7,7 +7,7 @@ import { toggleReplayXcRoute } from "@/lib/flights/replay-events";
 
 const { group } = vi.hoisted(() => {
   const pilot = { id: "self", handle: "self", displayName: "Self", avatarUpdatedAt: null };
-  const flight = { id: "flight", owner: pilot, takeoffMs: 100000, landingMs: 200000, xcScore: { version: 1, best: { shape: "open", distanceM: 10000, optimal: true }, candidates: [] },
+  const flight = { id: "flight", owner: pilot, takeoffMs: 100000, landingMs: 200000, xcScore: { version: 1, best: { shape: "open", distanceM: 10000, optimal: true, vertices: [{ lat: 0, lon: 0, timeMs: 0 }] }, candidates: [] },
     replay: { takeoffMs: 100000, durationS: 100, offsetMin: 0, altSource: "gps", bounds: [0,0,1,1], samples: [[0,0,100,0],[0.001,0,200,10],[0.01,0,100,100]], vario: [0,1,0] },
     photos: [{ id: "photo", flightId: "flight", originalFilename: "test-photo.jpg", tSec: 5, takenAt: new Date(105000).toISOString(), placementSource: "interpolated_time", lat: 0, lon: 0 }] };
   return { group: { flights: [flight], visibleFlights: [flight], selected: flight, primaryReplay: flight.replay, candidates: [flight], pilots: [pilot], bounds: { startMs: 100000, endMs: 200000 }, failures: [], photoFailures: [], isVisible: () => true, select: vi.fn(), toggle: vi.fn(), discover: vi.fn(), reloadPhotos: vi.fn() } };

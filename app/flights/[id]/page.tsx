@@ -6,6 +6,7 @@ import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import {
   getFlightForViewer,
+  trophiesForVisibleFlights,
   listOwnFlights,
   listProfileFlightsForViewer,
 } from "@/lib/flights/repo";
@@ -36,6 +37,7 @@ export default async function FlightPage({
   const flight = await getFlightForViewer(id, viewerId);
   if (!flight) notFound();
 
+  const trophies = (await trophiesForVisibleFlights([flight]))[flight.id] ?? [];
   const isOwner = viewerId === flight.ownerId;
   const warnings = Array.isArray(flight.parseWarnings)
     ? (flight.parseWarnings as string[])
@@ -73,6 +75,7 @@ export default async function FlightPage({
         <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <FlightHeader
             flight={flight}
+            trophies={trophies}
             isOwner={isOwner}
             previousFlightId={previousFlightId}
             nextFlightId={nextFlightId}

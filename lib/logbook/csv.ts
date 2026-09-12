@@ -94,6 +94,7 @@ export function csvEntries(table: CsvTable, mapping: ColumnMapping, options: Csv
     const units: Record<string, string> = { meters: "m", metres: "m", feet: "ft", miles: "mi", nauticalmiles: "nmi", kilometers: "km", kilometres: "km", fpm: "ft/min", kt: "knots", kts: "knots" };
     for (const field of ["altitudeUnit", "distanceUnit", "varioUnit"] as const) draft[field] = units[normalize(draft[field])] ?? draft[field].toLowerCase();
     draft.occupancy = draft.occupancy.toLowerCase();
+    draft.flightTypes = draft.flightTypes.toLowerCase().split(/[;,]/).map(value => value.trim()).filter(Boolean).join(";");
     return { line: row.line, draft, excluded: false, allowDuplicate: false };
   });
 }

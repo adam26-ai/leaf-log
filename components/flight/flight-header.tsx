@@ -1,3 +1,8 @@
+import { flightFlags } from "@/lib/flights/type-flags";
+import { FlightTypeBadges } from "./type-flags";
+import { ReplayTrophies } from "./replay-trophies";
+import { replayXcRoutes } from "@/lib/flights/xc-selection";
+import type { FlightTrophy } from "@/lib/flights/trophies";
 import { AccentBar } from "@/components/ui/accent-bar";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
@@ -51,12 +56,14 @@ export function FlightHeader({
   previousFlightId,
   nextFlightId,
   actions,
+  trophies = [],
 }: {
   flight: Flight;
   isOwner: boolean;
   previousFlightId: string | null;
   nextFlightId: string | null;
   actions: ReactNode;
+  trophies?: FlightTrophy[];
 }) {
   const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
   // A named landing only earns its own display when it's somewhere other
@@ -96,11 +103,13 @@ export function FlightHeader({
       </div>
 
       <div className="flex min-w-0 flex-col items-center gap-1">
-        <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-2">
+          <FlightTypeBadges flags={flightFlags(flight)} />
           <SiteNameControl
             as="h1"
             flightId={flight.id}
             endpoint="takeoff"
+            flightPoint={flight.takeoffLat != null && flight.takeoffLon != null ? { lat: flight.takeoffLat, lon: flight.takeoffLon } : null}
             initialSiteName={flight.takeoffSiteName}
             initialZoneName={flight.takeoffZoneName}
             siteId={flight.takeoffSiteId}
@@ -110,6 +119,7 @@ export function FlightHeader({
             needsReview={flight.takeoffSiteAssignment === "needs_review"}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
+          <ReplayTrophies flightId={flight.id} trophies={trophies} routes={replayXcRoutes(flight.xcScore).map(route => route.shape)} />
           {showLanding && (
             <>
               <span className="text-lg text-gray-400" aria-hidden="true">
@@ -118,6 +128,7 @@ export function FlightHeader({
               <SiteNameControl
                 flightId={flight.id}
                 endpoint="landing"
+                flightPoint={flight.landingLat != null && flight.landingLon != null ? { lat: flight.landingLat, lon: flight.landingLon } : null}
                 initialSiteName={flight.landingSiteName}
                 initialZoneName={flight.landingZoneName}
                 siteId={flight.landingSiteId}
