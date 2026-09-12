@@ -7,7 +7,7 @@ vi.mock("./avatar-uploader", () => ({ AvatarUploader: () => null }));
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
 function setup() {
   vi.useFakeTimers();
-  render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null} avatarUpdatedAt={null} />);
+  render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null} ratingsTrackingEnabled={false} avatarUpdatedAt={null} />);
 }
 it("debounces typing and queues newer edits until an in-flight save finishes", async () => {
   let finish!: (value: { ok: boolean }) => void;
@@ -24,7 +24,7 @@ it("debounces typing and queues newer edits until an in-flight save finishes", a
   await act(async () => { finish({ ok: true }); });
   await act(async () => { await vi.advanceTimersByTimeAsync(700); });
   expect(vi.mocked(updateProfile).mock.calls[1][1].get("display_name")).toBe("Third");
-  expect(screen.getAllByText("Saved")).toHaveLength(2);
+  expect(screen.getAllByText("Saved")).toHaveLength(3);
 });
 it("saves unit changes and exposes failures instead of claiming success", async () => {
   vi.mocked(updateProfile).mockResolvedValue({ error: "Could not save" });
@@ -32,7 +32,7 @@ it("saves unit changes and exposes failures instead of claiming success", async 
   fireEvent.change(screen.getByRole("combobox", { name: "Units" }), { target: { value: "imperial" } });
   await act(async () => { await vi.advanceTimersByTimeAsync(700); });
   expect(vi.mocked(updateProfile).mock.calls[0][1].get("default_units")).toBe("imperial");
-  expect(screen.getAllByText("Could not save")).toHaveLength(2);
+  expect(screen.getAllByText("Could not save")).toHaveLength(3);
 });
 
 it("expands and autosaves independent custom units, retaining them when choosing a preset", async () => {

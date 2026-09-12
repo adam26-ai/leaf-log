@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-09-11",
+    title: "Ratings tracking is now opt-in",
+    body: "Working toward a USHPA rating? Turn on \"Track USHPA ratings progress\" in Settings to bring back the Ratings tab, plus a Ratings tracking section on every flight's edit page for tagging Occupancy, Flight type, Launch type, Landing, and assigning an instructor. It's off by default so pilots who aren't tracking ratings see a simpler logbook.",
+  },
+  {
     date: "2026-09-08",
     title: "See friends in your replays",
     body: "Relive a flying day together: nearby friends' flights from the same time can now appear alongside the flight you're replaying, with sharing permissions respected. Tap a pilot's avatar to follow them and see their live stats and altitude profile, jump to their takeoff, or hide their flight to simplify the view. Shared photos appear along their tracks too. Smoother camera movement and clearer pilot markers make the group easier to follow. Also new: rename or merge wing names across your logbook in Settings, automatically save flight notes as you type, and use clearer Calculate, Retry, and Improve options when an XC score needs attention.",

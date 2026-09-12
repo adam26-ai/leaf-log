@@ -47,7 +47,10 @@ export default async function EditFlightPage({ params }: { params: Promise<{ id:
           <span className="mx-2 text-gray-300" aria-hidden="true">|</span>
           {location}
         </p>
-        <FlightEditSections flight={flight} />
+        <FlightEditSections
+          flight={flight}
+          ratingsTrackingEnabled={viewer.ratingsTrackingEnabled}
+        />
       </main>
     </div>
   );

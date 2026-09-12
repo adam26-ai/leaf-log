@@ -68,6 +68,11 @@ model Profile {
   defaultUnits       String        @default("metric")
   customUnits        Json?
   mapDefaults        Json?
+  // Opt-in: reveals the Ratings tracking section (Flight details tags +
+  // Instructor assignment) on a flight's edit page. Off by default — most
+  // pilots aren't tracking USHPA ratings, and this keeps the edit page
+  // uncluttered for everyone else. See app/settings/settings-form.tsx.
+  ratingsTrackingEnabled Boolean    @default(false)
   // Set whenever the avatar is (re)uploaded; null = no avatar. Doubles as a
   // cache-busting key for the public avatar serve route.
   avatarUpdatedAt    DateTime?
