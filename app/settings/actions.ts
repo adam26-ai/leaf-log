@@ -77,6 +77,7 @@ export async function updateProfile(
         defaultUnits,
         customUnits: customUnits ?? Prisma.DbNull,
         mapDefaults: { ...mapDefaults },
+        ratingsTrackingEnabled: formData.get("ratings_tracking_enabled") === "on",
       },
     });
   } catch (e) {

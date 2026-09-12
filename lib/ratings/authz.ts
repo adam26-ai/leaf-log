@@ -56,3 +56,32 @@ export function canReadInstructorNote(
 ): boolean {
   return viewerId === flightOwnerId || viewerId === noteAuthorId;
 }
+
+/**
+ * A RatingSignoff may only be created by the profile currently
+ * `flight.instructorId` — append-only, so there is no separate edit
+ * predicate. Once created, `signedByProfileId` is immutable and independent
+ * of who instructs the flight afterward.
+ */
+export function canWriteSignoff(actorId: string, flightInstructorId: string | null): boolean {
+  return actorId === flightInstructorId;
+}
+
+/**
+ * A RatingSignoff is readable by the pilot it's about (always), the
+ * instructor who originally signed it (always, even after reassignment),
+ * and whoever is CURRENTLY the flight's instructor (for continuity when
+ * picking up a returning student) — never a friends/public viewer.
+ */
+export function canReadSignoff(
+  viewerId: string,
+  pilotId: string,
+  signedByProfileId: string,
+  currentFlightInstructorId: string | null,
+): boolean {
+  return (
+    viewerId === pilotId ||
+    viewerId === signedByProfileId ||
+    (currentFlightInstructorId !== null && viewerId === currentFlightInstructorId)
+  );
+}

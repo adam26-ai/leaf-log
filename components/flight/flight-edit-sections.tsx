@@ -1,4 +1,4 @@
-import { Eye, FilePenLine, Images, StickyNote, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Eye, FilePenLine, GraduationCap, Images, StickyNote, TriangleAlert, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Flight } from "@prisma/client";
 import { normalizeVisibility } from "@/lib/flights/visibility";
@@ -15,6 +15,7 @@ import { getEntryOptions } from "@/lib/logbook/options";
 import { flightToEntryDraft } from "@/lib/logbook/flight-draft";
 import { ManualEntryForm } from "@/components/logbook/manual-entry-form";
 import { AttachIgcForm } from "@/components/logbook/attach-igc-form";
+import { RatingTrackingSection } from "./rating-tracking-section";
 
 function SectionTitle({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
@@ -27,7 +28,13 @@ function SectionTitle({ icon: Icon, children }: { icon: LucideIcon; children: Re
   );
 }
 
-export async function FlightEditSections({ flight }: { flight: Flight }) {
+export async function FlightEditSections({
+  flight,
+  ratingsTrackingEnabled,
+}: {
+  flight: Flight;
+  ratingsTrackingEnabled: boolean;
+}) {
   const options = isLogbookEntry(flight) ? { recording: null, gliders: [] } : await getIgcDetailsOptions(flight.ownerId, flight.id);
   const entryOptions = isLogbookEntry(flight) ? await getEntryOptions(flight.ownerId) : null;
   const cardClass = "flex flex-col gap-3 border-[var(--replay-inactive-border)] p-5";
@@ -51,6 +58,12 @@ export async function FlightEditSections({ flight }: { flight: Flight }) {
           <NotesEditor flightId={flight.id} notes={flight.notes ?? ""} />
         </Card>
         </>}
+        {ratingsTrackingEnabled && (
+          <Card className={cardClass}>
+            <SectionTitle icon={GraduationCap}>Ratings tracking</SectionTitle>
+            <RatingTrackingSection flight={flight} />
+          </Card>
+        )}
         {entryOptions && <Card className={cardClass}><SectionTitle icon={FilePenLine}>Attach an IGC recording</SectionTitle><AttachIgcForm flightId={flight.id} /></Card>}
         <Card className={cardClass}>
           <SectionTitle icon={Images}>Pictures</SectionTitle>

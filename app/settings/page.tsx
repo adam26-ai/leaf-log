@@ -65,6 +65,7 @@ export default async function SettingsPage() {
               defaultUnits={profile.defaultUnits}
               customUnits={profile.customUnits}
               mapDefaults={profile.mapDefaults}
+              ratingsTrackingEnabled={profile.ratingsTrackingEnabled}
               afterProfile={<WingEditor wings={wings} />}
             />
         </div>

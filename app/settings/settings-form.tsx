@@ -41,6 +41,7 @@ export function SettingsForm({
   defaultUnits,
   customUnits,
   mapDefaults,
+  ratingsTrackingEnabled,
   avatarUpdatedAt,
   afterProfile,
 }: {
@@ -51,6 +52,7 @@ export function SettingsForm({
   defaultUnits: string;
   customUnits?: unknown;
   mapDefaults: unknown;
+  ratingsTrackingEnabled: boolean;
   avatarUpdatedAt: Date | string | null;
   afterProfile?: ReactNode;
 }) {
@@ -210,6 +212,28 @@ export function SettingsForm({
         </div>
       </fieldset>
       {saveStatus}
+      </Card>
+      <Card className="flex flex-col gap-5 p-6">
+        <h2 className="font-condensed text-lg font-bold text-ink">Ratings</h2>
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5">
+          <input
+            type="checkbox"
+            name="ratings_tracking_enabled"
+            defaultChecked={ratingsTrackingEnabled}
+            className="mt-0.5 accent-brand-blue"
+          />
+          <span className="flex flex-col">
+            <span className="font-condensed text-sm font-bold text-ink">
+              Track USHPA ratings progress
+            </span>
+            <span className="text-xs text-gray-500">
+              Adds a Ratings tracking section to every flight&apos;s edit page — Occupancy,
+              Flight type, Launch type, Landing tags, and assigning an instructor. Most pilots
+              don&apos;t need this; turn it on if you&apos;re working toward P2/P3/P4.
+            </span>
+          </span>
+        </label>
+        {saveStatus}
       </Card>
     </form>
   );

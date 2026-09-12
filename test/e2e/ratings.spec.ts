@@ -41,7 +41,18 @@ test("a signed-in pilot can open /ratings and see their P2/P3/P4 progress", asyn
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // 4. Navigate to /ratings via the nav link and confirm it renders cleanly.
+  // 4. Ratings tracking is off by default — confirm the page explains that
+  // and offers a way to Settings, rather than 404ing or showing progress.
+  await page.goto("/ratings");
+  await expect(page.getByRole("heading", { name: /ratings progress/i })).toBeVisible();
+  await expect(page.getByText(/ratings tracking is off/i)).toBeVisible();
+
+  // 5. Turn it on in Settings.
+  await page.goto("/settings");
+  await page.getByRole("checkbox", { name: /track ushpa ratings progress/i }).check();
+  await expect(page.getByText("Saved", { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+
+  // 6. Navigate to /ratings via the nav link and confirm it renders cleanly.
   const res = await page.goto("/ratings");
   expect(res?.status()).toBeLessThan(400);
   await expect(page.getByRole("heading", { name: /ratings progress/i })).toBeVisible();
