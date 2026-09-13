@@ -96,6 +96,28 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await expect(page.getByRole("heading", { name: standaloneName })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(/Site created/)).toBeVisible();
 
+  // Change an owned site's visibility in settings, including after a reload.
+  await createSiteToggle.click();
+  const visibility = page.getByRole("combobox", { name: "Site visibility", exact: true });
+  const saveVisibility = page.getByRole("button", { name: "Save visibility", exact: true });
+  const siteRow = page.getByRole("button", { name: new RegExp(standaloneName) });
+  await expect(visibility).toHaveValue("private");
+  await expect(saveVisibility).toBeDisabled();
+  await visibility.selectOption("public");
+  await saveVisibility.click();
+  await expect(page.getByRole("status")).toHaveText(`${standaloneName} is now public.`);
+  await expect(siteRow).toContainText("public");
+  await page.reload();
+  await expect(visibility).toHaveValue("public");
+  await expect(saveVisibility).toBeDisabled();
+  await visibility.selectOption("private");
+  await saveVisibility.click();
+  await expect(page.getByRole("status")).toHaveText(`${standaloneName} is now private.`);
+  await expect(siteRow).toContainText("private");
+  await expect(saveVisibility).toBeDisabled();
+  await page.reload();
+  await expect(visibility).toHaveValue("private");
+
   // 2. Upload a flight far from every curated site -> "Unknown site".
   await page.goto("/upload");
   await uploadFlight(page, { name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });

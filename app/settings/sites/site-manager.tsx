@@ -16,11 +16,13 @@ import {
 } from "@/app/flights/[id]/boundary-action";
 import { radiusForKind } from "@/lib/sites/geo";
 import type { SiteFlightCandidate } from "@/lib/sites/manage";
+import type { SiteVisibility } from "@/lib/sites/visibility";
 import {
   assignSiteFlightsAction,
   createSiteAction,
   moveSiteAnchorAction,
   previewSiteFlightsAction,
+  setSiteVisibilityAction,
 } from "./actions";
 
 const EntryMap = dynamic(() => import("@/components/logbook/entry-map").then((module) => module.EntryMap), {
@@ -58,6 +60,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createPoint, setCreatePoint] = useState<{ lat: number | null; lon: number | null }>({ lat: null, lon: null });
   const [anchorDraft, setAnchorDraft] = useState<{ siteId: string; lat: number; lon: number } | null>(null);
+  const [visibilityDraft, setVisibilityDraft] = useState<SiteVisibility | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [boundary, setBoundary] = useState<BoundaryEditorInitialState | null | undefined>(undefined);
@@ -82,6 +85,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     if (siteId === selected?.id) return;
     setSelectedId(siteId);
     setAnchorDraft(null);
+    setVisibilityDraft(null);
     setBoundary(undefined);
     setEditingMode("anchor");
     setCandidates(null);
@@ -128,6 +132,17 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
       if (!result.ok) return setError(result.error);
       setCandidates(null);
       setMessage("Site anchor updated. Existing flight coordinates were not changed.");
+      router.refresh();
+    });
+  }
+
+  function saveVisibility() {
+    if (!selected || !visibilityDraft) return;
+    run(async () => {
+      const result = await setSiteVisibilityAction({ siteId: selected.id, visibility: visibilityDraft });
+      if (!result.ok) return setError(result.error);
+      setVisibilityDraft(null);
+      setMessage(`${selected.name} is now ${visibilityDraft}.`);
       router.refresh();
     });
   }
@@ -192,7 +207,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
           <h2 className="px-2 pb-2 font-condensed text-xl font-bold text-ink">Your sites</h2>
           {sites.length === 0 ? <p className="px-2 pb-2 text-sm text-gray-500">You have not created any sites yet.</p> : (
             <div className="flex flex-col gap-1">
-              {sites.map((site) => <button key={site.id} type="button" onClick={() => chooseSite(site.id)} className={`rounded-md px-3 py-2 text-left text-sm ${site.id === selected?.id ? "bg-blue-50 text-ink ring-1 ring-brand-blue" : "hover:bg-gray-50"}`}>
+              {sites.map((site) => <button key={site.id} type="button" disabled={pending} onClick={() => chooseSite(site.id)} className={`rounded-md px-3 py-2 text-left text-sm ${site.id === selected?.id ? "bg-blue-50 text-ink ring-1 ring-brand-blue" : "hover:bg-gray-50"}`}>
                 <span className="block font-semibold">{site.name}</span>
                 <span className="text-xs text-gray-500">{site.kind} · {site.visibility} · {site.ownFlightCount} flight location{site.ownFlightCount === 1 ? "" : "s"}</span>
               </button>)}
@@ -207,7 +222,29 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
         {!selected ? <Card className="p-6 text-sm text-gray-500">Create a site to start mapping it.</Card> : <>
           <Card className="p-5">
             <h2 className="font-condensed text-2xl font-bold text-ink">{selected.name}</h2>
-            <p className="mt-1 text-sm text-gray-600">The anchor describes the site. It is separate from every flight’s recorded takeoff or landing coordinates.</p>
+            <div className="mt-4 border-b border-gray-200 pb-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-sm font-medium text-gray-700">
+                  Site visibility
+                  <select
+                    className={`${inputClass} mt-1.5`}
+                    value={visibilityDraft ?? selected.visibility}
+                    onChange={(event) => setVisibilityDraft(event.target.value === "public" ? "public" : "private")}
+                    disabled={pending}
+                    aria-describedby="site-visibility-help"
+                  >
+                    <option value="private">Private</option>
+                    <option value="public">Public</option>
+                  </select>
+                </label>
+                <Button type="button" variant="outline" onClick={saveVisibility} disabled={pending || !visibilityDraft || visibilityDraft === selected.visibility}>Save visibility</Button>
+              </div>
+              <p id="site-visibility-help" className="mt-2 text-xs text-gray-500">
+                Private sites are visible only to you. Public sites can be seen and used by other pilots.
+                A site must stay public while other pilots’ flights use it or it has their contributions.
+              </p>
+            </div>
+            <p className="mt-4 text-sm text-gray-600">The anchor describes the site. It is separate from every flight’s recorded takeoff or landing coordinates.</p>
             {anchorPoint && <div className="mt-4 flex flex-col gap-3">
               <div role="group" aria-label="Site editing tool" className="flex gap-2">
                 <Button type="button" variant="outline" className="aria-pressed:border-brand-blue aria-pressed:bg-blue-50 aria-pressed:text-brand-blue-strong" aria-pressed={editingMode === "anchor"} onClick={() => setEditingMode("anchor")}>Move site pin</Button>

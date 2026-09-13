@@ -9,7 +9,7 @@ import {
   previewFlightsForSite,
   type SiteFlightCandidate,
 } from "@/lib/sites/manage";
-import type { SiteEndpoint } from "@/lib/sites/associate";
+import { setSiteVisibility, unpublishOwnSite, type SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteVisibility } from "@/lib/sites/visibility";
 
 export type SiteManagerResult<T = undefined> =
@@ -52,6 +52,32 @@ export async function moveSiteAnchorAction(input: {
   try {
     await moveOwnedSiteAnchor(await ownerId(), input.siteId, input.lat, input.lon);
     refreshSitePages();
+    return { ok: true, value: undefined };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
+  }
+}
+
+export async function setSiteVisibilityAction(input: {
+  siteId: string;
+  visibility: SiteVisibility;
+}): Promise<SiteManagerResult> {
+  try {
+    const id = await ownerId();
+    if (input.visibility !== "private" && input.visibility !== "public") {
+      return { ok: false, error: "Choose public or private visibility." };
+    }
+    if (typeof input.siteId !== "string" || !input.siteId.trim()) {
+      return { ok: false, error: "Choose a site." };
+    }
+    if (input.visibility === "private") {
+      // Keep the creator-undo guards for sites other pilots depend on.
+      await unpublishOwnSite(input.siteId, id);
+    } else {
+      await setSiteVisibility(input.siteId, id, "public");
+    }
+    refreshSitePages();
+    revalidatePath("/flights/[id]", "page");
     return { ok: true, value: undefined };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
