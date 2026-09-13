@@ -19,13 +19,33 @@ const flight = {
   maxAltM: 1800,
   takeoffSiteName: "Woodrat",
   takeoffSiteId: "woodrat",
+  takeoffSiteAssignment: "auto_matched",
   takeoffZoneName: null,
   takeoffZoneId: null,
   landingSiteName: null,
   landingSiteId: null,
+  landingSiteAssignment: "unassigned",
   landingZoneName: null,
   landingZoneId: null,
 } as FlightListItem;
+
+it.each([true, false])("distinguishes ambiguous takeoff sites from unmatched sites (compact=%s)", (compact) => {
+  const unknown = { ...flight, takeoffSiteId: null, takeoffSiteName: null };
+  const { rerender } = render(<FlightRow flight={{ ...unknown, takeoffSiteAssignment: "needs_review" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Choose site");
+  expect(screen.queryByText("Unknown site")).not.toBeInTheDocument();
+  rerender(<FlightRow flight={{ ...unknown, takeoffSiteAssignment: "unassigned" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Unknown site");
+  rerender(<FlightRow flight={{ ...flight, takeoffSiteAssignment: "needs_review" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Woodrat");
+  expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
+});
+
+it("shows an ambiguous landing even when the takeoff also needs a choice", () => {
+  render(<FlightRow flight={{ ...flight, takeoffSiteId: null, takeoffSiteName: null, takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" }} compact />);
+  expect(screen.getByTitle("Choose site → Choose site")).toBeInTheDocument();
+  expect(screen.getByTitle("Landing: Choose site")).toHaveTextContent("→ Choose site");
+});
 
 it.each([
   ["public", "globe"],
