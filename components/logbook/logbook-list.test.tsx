@@ -10,6 +10,18 @@ const flights = [
   { id: "woodrat", status: "ready", takeoffSiteId: "site", takeoffSiteName: "Woodrat", glider: "Wing B", durationS: 7200 },
 ] as FlightListItem[];
 
+it("distinguishes a linked site and a saved name with identical text in the site filter", () => {
+  render(<LogbookList flights={[flights[1], { ...flights[1], id: "name-only", takeoffSiteId: null }]} trophies={{}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Sites" }));
+  const choices = screen.getByRole("group", { name: "Sites choices" });
+  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Linked site" })).toBeInTheDocument();
+  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" })).toBeInTheDocument();
+  fireEvent.click(within(choices).getByRole("button", { name: "None" }));
+  fireEvent.click(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" }));
+  expect(screen.getByRole("link", { name: "name-only" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
+});
+
 it("combines icon and choices, clears with All, and dismisses lists on outside touches or Escape", () => {
   render(<LogbookList flights={flights} trophies={{}} />);
   const sites = screen.getByRole("button", { name: "Select Sites" });

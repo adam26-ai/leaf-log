@@ -7,9 +7,11 @@ import {
   createStandaloneSite,
   moveOwnedSiteAnchor,
   previewFlightsForSite,
+  listFlightsAtSite,
+  type SiteFlightPage,
   type SiteFlightCandidate,
 } from "@/lib/sites/manage";
-import type { SiteEndpoint } from "@/lib/sites/associate";
+import { setSiteVisibility, unpublishOwnSite, type SiteEndpoint } from "@/lib/sites/associate";
 import type { SiteVisibility } from "@/lib/sites/visibility";
 
 export type SiteManagerResult<T = undefined> =
@@ -58,11 +60,45 @@ export async function moveSiteAnchorAction(input: {
   }
 }
 
+export async function setSiteVisibilityAction(input: {
+  siteId: string;
+  visibility: SiteVisibility;
+}): Promise<SiteManagerResult> {
+  try {
+    const id = await ownerId();
+    if (input.visibility !== "private" && input.visibility !== "public") {
+      return { ok: false, error: "Choose public or private visibility." };
+    }
+    if (typeof input.siteId !== "string" || !input.siteId.trim()) {
+      return { ok: false, error: "Choose a site." };
+    }
+    if (input.visibility === "private") {
+      // Keep the creator-undo guards for sites other pilots depend on.
+      await unpublishOwnSite(input.siteId, id);
+    } else {
+      await setSiteVisibility(input.siteId, id, "public");
+    }
+    refreshSitePages();
+    revalidatePath("/flights/[id]", "page");
+    return { ok: true, value: undefined };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
+  }
+}
+
 export async function previewSiteFlightsAction(siteId: string): Promise<SiteManagerResult<SiteFlightCandidate[]>> {
   try {
     return { ok: true, value: await previewFlightsForSite(await ownerId(), siteId) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
+  }
+}
+
+export async function listSiteFlightsAction(siteId: string, page = 1): Promise<SiteManagerResult<SiteFlightPage>> {
+  try {
+    return { ok: true, value: await listFlightsAtSite(await ownerId(), siteId, page) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not load flights." };
   }
 }
 
@@ -73,6 +109,7 @@ export async function assignSiteFlightsAction(input: {
   try {
     const updated = await assignFlightsToSite(await ownerId(), input.siteId, input.selections);
     refreshSitePages();
+    revalidatePath("/flights/[id]", "page");
     return { ok: true, value: { updated } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };

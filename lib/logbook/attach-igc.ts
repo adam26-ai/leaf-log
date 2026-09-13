@@ -12,6 +12,7 @@ import { resolveLocationCache } from "@/lib/sites/associate";
 import { assignmentPatch, type SiteAssignment } from "@/lib/sites/assignment";
 import { EntryError } from "./service";
 import { duplicateKey } from "./duplicates";
+import { lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
 
 export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8Array, commit: boolean, expectedUpdatedAt?: string, expectedHash?: string) {
   if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new EntryError("Choose a non-empty IGC file of 5 MB or less.");
@@ -45,6 +46,7 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
   try {
     return await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+      const settings = await lockWingSettings(tx, ownerId);
       // Retries keep the same flight and never create a second logbook entry.
       const current = await tx.flight.findFirst({ where: { id: flightId, ownerId } });
       if (current?.recordingKind === "igc" && current.igcSha256 === hash) return { id: flightId, attached: true as const };
@@ -71,6 +73,7 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
         ...measurements, ...patches[0], ...patches[1], flightDate: new Date(`${recordedDay}T00:00:00Z`),
         recordingKind: "igc", igcSha256: hash, parserVersion: PARSER_VERSION, pilot: current.pilot ?? parsed.headers.pilot,
         recorder: parsed.headers.recorder, glider: current.glider || parsed.headers.glider,
+        ...tandemFlightData(current.flightFlags, current.tandemOverride ?? wingIsTandem(settings.tandemWings, current.glider || parsed.headers.glider)),
         xcScore: Prisma.JsonNull, xcStatus: "queued", xcQueuedAt: new Date(), xcStartedAt: null, xcError: null,
       } });
       if (!updated.count) throw new EntryError("This flight changed. Review the comparison again.", 409);

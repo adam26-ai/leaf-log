@@ -115,10 +115,11 @@ to its own temporary schema and removes it afterward. Files run serially because
 they exercise the shared XC queue. Existing development flights are not included
 in backfill tests, so a growing local logbook cannot slow down those checks.
 
-Playwright starts its own server at `http://localhost:3100`, with separate
-`.next-e2e` output and a fresh temporary PostgreSQL schema for each run. It applies
-migrations, generates the IGC fixture, and removes that schema after the run;
-your normal logbook and phone-testing settings are left alone. Real email is
+Playwright builds and starts its own production server at `http://localhost:3100`,
+with separate `.next-e2e` output and a fresh temporary PostgreSQL schema for each
+run. This avoids development rebuilds and Fast Refresh interrupting browser
+interactions. It applies migrations, generates the IGC fixture, and removes the
+schema after the run; your normal logbook and phone-testing settings are left alone. Real email is
 disabled for this server, and its magic links use a separate temporary file.
 Keep port 3100 free. Test traces are saved under `test-results/playwright` on failure.
 

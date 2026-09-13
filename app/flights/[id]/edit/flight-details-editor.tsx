@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SuccessStatus } from "@/components/ui/success-status";
 import {
@@ -37,9 +37,11 @@ export function FlightDetailsEditor({
 }) {
   const action = updateFlightDetails.bind(null, flightId);
   const [state, formAction, pending] = useActionState(action, initial);
+  const [tandemTouched, setTandemTouched] = useState(false);
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
+      <input type="hidden" name="tandemTouched" value={String(tandemTouched)} />
       <fieldset className="flex flex-col gap-2">
         <legend className="text-xs font-medium tracking-wide text-gray-500 uppercase">
           Occupancy
@@ -51,6 +53,7 @@ export function FlightDetailsEditor({
                 type="radio"
                 name="occupancy"
                 value={value}
+                onClick={() => setTandemTouched(true)}
                 defaultChecked={(details.occupancy ?? "solo") === value}
                 className="h-4 w-4 accent-brand-blue"
               />

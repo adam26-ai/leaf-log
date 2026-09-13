@@ -22,3 +22,8 @@ export function formatLocationLabel(
   if (!zoneName) return siteName;
   return `${siteName} — ${zoneName}`;
 }
+
+/** A saved flight label does not imply a link to a mapped Site record. */
+export function siteLinkLabel(siteId: string | null, siteName: string | null): string {
+  return siteId ? "Linked site" : siteName ? "Name only" : "No site";
+}

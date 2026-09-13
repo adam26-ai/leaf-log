@@ -20,7 +20,7 @@ it("rejects empty selections, invalid counts, empty or multiline and oversized n
 });
 it("reports changed source selections without attempting the bulk update", async () => {
   const update = vi.fn();
-  mocks.transaction.mockImplementation(async callback => callback({ flight: { groupBy: async () => [], updateMany: update } }));
+  mocks.transaction.mockImplementation(async callback => callback({ $queryRaw: async () => [{ tandemWings: [], tandemEnabled: false }], flight: { groupBy: async () => [], updateMany: update } }));
   expect(await saveWingNames(edit)).toMatchObject({ stale: true });
   expect(update).not.toHaveBeenCalled();
 });

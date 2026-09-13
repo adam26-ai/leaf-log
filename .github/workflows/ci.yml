@@ -82,8 +82,8 @@ jobs:
       # entry point in case future non-site seed data is ever needed.
       - run: pnpm db:seed
       - run: pnpm exec playwright install --with-deps chromium
-      # `pnpm e2e` generates the IGC fixture and starts its own dev server
-      # (playwright webServer). The dev magic-link is written to /tmp.
+      # `pnpm e2e` builds and starts an isolated production server, without HMR.
+      # The IGC fixture and local magic-link fallback need no external services.
       - run: pnpm e2e
       - if: failure()
         uses: actions/upload-artifact@v4

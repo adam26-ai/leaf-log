@@ -9,6 +9,8 @@ import { resolveLocationCache } from "@/lib/sites/associate";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { sha256Hex } from "./dedupe";
 import { altitudeMeasurements } from "@/lib/igc/repair-flight";
+import { lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
+import type { FlightFlag } from "@/lib/flights/type-flags";
 
 export const PARSER_VERSION = "5";
 
@@ -19,6 +21,8 @@ export interface IngestInput {
   bytes: Uint8Array;
   source?: IngestSource;
   filename?: string;
+  flightFlags?: FlightFlag[];
+  tandemOverride?: boolean;
 }
 
 export interface IngestResult {
@@ -103,6 +107,9 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
   const flightDateMs = parsed.headers.dateMs ?? metrics?.takeoffAtMs ?? 0;
 
   const flight = await prisma.$transaction(async (tx) => {
+    const settings = await lockWingSettings(tx, ownerId);
+    const flags = input.flightFlags ?? [];
+    const tandemOverride = input.tandemOverride ?? (flags.includes("tandem") ? true : null);
     // Re-read each matched site (and zone, if any) INSIDE the transaction
     // and re-verify it's still visible to the owner (not just that it still
     // exists) — a demote to private-owned-by-someone-else between match and
@@ -126,6 +133,9 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         failureReason: metrics ? null : "No usable GPS fixes in file",
         flightDate: flightDateMs ? isoDate(flightDateMs) : null,
         glider: parsed.headers.glider,
+        ...tandemFlightData(flags, tandemOverride ?? wingIsTandem(settings.tandemWings, parsed.headers.glider)),
+        tandemOverride,
+        launchTypes: flags.includes("tow") ? ["ST"] : [],
         pilot: parsed.headers.pilot,
         recorder: parsed.headers.recorder,
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,

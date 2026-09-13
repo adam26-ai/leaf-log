@@ -28,6 +28,7 @@ type ActiveComparison = {
 
 export function Dropzone() {
   const [flags, setFlags] = useState<FlightFlag[]>([]);
+  const [tandemTouched, setTandemTouched] = useState(false);
   const hydrated = useHydrated();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +70,7 @@ export function Dropzone() {
     const form = new FormData();
     list.forEach((file) => form.append("files", file));
     flags.forEach(flag => form.append("flightFlags", flag));
+    if (tandemTouched) form.set("tandemOverride", String(flags.includes("tandem")));
     if (allowPossibleDuplicate) form.set("allowPossibleDuplicate", "true");
 
     try {
@@ -144,7 +146,7 @@ export function Dropzone() {
 
   return (
     <div className="flex flex-col gap-5">
-      <FlightTypeFields value={flags} onChange={setFlags} disabled={busy || Boolean(results)} />
+      <FlightTypeFields value={flags} onChange={(next, changed) => { setFlags(next); if (changed === "tandem") setTandemTouched(true); }} disabled={busy || Boolean(results)} />
       <div
         onDragOver={(event) => {
           event.preventDefault();

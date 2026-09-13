@@ -33,7 +33,7 @@ export default async function SettingsPage() {
               customUnits={profile.customUnits}
               mapDefaults={profile.mapDefaults}
               ratingsTrackingEnabled={profile.ratingsTrackingEnabled}
-              afterProfile={<WingEditor wings={wings} />}
+              afterProfile={<WingEditor wings={wings} tandemEnabled={profile.tandemEnabled} />}
             />
           <Link href="/settings/sites" className="group block">
             <Card className="p-6 transition-colors group-hover:border-brand-blue">

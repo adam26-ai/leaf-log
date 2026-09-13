@@ -412,6 +412,21 @@ describe("sites: read-path firewall", () => {
   // Leak sweep
   // ---------------------------------------------------------------------
   describe("leak sweep", () => {
+    it("includes the site review state in logbook, profile, and feed rows", async () => {
+      const owner = await createPilot("reviewstate");
+      const viewer = await createPilot("reviewviewer");
+      await befriend(owner, viewer);
+      const flight = await createFlight({ ownerId: owner, visibility: "public" });
+      await prisma.flight.update({ where: { id: flight.id }, data: { takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" } });
+      const rows = [
+        ...(await repo.listOwnFlights(owner)),
+        ...(await repo.listProfileFlightsForViewer(owner, viewer)),
+        ...(await repo.listFeedForViewer(viewer)).rows,
+      ].filter(row => row.id === flight.id);
+      expect(rows).toHaveLength(3);
+      for (const row of rows) expect(row).toMatchObject({ takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review", takeoffSiteId: null, landingSiteId: null });
+    });
+
     it("no flight created through the real cache writer carries a cached name whose site is not public", async () => {
       const owner = await createPilot("sweepowner");
       const privSite = await createSite({ lat: 8, lon: 8, visibility: "private", ownerId: owner });

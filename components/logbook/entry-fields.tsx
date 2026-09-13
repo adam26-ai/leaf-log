@@ -11,11 +11,14 @@ import type { EntryOptions } from "@/lib/logbook/options";
 const EntryMap = dynamic(() => import("./entry-map").then(module => module.EntryMap), { ssr: false, loading: () => <p className="p-4 text-sm text-gray-500">Loading map…</p> });
 export const entryInputClass = "min-w-0 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/25";
 
-export function EntryFields({ value, onChange, options, issues = [], expanded = false }: {
-  value: EntryDraft; onChange: (next: EntryDraft) => void; options: EntryOptions; issues?: EntryIssue[]; expanded?: boolean;
+export function EntryFields({ value, onChange, options, issues = [], expanded = false, tandemDefault, onTandemChange }: {
+  value: EntryDraft; onChange: (next: EntryDraft) => void; options: EntryOptions; issues?: EntryIssue[]; expanded?: boolean; tandemDefault?: boolean; onTandemChange?: () => void;
 }) {
   const uid = useId();
   const [showMap, setShowMap] = useState(false);
+  const storedFlags = flightFlags({ flightFlags: value.flightTypes.split(";"), occupancy: value.occupancy });
+  const inheritedTandem = tandemDefault ?? (!value.occupancy && !storedFlags.includes("tandem") ? Boolean(options.tandemWings?.includes(value.glider.trim())) : undefined);
+  const displayedFlags = inheritedTandem === undefined ? storedFlags : flightFlags({ flightFlags: [...storedFlags.filter(flag => flag !== "tandem"), ...(inheritedTandem ? ["tandem"] : [])] });
   const set = (patch: Partial<EntryDraft>) => onChange({ ...value, ...patch });
   const fieldError = (field: keyof EntryDraft) => issues.find(issue => issue.field === field)?.message;
   function input(field: keyof EntryDraft, label: string, type = "text", props: { placeholder?: string; list?: string; min?: number; max?: number } = {}) {
@@ -71,7 +74,12 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
       {input("glider", "Wing", "text", { list: `${uid}-wings`, placeholder: "Choose a previous wing or enter a name" })}
       {site("takeoff", "Flying site")}
     </div>
-    <FlightTypeFields value={flightFlags({ flightFlags: value.flightTypes.split(";"), occupancy: value.occupancy })} onChange={flags => set({ flightTypes: flags.join(";"), occupancy: flags.includes("tandem") ? "tandem" : "solo" })} />
+    <FlightTypeFields value={displayedFlags} onChange={(flags, changed) => {
+      if (changed === "tandem") {
+        onTandemChange?.();
+        set({ flightTypes: flags.join(";"), occupancy: flags.includes("tandem") ? "tandem" : "solo" });
+      } else set({ flightTypes: (inheritedTandem === undefined ? flags : flightFlags({ flightFlags: [...flags.filter(flag => flag !== "tandem"), ...storedFlags.filter(flag => flag === "tandem")] })).join(";") });
+    }} />
     <fieldset className="rounded-lg border border-gray-200 p-3"><legend className="px-1 text-sm font-medium text-gray-700">Reported XC <span className="font-normal text-gray-400">(optional)</span></legend>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr]">
         <div className="col-span-2 sm:col-span-1">{select("xcType", "XC type", { "": "Choose a route type…", ...XC_TYPE_LABELS })}</div>

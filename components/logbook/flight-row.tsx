@@ -66,14 +66,16 @@ export function FlightRow({
         ? { label: "Friends", className: "border-brand-blue bg-brand-blue/10 text-brand-blue-strong" }
         : { label: "Private", className: "border-gray-400 bg-white text-gray-600" };
   const VisibilityIcon = flight.visibility === "public" ? Globe : flight.visibility === "friends" ? Users : Lock;
+  const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName)
+    ?? (flight.takeoffSiteAssignment === "needs_review" ? "Choose site" : "Unknown site");
   if (compact) {
     const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.22;
     const greenAlpha = Math.min(1, Math.max(0, distanceScore)) * 0.38;
     const blue = `rgb(0 153 255 / ${blueAlpha})`;
     const green = `rgb(148 233 30 / ${greenAlpha})`;
-    const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site";
-    const landing = formatLocationLabel(flight.landingSiteName, flight.landingZoneName);
-    const showLanding = landing && (flight.landingSiteId !== flight.takeoffSiteId
+    const landing = formatLocationLabel(flight.landingSiteName, flight.landingZoneName)
+      ?? (flight.landingSiteAssignment === "needs_review" ? "Choose site" : null);
+    const showLanding = landing && (flight.landingSiteAssignment === "needs_review" || flight.landingSiteId !== flight.takeoffSiteId
       || flight.landingZoneId !== flight.takeoffZoneId || landing !== site);
     return (
       <div className="relative">
@@ -120,7 +122,7 @@ export function FlightRow({
       )}
       <Link href={`/flights/${flight.id}`} className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-condensed text-lg font-bold text-ink hover:text-brand-blue-strong">
-          {formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName) ?? "Unknown site"}
+          {site}
         </span>
         <span className="text-sm font-bold text-gray-500">
           {formatLocalDate(

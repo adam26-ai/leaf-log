@@ -38,6 +38,7 @@ import { SiteDialog } from "./site-dialog";
 import { SiteAreaMap } from "@/components/flight/site-area-map";
 import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
+import { siteLinkLabel } from "@/lib/sites/display";
 
 /**
  * Click-to-edit control for a flight's takeoff/landing site+zone label.
@@ -712,6 +713,7 @@ function SiteOverviewStep({
         <p className="text-sm text-gray-500">
           {siteTypeLabel}{siteInfo ? ` · ${siteInfo.visibility === "public" ? "Public" : "Private"}` : ""}
         </p>
+        {loaded && !error && <p className="text-xs font-medium text-brand-blue-strong">{siteLinkLabel(siteInfo?.id ?? null, currentSiteName)}</p>}
       </div>
 
       {siteInfo ? (
@@ -753,9 +755,7 @@ function SiteOverviewStep({
  * this site": rename the site and draw/redraw its boundary in one screen
  * (both reachable with no extra click, per the user's own report that a
  * separate "Edit boundary" hop was one click too many), then Cancel/
- * Delete/Save at the bottom. Visibility is deliberately NOT editable here
- * (see the user's own call — SPRINT-008 chat) — a site's visibility stays
- * fixed after creation.
+ * Delete/Save at the bottom. Site owners change visibility in Settings > Sites.
  */
 function SiteEditStep({
   siteTypeLabel,
