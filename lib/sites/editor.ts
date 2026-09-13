@@ -1,4 +1,5 @@
-import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
+import { Prisma, type Flight } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { haversineM } from "@/lib/geo/distance";
 import { validateSiteName } from "./name";
@@ -9,6 +10,18 @@ import { siteVisibleWhere, DAILY_CREATE_CAP } from "./repo";
 import { writeAuditEntry } from "./audit";
 
 export type SiteWriteDb = Pick<typeof prisma, "site" | "flight" | "zone" | "profile" | "locationAuditEntry" | "$queryRaw" | "$executeRaw">;
+
+/** Scoring and unrelated flight edits must not invalidate a site draft. */
+export function flightSiteRevision(flight: Flight, endpoint: "takeoff" | "landing") {
+  return createHash("sha256").update(JSON.stringify([
+    flight.id, endpoint, flight.recordingKind,
+    flight[`${endpoint}Lat`], flight[`${endpoint}Lon`],
+    flight[`${endpoint}SiteId`], flight[`${endpoint}ZoneId`],
+    flight[`${endpoint}SiteId`] ? null : flight[`${endpoint}SiteName`],
+    flight[`${endpoint}SiteAssignment`], flight[`${endpoint}LocationSource`],
+    flight[`${endpoint}LocationEvidence`],
+  ])).digest("hex");
+}
 
 export function validateSiteDraft(value: unknown) {
   const draft = siteDraftSchema.parse(value);

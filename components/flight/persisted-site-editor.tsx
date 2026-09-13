@@ -21,7 +21,7 @@ export function PersistedSiteEditor({ context, initialName, onSaved, onCancel }:
   if (!data) return <><p role={error ? "alert" : "status"}>{error ?? "Loading site details…"}</p><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button></>;
   return <SiteEditor initial={initialName === undefined ? data.initial : { ...data.initial, name: initialName }} pinSource={data.pinSource} flightPoint={data.flightPoint} canChangeVisibility={data.canChangeVisibility} usageCount={data.usageCount}
     onCancel={onCancel} onSave={async draft => {
-      const site = await saveSiteEditorAction({ draft, context, expectedFlightUpdatedAt: data.expectedFlightUpdatedAt });
+      const site = await saveSiteEditorAction({ draft, context, expectedFlightRevision: data.expectedFlightRevision });
       router.refresh(); onSaved(site);
     }} />;
 }

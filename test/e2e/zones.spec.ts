@@ -1,4 +1,4 @@
-import { openSiteChooser, uploadFlight } from "./helpers";
+import { createSiteFromFlight, uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -62,7 +62,7 @@ function remoteFlightIgc(runOffset: number, offset: number, seed: number): Buffe
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
 }
 
-test("naming a site submits directly — no 'Which spot?' step is ever reachable", async ({ page }) => {
+test("creating a site through the full editor never opens a zone step", async ({ page }) => {
   const runOffset = Date.now();
   const suffix = `${runOffset}nozone`;
   const email = `zones_e2e_nozone_${suffix}@test.local`;
@@ -82,19 +82,16 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // Unknown site.
+  // GPS is available, but no site has been identified.
   await page.goto("/upload");
   await uploadFlight(page, { name: "nozone1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 1) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
-  // Name the site — with zones hidden, entering a name and clicking the
-  // submit button saves and closes the dialog directly. No "Which spot?"
-  // step, no "Skip — just the site" button (there's nothing to skip).
+  // Create and save through the full site editor. Neither creation nor
+  // saving should introduce a zone chooser or a skip-zone action.
   const siteName = `E2E No-Zone Ridge ${suffix}`;
-  await openSiteChooser(page);
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await createSiteFromFlight(page, siteName);
 
   await expect(page.locator('input[placeholder="e.g. North Launch"]')).not.toBeVisible({ timeout: 3_000 });
   await expect(page.getByText(/Which .* spot\?/i)).not.toBeVisible();
@@ -110,7 +107,7 @@ test("naming a site submits directly — no 'Which spot?' step is ever reachable
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });
 
-test("re-opening an already-named site never shows a zone step, and the boundary picker has no 'My spots' section", async ({
+test("re-opening and managing an already-named site never shows zones or spots", async ({
   page,
 }) => {
   const runOffset = Date.now();
@@ -137,9 +134,7 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
 
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await openSiteChooser(page);
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await createSiteFromFlight(page, siteName);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Re-open on the already-site-bound flight — lands on the read-only
@@ -159,13 +154,17 @@ test("re-opening an already-named site never shows a zone step, and the boundary
   expect(editText.match(/\bspot\b/gi) ?? []).toEqual([]);
   expect(editText.match(/\bzone\b/gi) ?? []).toEqual([]);
 
-  // Back to the overview, then "Choose a different site" reaches the
-  // choose/create flow, whose boundary picker lists sites only.
+  // Back to the overview, then inspect the choose/create flow and the
+  // standalone site manager. Neither exposes the hidden zone hierarchy.
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Choose a different site" }).click();
-  await page.getByText("Edit a boundary on one of my sites").click();
-  await page.getByText("Edit a boundary").first().waitFor({ timeout: 5_000 });
-  const pickerText = await page.locator(".fixed.inset-0").innerText();
-  expect(pickerText).not.toContain("My spots");
-  expect(pickerText.match(/\bspot\b/gi) ?? []).toEqual([]);
+  await expect(page.getByRole("button", { name: "Create site", exact: true })).toBeVisible();
+  const chooserText = await dialog.innerText();
+  expect(chooserText.match(/\b(spot|zone)\b/gi) ?? []).toEqual([]);
+  await page.goto("/settings/sites");
+  await page.getByRole("button", { name: "Edit site", exact: true }).click();
+  await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
+  const managerText = await dialog.innerText();
+  expect(managerText).not.toContain("My spots");
+  expect(managerText.match(/\b(spot|zone)\b/gi) ?? []).toEqual([]);
 });

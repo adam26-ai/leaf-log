@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { siteVisibleWhere } from "@/lib/sites/repo";
 import { locationCachePatch, resolveLocationCache } from "@/lib/sites/associate";
-import { saveSiteDraft } from "@/lib/sites/editor";
+import { flightSiteRevision, saveSiteDraft } from "@/lib/sites/editor";
 import { hasSitePoint, newSiteDraft, siteDraftSchema, type SiteEditorValue } from "@/lib/sites/model";
 import { isValidBoundaryShape } from "@/lib/sites/geo";
 import { lockFlightRow } from "@/lib/sites/locks";
@@ -35,12 +35,12 @@ export async function getSiteEditorAction(value: SiteEditorContext) {
     lat: site.lat, lon: site.lon, boundary: isValidBoundaryShape(site.boundary) ? site.boundary : null }
     : newSiteDraft(context.create ? "" : flight?.[`${endpoint}SiteName`] ?? "", endpoint, flightPoint);
   const usageCount = site ? await prisma.flight.count({ where: { ownerId, OR: [{ takeoffSiteId: site.id }, { landingSiteId: site.id }] } }) : 0;
-  return { initial, pinSource: site?.pinSource ?? (flightPoint ? flight?.[`${endpoint}LocationSource`] ?? "legacy" : "manual"), flightPoint, usageCount, canChangeVisibility: !site || site.ownerId === ownerId, expectedFlightUpdatedAt: flight?.updatedAt.toISOString() };
+  return { initial, pinSource: site?.pinSource ?? (flightPoint ? flight?.[`${endpoint}LocationSource`] ?? "legacy" : "manual"), flightPoint, usageCount, canChangeVisibility: !site || site.ownerId === ownerId, expectedFlightRevision: flight ? flightSiteRevision(flight, endpoint) : undefined };
 }
 
-export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDraftSchema>; context?: SiteEditorContext; expectedFlightUpdatedAt?: string }) {
+export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDraftSchema>; context?: SiteEditorContext; expectedFlightRevision?: string }) {
   const ownerId = await requireOwner();
-  const input = z.object({ draft: siteDraftSchema, context: contextSchema.optional(), expectedFlightUpdatedAt: z.string().datetime().optional() }).strict().parse(value);
+  const input = z.object({ draft: siteDraftSchema, context: contextSchema.optional(), expectedFlightRevision: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().parse(value);
   const endpoint = input.context?.endpoint ?? "takeoff";
   const result = await prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
@@ -48,7 +48,7 @@ export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDr
     const flightId = input.context?.flightId;
     if (flightId) await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "id" = ${flightId} AND "ownerId" = ${ownerId} FOR UPDATE`;
     const flight = flightId ? await tx.flight.findFirst({ where: { id: flightId, ownerId } }) : null;
-    if (flightId && (!flight || !input.context?.endpoint || flight.updatedAt.toISOString() !== input.expectedFlightUpdatedAt)) throw new Error("This flight changed. Reopen the editor before saving.");
+    if (flightId && (!flight || !input.context?.endpoint || flightSiteRevision(flight, endpoint) !== input.expectedFlightRevision)) throw new Error("This flight's location changed. Reopen the editor before saving.");
     const site = await saveSiteDraft(tx, ownerId, input.draft);
     if (flight) {
       const sameSite = flight[`${endpoint}SiteId`] === site.id;

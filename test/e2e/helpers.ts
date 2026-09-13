@@ -10,6 +10,19 @@ export async function openSiteChooser(page: Page) {
   return { dialog, name };
 }
 
+/** Creating a site opens the full editor; new sites start private. */
+export async function createSiteFromFlight(page: Page, siteName: string, visibility: "private" | "public" = "private") {
+  const { dialog, name } = await openSiteChooser(page);
+  await name.fill(siteName);
+  await dialog.getByRole("button", { name: "Create site", exact: true }).click();
+  await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
+  await expect(dialog.getByLabel("Visibility", { exact: true })).toHaveValue("private");
+  if (visibility === "public") await dialog.getByLabel("Visibility", { exact: true }).selectOption("public");
+  await dialog.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName);
+}
+
 /** Opening the real picker waits for the client event handler; setting the
  * hidden input directly can fire before React hydrates and lose the upload. */
 export async function uploadFlight(page: Page, files: Parameters<FileChooser["setFiles"]>[0]) {
