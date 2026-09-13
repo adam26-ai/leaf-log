@@ -25,6 +25,54 @@ async function signUp(page: Page) {
   return handle;
 }
 
+test("tandem wing controls preserve flight overrides and expose the merged default on mobile", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const base = { ownerId: owner.id, glider: "Tandem Test Wing", status: "ready", durationS: 900 };
+    const inherited = await db.flight.create({ data: base });
+    const manual = await db.flight.create({ data: { ...base, occupancy: "solo", tandemOverride: false } });
+    await db.flight.create({ data: { ...base, glider: "Solo Test Wing" } });
+    await page.goto("/settings");
+    const enable = page.getByRole("switch", { name: "Enable tandem" });
+    await expect(enable).not.toBeChecked();
+    await expect(page.getByRole("switch", { name: "Tandem wing: Tandem Test Wing" })).toHaveCount(0);
+    await enable.click();
+    const toggle = page.getByRole("switch", { name: "Tandem wing: Tandem Test Wing" });
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect.poll(async () => (await db.flight.findUniqueOrThrow({ where: { id: inherited.id } })).occupancy).toBe("tandem");
+    expect(await db.flight.findUniqueOrThrow({ where: { id: manual.id } })).toMatchObject({ occupancy: "solo", tandemOverride: false });
+    await page.getByRole("checkbox", { name: /Tandem Test Wing, 2 flights/ }).check();
+    await page.getByRole("checkbox", { name: /Solo Test Wing, 1 flight/ }).check();
+    await expect(page.getByRole("switch", { name: "Merged wing is tandem" })).toBeChecked();
+    await page.getByLabel("Merged wing name:").fill("Merged Wing");
+    await page.screenshot({ path: "test-results/tandem-wings-desktop.png", fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("heading", { name: "Wings", exact: true }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: "test-results/tandem-wings-mobile.png", fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole("switch", { name: "Merged wing is tandem" }).uncheck();
+    await page.getByRole("button", { name: "Merge wings", exact: true }).click();
+    await expect(page.getByRole("switch", { name: "Tandem wing: Merged Wing" })).toHaveAttribute("aria-checked", "false");
+    expect(await db.flight.findUniqueOrThrow({ where: { id: inherited.id } })).toMatchObject({ glider: "Merged Wing", occupancy: "solo", tandemOverride: null });
+    await page.getByRole("switch", { name: "Tandem wing: Merged Wing" }).click();
+    await expect(page.getByRole("switch", { name: "Tandem wing: Merged Wing" })).toHaveAttribute("aria-checked", "true");
+    await enable.click();
+    await expect(enable).not.toBeChecked();
+    await page.reload();
+    await expect(enable).not.toBeChecked();
+    expect((await db.profile.findUniqueOrThrow({ where: { id: owner.id } })).tandemWings).toEqual(["Merged Wing"]);
+    expect(await db.flight.findUniqueOrThrow({ where: { id: manual.id } })).toMatchObject({ occupancy: "solo", tandemOverride: false });
+  } finally {
+    const owner = await db.profile.findUnique({ where: { handle } });
+    if (owner) await db.user.delete({ where: { id: owner.id } });
+    await db.$disconnect();
+  }
+});
+
 test("site management separates linked flights from matching names and counts each flight once", async ({ page }) => {
   const handle = await signUp(page);
   const db = new PrismaClient();

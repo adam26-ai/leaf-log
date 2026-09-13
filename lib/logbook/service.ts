@@ -8,6 +8,7 @@ import { draftSchema, parseEntry, entryWarnings, type EntryDraft } from "./entry
 import { MAX_IMPORT_ROWS, parseCsv } from "./csv";
 import { locationData, entrySiteSelect } from "./locations";
 import { duplicateKey, duplicateTimeLabel, possibleDuplicate, type DuplicateFlight } from "./duplicates";
+import { lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
 
 export class EntryError extends Error {
   constructor(message: string, public status = 400) { super(message); }
@@ -15,7 +16,7 @@ export class EntryError extends Error {
 const visibilitySchema = z.enum(["private", "friends", "public"]);
 const keySchema = z.string().uuid();
 export const entryRequestSchema = z.object({ draft: draftSchema, visibility: visibilitySchema, requestId: keySchema,
-  flightId: z.string().max(100).optional(), expectedUpdatedAt: z.string().datetime().optional(), allowDuplicate: z.boolean().default(false) }).strict();
+  flightId: z.string().max(100).optional(), expectedUpdatedAt: z.string().datetime().optional(), tandemTouched: z.boolean().optional(), allowDuplicate: z.boolean().default(false) }).strict();
 export const importRequestSchema = z.object({ requestId: keySchema, filename: z.string().min(1).max(200), csv: z.string().max(2_000_000),
   visibility: visibilitySchema, rows: z.array(z.object({ line: z.number().int().positive(), draft: draftSchema, excluded: z.boolean(), allowDuplicate: z.boolean() }).strict()).min(1).max(MAX_IMPORT_ROWS) }).strict();
 export type ImportRequest = z.infer<typeof importRequestSchema>;
@@ -35,17 +36,22 @@ export async function saveLogbookEntry(ownerId: string, value: unknown) {
   return prisma.$transaction(async tx => {
     // Serializes retries and the duplicate check for this pilot, including parallel imports.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    const settings = await lockWingSettings(tx, ownerId);
+    let tandemOverride = parsed.data.occupancy === null ? null : parsed.data.occupancy === "tandem";
     if (!request.flightId) {
       const previous = await tx.flight.findUnique({ where: { ownerId_entryRequestId: { ownerId, entryRequestId: request.requestId } }, select: { id: true } });
       if (previous) return previous;
     } else {
       const current = await tx.flight.findFirst({ where: { id: request.flightId, ownerId, recordingKind: "logbook" } });
       if (!current) throw new EntryError("This manual entry is not available to edit.", 404);
+      const tandemChanged = request.tandemTouched ?? (parsed.data.flightFlags.includes("tandem") !== (current.occupancy === "tandem" || current.flightFlags.includes("tandem")));
+      tandemOverride = tandemChanged ? parsed.data.flightFlags.includes("tandem") : current.tandemOverride;
       parsed.data.launchTypes = [...current.launchTypes.filter(tag => tag !== "ST"), ...parsed.data.launchTypes];
       if (current.updatedAt.toISOString() !== request.expectedUpdatedAt) throw new EntryError("This flight changed in another tab. Reload it before saving.", 409);
     }
     const locations = await locationData(tx, ownerId, parsed.draft).catch(error => { throw new EntryError(error.message, 409); });
-    const data = { ...parsed.data, ...locations };
+    const data = { ...parsed.data, ...locations, tandemOverride,
+      ...tandemFlightData(parsed.data.flightFlags, tandemOverride ?? wingIsTandem(settings.tandemWings, parsed.data.glider)) };
     if (!request.flightId && !request.allowDuplicate) {
       const existing = await tx.flight.findMany({ where: { ownerId }, select: duplicateSelect });
       const matches = existing.filter(flight => possibleDuplicate({ id: "new", ...data }, flight));
@@ -110,6 +116,7 @@ export async function commitLogbookImport(ownerId: string, value: unknown) {
   const fileHash = createHash("sha256").update(request.csv.replace(/^\uFEFF/, "").replaceAll("\r\n", "\n")).digest("hex");
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    const settings = await lockWingSettings(tx, ownerId);
     const previous = await tx.logbookImport.findFirst({ where: { ownerId, OR: [{ requestId: request.requestId }, { fileHash, undoneAt: null }] } });
     if (previous) {
       if (previous.undoneAt) throw new EntryError("This import was undone. Reopen the CSV to start a new import.", 409);
@@ -122,9 +129,13 @@ export async function commitLogbookImport(ownerId: string, value: unknown) {
     const batch = await tx.logbookImport.create({ data: { ownerId, requestId: request.requestId, fileHash, filename: request.filename,
       rowCount: request.rows.length, importedCount: included.length, skippedCount: request.rows.length - included.length, snapshot: {} } });
     const now = new Date();
-    const entries = included.map(({ row, review }) => ({ ...review.data!, id: generateShortId(10), ownerId,
+    const entries = included.map(({ row, review }) => {
+      const data = review.data!;
+      const tandemOverride = data.occupancy === null ? null : data.occupancy === "tandem";
+      return { ...data, tandemOverride, ...tandemFlightData(data.flightFlags, tandemOverride ?? wingIsTandem(settings.tandemWings, data.glider)), id: generateShortId(10), ownerId,
       visibility: request.visibility, source: "csv_import", recordingKind: "logbook", status: "ready", xcStatus: "not_recorded", metricsVersion: METRICS_VERSION,
-      logbookImportId: batch.id, importRow: row.line, updatedAt: now }));
+      logbookImportId: batch.id, importRow: row.line, updatedAt: now };
+    });
     await tx.flight.createMany({ data: entries });
     await tx.logbookImport.update({ where: { id: batch.id }, data: { snapshot: Object.fromEntries(entries.map(flight => [flight.id, now.toISOString()])) } });
     return { id: batch.id, importedCount: entries.length, skippedCount: batch.skippedCount, alreadyImported: false };

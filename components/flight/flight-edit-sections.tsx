@@ -44,7 +44,7 @@ export async function FlightEditSections({
     <div className="flex flex-col gap-4">
         {entryOptions ? <Card className={cardClass}>
           <SectionTitle icon={FilePenLine}>Flight details</SectionTitle>
-          <ManualEntryForm key={flight.updatedAt.toISOString()} options={entryOptions} initial={flightToEntryDraft(flight)} flightId={flight.id} expectedUpdatedAt={flight.updatedAt.toISOString()} defaultVisibility={flight.visibility} />
+          <ManualEntryForm key={flight.updatedAt.toISOString()} options={entryOptions} initial={flightToEntryDraft(flight)} flightId={flight.id} expectedUpdatedAt={flight.updatedAt.toISOString()} defaultVisibility={flight.visibility} initialTandemOverride={flight.tandemOverride} />
         </Card> : <>
         <Card className={cardClass}>
           <SectionTitle icon={FilePenLine}>Wing</SectionTitle>

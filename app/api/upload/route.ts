@@ -35,6 +35,8 @@ export async function POST(request: Request) {
 
   const flags = flightFlagsSchema.safeParse(form.getAll("flightFlags"));
   if (!flags.success) return NextResponse.json({ error: "Invalid flight types" }, { status: 400 });
+  const tandemOverride = form.get("tandemOverride");
+  if (tandemOverride !== null && tandemOverride !== "true" && tandemOverride !== "false") return NextResponse.json({ error: "Invalid tandem choice" }, { status: 400 });
   const files = form.getAll("files").filter((f): f is File => f instanceof File);
   const allowPossibleDuplicate = form.get("allowPossibleDuplicate") === "true";
   if (files.length === 0) {
@@ -80,13 +82,9 @@ export async function POST(request: Request) {
         bytes,
         source: "web_upload",
         filename: name,
+        flightFlags: flags.data,
+        ...(tandemOverride !== null ? { tandemOverride: tandemOverride === "true" } : {}),
       });
-      if (!r.deduped && r.flightId && flags.data.length) {
-        await prisma.flight.updateMany({ where: { id: r.flightId, ownerId: userId }, data: {
-          flightFlags: flags.data, ...(flags.data.includes("tandem") ? { occupancy: "tandem" } : {}),
-          ...(flags.data.includes("tow") ? { launchTypes: { push: "ST" } } : {}),
-        } });
-      }
       results.push({ filename: name, ...r });
     } catch {
       results.push({ filename: name, error: "Could not process this file" });
