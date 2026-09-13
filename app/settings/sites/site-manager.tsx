@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { ChevronDown } from "lucide-react";
@@ -17,6 +16,8 @@ import {
 import { radiusForKind } from "@/lib/sites/geo";
 import type { SiteFlightCandidate } from "@/lib/sites/manage";
 import type { SiteVisibility } from "@/lib/sites/visibility";
+import { siteLinkLabel } from "@/lib/sites/display";
+import { SiteFlightList, SiteFlightSummary } from "./site-flight-list";
 import {
   assignSiteFlightsAction,
   createSiteAction,
@@ -48,10 +49,6 @@ function candidateKey(candidate: Pick<SiteFlightCandidate, "id" | "endpoint">) {
   return `${candidate.id}:${candidate.endpoint}`;
 }
 
-function sourceLabel(source: string) {
-  return source === "csv_import" ? "CSV import" : source === "manual_entry" ? "Manual" : "IGC";
-}
-
 export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -67,6 +64,8 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const [editingMode, setEditingMode] = useState<"anchor" | "boundary">("anchor");
   const [candidates, setCandidates] = useState<SiteFlightCandidate[] | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [reviewPage, setReviewPage] = useState(0);
+  const [flightListRevision, setFlightListRevision] = useState(0);
 
   useEffect(() => {
     if (!selected) return;
@@ -89,6 +88,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     setBoundary(undefined);
     setEditingMode("anchor");
     setCandidates(null);
+    setReviewPage(0);
     setChecked(new Set());
     setMessage(null);
     setError(null);
@@ -98,10 +98,22 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     if (selected) setAnchorDraft({ siteId: selected.id, ...point });
   }
 
-  const assignable = useMemo(
-    () => candidates?.filter((candidate) => candidate.currentSiteId !== selectedId) ?? [],
-    [candidates, selectedId],
-  );
+  const candidateFlights = useMemo(() => {
+    const groups = new Map<string, SiteFlightCandidate[]>();
+    for (const candidate of candidates ?? []) {
+      const matches = groups.get(candidate.id) ?? [];
+      matches.push(candidate);
+      groups.set(candidate.id, matches);
+    }
+    return [...groups.values()];
+  }, [candidates]);
+  const shownFlights = candidateFlights.slice(reviewPage * 25, (reviewPage + 1) * 25);
+  const shownKeys = shownFlights.flat().map(candidateKey);
+  const selectedFlightCount = new Set((candidates ?? []).filter(candidate => checked.has(candidateKey(candidate))).map(candidate => candidate.id)).size;
+
+  function changeReviewPage(page: number) {
+    setReviewPage(page);
+  }
 
   function run(task: () => Promise<void>) {
     setMessage(null);
@@ -153,8 +165,8 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
       const result = await previewSiteFlightsAction(selected.id);
       if (!result.ok) return setError(result.error);
       setCandidates(result.value);
+      setReviewPage(0);
       setChecked(new Set());
-      setMessage(result.value.length === 0 ? "No flight coordinates fall within this site's boundary or matching radius." : null);
     });
   }
 
@@ -166,11 +178,15 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     run(async () => {
       const result = await assignSiteFlightsAction({ siteId: selected.id, selections });
       if (!result.ok) return setError(result.error);
-      setMessage(`${result.value.updated} flight location${result.value.updated === 1 ? "" : "s"} assigned to ${selected.name}.`);
+      setMessage(`${selected.name} assigned to ${result.value.updated} flight${result.value.updated === 1 ? "" : "s"}.`);
       setChecked(new Set());
+      setReviewPage(0);
+      setFlightListRevision(value => value + 1);
+      setCandidates(null);
       router.refresh();
       const refreshed = await previewSiteFlightsAction(selected.id);
       if (refreshed.ok) setCandidates(refreshed.value);
+      else setError("The site was assigned, but matches could not be refreshed. Try finding matches again.");
     });
   }
 
@@ -209,7 +225,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
             <div className="flex flex-col gap-1">
               {sites.map((site) => <button key={site.id} type="button" disabled={pending} onClick={() => chooseSite(site.id)} className={`rounded-md px-3 py-2 text-left text-sm ${site.id === selected?.id ? "bg-blue-50 text-ink ring-1 ring-brand-blue" : "hover:bg-gray-50"}`}>
                 <span className="block font-semibold">{site.name}</span>
-                <span className="text-xs text-gray-500">{site.kind} · {site.visibility} · {site.ownFlightCount} flight location{site.ownFlightCount === 1 ? "" : "s"}</span>
+                <span className="text-xs text-gray-500">{site.kind} · {site.visibility} · {site.ownFlightCount} flight{site.ownFlightCount === 1 ? "" : "s"}</span>
               </button>)}
             </div>
           )}
@@ -274,25 +290,49 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
             </div>}
           </Card>
 
+          <SiteFlightList key={`${selected.id}:${flightListRevision}`} siteId={selected.id} count={selected.ownFlightCount} revision={flightListRevision} />
+
           <Card className="p-5">
-            <h3 className="font-condensed text-xl font-bold text-ink">Review matching flights</h3>
-            <p className="mt-1 text-sm text-gray-600">Preview uses each flight’s stored coordinates. Select the exact rows to change; names and assignments outside this selection stay untouched.</p>
-            <Button type="button" variant="outline" className="mt-4" onClick={previewFlights} disabled={pending}>Preview matches</Button>
+            <section aria-labelledby="review-flights-heading">
+            <h3 id="review-flights-heading" className="font-condensed text-xl font-bold text-ink">Review matching flights</h3>
+            <p className="mt-1 text-sm text-gray-600">Find other flights using coordinates inside this site’s boundary or matching radius. Flights already linked here appear above.</p>
+            <p className="mt-2 text-xs text-gray-500">A <strong>Linked site</strong> is a site saved in Leaf Log. <strong>Name only</strong> is a label on a flight, with no site linked. Coordinates can be recorded, imported, or entered manually.</p>
+            <Button type="button" variant="outline" className="mt-4" onClick={previewFlights} disabled={pending}>{candidates ? "Refresh matches" : "Find matching flights"}</Button>
+            {candidates?.length === 0 && <p className="mt-4 text-sm text-gray-500">No additional flights match this site’s boundary or radius. Flights with only a name and no coordinates cannot be matched here.</p>}
             {candidates && candidates.length > 0 && <div className="mt-4 flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 text-xs text-gray-500"><span>{assignable.length} available to assign; {candidates.length - assignable.length} already assigned</span><button type="button" className="underline" onClick={() => setChecked(new Set(assignable.map(candidateKey)))}>Select all available</button></div>
-              <div className="max-h-96 overflow-auto rounded-md border border-gray-200">
-                {candidates.map((candidate) => {
-                  const key = candidateKey(candidate);
-                  const alreadyAssigned = candidate.currentSiteId === selected.id;
-                  return <label key={key} className={`flex items-start gap-3 border-b border-gray-100 p-3 text-sm last:border-0 ${alreadyAssigned ? "bg-gray-50 text-gray-500" : "hover:bg-blue-50/40"}`}>
-                    <input type="checkbox" className="mt-1" checked={alreadyAssigned || checked.has(key)} disabled={alreadyAssigned || pending} onChange={(event) => setChecked((current) => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next; })} />
-                    <span className="min-w-0 flex-1"><span className="font-medium text-ink">{candidate.date ?? "Undated flight"} · {candidate.endpoint}</span><span className="block text-xs text-gray-500">{sourceLabel(candidate.source)} · {Math.round(candidate.distanceM)} m from anchor · current: {alreadyAssigned ? selected.name : candidate.currentSiteName || "Unassigned"}</span></span>
-                    <Link href={`/flights/${candidate.id}`} className="text-xs text-brand-blue-strong underline">View</Link>
-                  </label>;
-                })}
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+                <span>{candidateFlights.length} matching flight{candidateFlights.length === 1 ? "" : "s"}</span>
+                <button type="button" className="underline disabled:opacity-50" disabled={pending || new Set([...checked, ...shownKeys]).size > 200} onClick={() => setChecked(current => new Set([...current, ...shownKeys]))}>Select all on this page</button>
               </div>
-              <Button type="button" onClick={assignFlights} disabled={pending || checked.size === 0}>Assign {checked.size || "selected"}</Button>
+              <ul className="max-h-[32rem] overflow-y-auto rounded-md border border-gray-200">
+                {shownFlights.map(matches => <li key={matches[0].id} className="border-b border-gray-200 p-3 text-sm last:border-0">
+                  <SiteFlightSummary flight={matches[0]} />
+                  <div className="mt-2 flex flex-col gap-2">
+                    {matches.map(candidate => {
+                      const key = candidateKey(candidate);
+                      const label = candidate.currentSiteState === "unavailable" ? "Unavailable site" : siteLinkLabel(candidate.currentSiteId, candidate.currentSiteName);
+                      return <label key={key} className="flex cursor-pointer items-start gap-3 rounded-md bg-gray-50 p-2.5 hover:bg-blue-50/40">
+                        <input type="checkbox" className="mt-1" checked={checked.has(key)} disabled={pending || (!checked.has(key) && checked.size >= 200)} onChange={(event) => setChecked(current => { const next = new Set(current); if (event.target.checked) next.add(key); else next.delete(key); return next; })} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{candidate.endpoint === "takeoff" ? "Takeoff" : "Landing"} <span className="font-normal text-gray-500">· {Math.round(candidate.distanceM)} m from site pin</span></span>
+                          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1"><span className={`rounded px-1.5 py-0.5 text-xs font-medium ${candidate.currentSiteState === "linked" ? "bg-blue-100 text-brand-blue-strong" : "bg-gray-200 text-gray-700"}`}>{label}</span><span className="break-words text-xs text-gray-600">{candidate.currentSiteName}</span></span>
+                          {candidate.currentSiteState === "linked" && <span className="mt-1 block text-xs text-gray-500">Currently linked to a different site{candidate.currentSiteName === selected.name ? " with the same name" : ""}. Selecting this replaces that link.</span>}
+                        </span>
+                      </label>;
+                    })}
+                  </div>
+                </li>)}
+              </ul>
+              {candidateFlights.length > 25 && <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
+                <Button type="button" variant="outline" size="sm" disabled={pending || reviewPage === 0} onClick={() => changeReviewPage(reviewPage - 1)}>Previous matches</Button>
+                <span>Page {reviewPage + 1} of {Math.ceil(candidateFlights.length / 25)}</span>
+                <Button type="button" variant="outline" size="sm" disabled={pending || (reviewPage + 1) * 25 >= candidateFlights.length} onClick={() => changeReviewPage(reviewPage + 1)}>Next matches</Button>
+              </div>}
+              <p className="mt-2 text-xs text-gray-600">Assign <strong>{selected.name}</strong> to the selected takeoffs and landings. This replaces their current site links or names. Flight coordinates stay the same.</p>
+              {checked.size >= 200 && <p className="text-xs text-gray-600">You can assign up to 200 takeoffs and landings at a time. Save this selection before choosing more.</p>}
+              <Button type="button" className="whitespace-normal" onClick={assignFlights} disabled={pending || checked.size === 0}>{selectedFlightCount ? `Assign site to ${selectedFlightCount} selected flight${selectedFlightCount === 1 ? "" : "s"}` : "Assign site to selected flights"}</Button>
             </div>}
+            </section>
           </Card>
         </>}
       </div>

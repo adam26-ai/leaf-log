@@ -702,7 +702,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
           — the currently saved boundary
         </p>
       )}
-      {errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
+      {editingMode === "boundary" && errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
       {showCancel && (
         <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving} className="self-start">

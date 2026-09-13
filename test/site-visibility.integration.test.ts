@@ -86,7 +86,7 @@ describe("settings site visibility", () => {
           landingSiteName: visibility === "public" ? site.name : null,
         });
       }
-      expect(await listManagedSites(owner)).toContainEqual(expect.objectContaining({ id: site.id, visibility, ownFlightCount: 2 }));
+      expect(await listManagedSites(owner)).toContainEqual(expect.objectContaining({ id: site.id, visibility, ownFlightCount: 1 }));
     }
     expect(revalidatePath).toHaveBeenCalledWith("/settings/sites");
     expect(revalidatePath).toHaveBeenCalledWith("/logbook");

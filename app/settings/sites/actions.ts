@@ -7,6 +7,8 @@ import {
   createStandaloneSite,
   moveOwnedSiteAnchor,
   previewFlightsForSite,
+  listFlightsAtSite,
+  type SiteFlightPage,
   type SiteFlightCandidate,
 } from "@/lib/sites/manage";
 import { setSiteVisibility, unpublishOwnSite, type SiteEndpoint } from "@/lib/sites/associate";
@@ -92,6 +94,14 @@ export async function previewSiteFlightsAction(siteId: string): Promise<SiteMana
   }
 }
 
+export async function listSiteFlightsAction(siteId: string, page = 1): Promise<SiteManagerResult<SiteFlightPage>> {
+  try {
+    return { ok: true, value: await listFlightsAtSite(await ownerId(), siteId, page) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not load flights." };
+  }
+}
+
 export async function assignSiteFlightsAction(input: {
   siteId: string;
   selections: Array<{ id: string; endpoint: SiteEndpoint }>;
@@ -99,6 +109,7 @@ export async function assignSiteFlightsAction(input: {
   try {
     const updated = await assignFlightsToSite(await ownerId(), input.siteId, input.selections);
     refreshSitePages();
+    revalidatePath("/flights/[id]", "page");
     return { ok: true, value: { updated } };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };

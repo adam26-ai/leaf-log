@@ -8,6 +8,8 @@ import { assignmentPatch } from "./assignment";
 import { boundaryContains, isValidBoundaryShape, locationMatches, radiusForKind, SUGGEST_RADIUS_M } from "./geo";
 import { writeAuditEntry } from "./audit";
 import { DAILY_CREATE_CAP } from "./repo";
+import { flightCalendarDate } from "@/lib/flights/logbook-filters";
+import { formatLocalTime } from "@/lib/flights/format";
 
 export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon" | "updatedAt"> & {
   kind: "takeoff" | "landing" | "both";
@@ -29,10 +31,23 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     select: {
       id: true, name: true, kind: true, visibility: true, lat: true, lon: true,
       updatedAt: true, boundaryMinLat: true,
-      _count: { select: { takeoffFlights: { where: { ownerId } }, landingFlights: { where: { ownerId } } } },
     },
     orderBy: { name: "asc" },
   });
+  const counts = new Map<string, number>();
+  if (rows.length > 0) {
+    const ids = rows.map((row) => row.id);
+    const usage = await prisma.flight.groupBy({
+      by: ["takeoffSiteId", "landingSiteId"],
+      where: { ownerId, OR: [{ takeoffSiteId: { in: ids } }, { landingSiteId: { in: ids } }] },
+      _count: { _all: true },
+    });
+    for (const group of usage) {
+      for (const id of new Set([group.takeoffSiteId, group.landingSiteId])) {
+        if (id) counts.set(id, (counts.get(id) ?? 0) + group._count._all);
+      }
+    }
+  }
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
@@ -42,7 +57,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     lon: row.lon,
     updatedAt: row.updatedAt,
     hasBoundary: row.boundaryMinLat !== null,
-    ownFlightCount: row._count.takeoffFlights + row._count.landingFlights,
+    ownFlightCount: counts.get(row.id) ?? 0,
   }));
 }
 
@@ -117,13 +132,67 @@ export async function moveOwnedSiteAnchor(ownerId: string, siteId: string, lat: 
   });
 }
 
-export interface SiteFlightCandidate {
+export interface SiteFlightDetails {
   id: string;
-  endpoint: SiteEndpoint;
   date: string | null;
+  time: string | null;
   source: string;
+  glider: string | null;
+  durationS: number | null;
+}
+
+const flightDetailsSelect = {
+  id: true, flightDate: true, takeoffAt: true, localUtcOffsetMinutes: true,
+  source: true, glider: true, durationS: true,
+} as const;
+
+function flightDetails(row: {
+  id: string; flightDate: Date | null; takeoffAt: Date | null; localUtcOffsetMinutes: number | null;
+  source: string; glider: string | null; durationS: number | null;
+}): SiteFlightDetails {
+  return {
+    id: row.id, date: flightCalendarDate(row) || null,
+    time: row.takeoffAt ? formatLocalTime(row.takeoffAt, row.localUtcOffsetMinutes) : null,
+    source: row.source, glider: row.glider, durationS: row.durationS,
+  };
+}
+
+export interface SiteFlightPage {
+  flights: Array<SiteFlightDetails & { endpoints: SiteEndpoint[] }>;
+  total: number;
+  page: number;
+  pageCount: number;
+}
+
+export async function listFlightsAtSite(ownerId: string, siteId: string, page = 1): Promise<SiteFlightPage> {
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) throw new Error("Choose a valid page.");
+  const site = await prisma.site.findFirst({ where: { id: siteId, ownerId }, select: { id: true } });
+  if (!site) throw new Error("Site not found or not owned by caller.");
+  // Membership is by site ID, regardless of names, coordinates, or the site's current boundary.
+  const where = { ownerId, OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }] };
+  const total = await prisma.flight.count({ where });
+  const pageCount = Math.max(1, Math.ceil(total / 50));
+  const currentPage = Math.min(page, pageCount);
+  const rows = await prisma.flight.findMany({
+    where,
+    select: { ...flightDetailsSelect, takeoffSiteId: true, landingSiteId: true },
+    orderBy: [{ flightDate: { sort: "desc", nulls: "last" } }, { takeoffAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+    skip: (currentPage - 1) * 50, take: 50,
+  });
+  return {
+    total, page: currentPage, pageCount,
+    flights: rows.map((row) => ({
+      ...flightDetails(row),
+      endpoints: (["takeoff", "landing"] as const).filter((endpoint) => row[`${endpoint}SiteId`] === siteId),
+    })),
+  };
+}
+
+export interface SiteFlightCandidate extends SiteFlightDetails {
+  endpoint: SiteEndpoint;
   currentSiteId: string | null;
   currentSiteName: string | null;
+  currentSiteState: "linked" | "name_only" | "unassigned" | "unavailable";
   assignment: string;
   lat: number;
   lon: number;
@@ -135,13 +204,22 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
   if (!site) throw new Error("Site not found or not owned by caller.");
   const endpoints: SiteEndpoint[] = site.kind === "takeoff" ? ["takeoff"] : site.kind === "landing" ? ["landing"] : ["takeoff", "landing"];
   const rows = await prisma.flight.findMany({
-    where: { ownerId, status: "ready" },
+    where: {
+      ownerId, status: "ready",
+      // A flight already shown in Flights at this site must not also appear for review.
+      AND: [
+        { OR: [{ takeoffSiteId: null }, { takeoffSiteId: { not: siteId } }] },
+        { OR: [{ landingSiteId: null }, { landingSiteId: { not: siteId } }] },
+      ],
+    },
     select: {
-      id: true, flightDate: true, source: true,
+      ...flightDetailsSelect,
       takeoffLat: true, takeoffLon: true, takeoffSiteId: true, takeoffSiteName: true, takeoffSiteAssignment: true,
       landingLat: true, landingLon: true, landingSiteId: true, landingSiteName: true, landingSiteAssignment: true,
+      takeoffSite: { select: { id: true, name: true, visibility: true, ownerId: true } },
+      landingSite: { select: { id: true, name: true, visibility: true, ownerId: true } },
     },
-    orderBy: [{ flightDate: "desc" }, { id: "desc" }],
+    orderBy: [{ flightDate: { sort: "desc", nulls: "last" } }, { takeoffAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
   });
   const candidates: SiteFlightCandidate[] = [];
   for (const row of rows) {
@@ -151,13 +229,15 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
       if (lat === null || lon === null) continue;
       const match = locationMatches(site, lat, lon, radiusForKind(endpoint));
       if (!match.matched) continue;
+      const currentSite = row[`${endpoint}Site`];
+      const visible = currentSite && canSeeSite(normalizeSiteVisibility(currentSite.visibility), currentSite.ownerId, ownerId);
+      const savedName = row[`${endpoint}SiteName`];
       candidates.push({
-        id: row.id,
+        ...flightDetails(row),
         endpoint,
-        date: row.flightDate?.toISOString().slice(0, 10) ?? null,
-        source: row.source,
-        currentSiteId: row[`${endpoint}SiteId`],
-        currentSiteName: row[`${endpoint}SiteName`],
+        currentSiteId: visible ? currentSite.id : null,
+        currentSiteName: currentSite ? (visible ? currentSite.name : null) : savedName,
+        currentSiteState: currentSite ? (visible ? "linked" : "unavailable") : savedName ? "name_only" : "unassigned",
         assignment: row[`${endpoint}SiteAssignment`],
         lat,
         lon,
@@ -165,7 +245,7 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
       });
     }
   }
-  return candidates.slice(0, 200);
+  return candidates;
 }
 
 export async function assignFlightsToSite(ownerId: string, siteId: string, selections: Array<{ id: string; endpoint: SiteEndpoint }>): Promise<number> {
@@ -181,19 +261,20 @@ export async function assignFlightsToSite(ownerId: string, siteId: string, selec
     if (site.kind !== "both" && (endpointKinds.size > 1 || !endpointKinds.has(site.kind as SiteEndpoint))) {
       site = await tx.site.update({ where: { id: site.id }, data: { kind: "both" } });
     }
-    let updated = 0;
+    const updated = new Set<string>();
     for (const endpoint of ["takeoff", "landing"] as const) {
       const ids = unique.filter((item) => item.endpoint === endpoint).map((item) => item.id);
       if (ids.length === 0) continue;
-      const result = await tx.flight.updateMany({
+      const result = await tx.flight.updateManyAndReturn({
         where: { id: { in: ids }, ownerId },
         data: {
           ...locationCachePatch(site, null, endpoint),
           ...assignmentPatch(endpoint, "user_selected"),
         },
+        select: { id: true },
       });
-      updated += result.count;
+      for (const flight of result) updated.add(flight.id);
     }
-    return updated;
+    return updated.size;
   });
 }

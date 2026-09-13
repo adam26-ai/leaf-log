@@ -7,6 +7,7 @@ import type { FlightTrophy } from "@/lib/flights/trophies";
 import { EMPTY_FILTERS, flightCalendarDate, matchesDateRange, readLogbookFilters, siteKey, wingKey, type LogbookFilters } from "@/lib/flights/logbook-filters";
 import { listHighlights } from "@/lib/flights/list-highlights";
 import { formatDuration } from "@/lib/flights/format";
+import { siteLinkLabel } from "@/lib/sites/display";
 import { FlightRow } from "./flight-row";
 import { StatsBar } from "./stats-bar";
 
@@ -47,9 +48,9 @@ function FilterChoices({ label, icon, options = [], selected = null, active = se
 
 export function LogbookList({ flights, trophies, ownerId }: { flights: FlightListItem[]; trophies: Record<string, FlightTrophy[]>; ownerId?: string }) {
   const sites = useMemo(() => {
-    const counts = new Map<string, { name: string; count: number }>();
-    flights.forEach(f => { const key = siteKey(f), entry = counts.get(key) ?? { name: f.takeoffSiteName ?? "Unknown site", count: 0 }; entry.count++; counts.set(key, entry); });
-    return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})` }));
+    const counts = new Map<string, { name: string; kind: string; count: number }>();
+    flights.forEach(f => { const key = siteKey(f), entry = counts.get(key) ?? { name: f.takeoffSiteName ?? "Unknown site", kind: siteLinkLabel(f.takeoffSiteId, f.takeoffSiteName), count: 0 }; entry.count++; counts.set(key, entry); });
+    return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})${key === "unknown" ? "" : ` · ${entry.kind}`}` }));
   }, [flights]);
   const wings = useMemo(() => {
     const counts = new Map<string, number>();
