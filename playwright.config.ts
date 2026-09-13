@@ -49,6 +49,7 @@ export default defineConfig({
     command: "node --import tsx test/e2e/server.ts",
     url: "http://127.0.0.1:3100/api/health",
     reuseExistingServer: false,
-    timeout: 120_000,
+    // Includes the isolated production build, before any test deadlines start.
+    timeout: 300_000,
   },
 });

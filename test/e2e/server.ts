@@ -12,6 +12,11 @@ execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "migrate",
 writeFileSync("test/e2e/.fixture.igc", makeRealisticFlight().igc);
 // Place-search browser tests intercept geocoding requests; no real key is needed.
 process.env.NEXT_PUBLIC_MAPTILER_KEY ||= "e2e-maptiler-key";
-const server = spawn(process.execPath, ["--import", "sharp", "node_modules/next/dist/bin/next", "dev", "--hostname", "0.0.0.0", "--port", "3100"], { stdio: "inherit", env: process.env });
+// Exercise the shipped app. Development compilation and Fast Refresh can
+// interrupt an in-flight Server Action and leave a dialog loading in CI.
+// LEAF_E2E keeps this build separate from the interactive app in .next-e2e.
+const nextCli = "node_modules/next/dist/bin/next";
+execFileSync(process.execPath, [nextCli, "build"], { stdio: "inherit", env: process.env });
+const server = spawn(process.execPath, ["--import", "sharp", nextCli, "start", "--hostname", "0.0.0.0", "--port", "3100"], { stdio: "inherit", env: process.env });
 server.on("exit", code => process.exit(code ?? 1));
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => server.kill(signal));
