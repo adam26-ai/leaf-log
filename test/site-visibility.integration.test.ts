@@ -51,7 +51,7 @@ describe("settings site visibility", () => {
       },
     });
     siteIds.push(site.id);
-    return site;
+    return { ...site, lat: site.lat!, lon: site.lon! };
   }
 
   it("switches both ways, updates both flight labels, and preserves ownership, coordinates, and assignments", async () => {

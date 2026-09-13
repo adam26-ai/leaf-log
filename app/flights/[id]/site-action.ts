@@ -153,8 +153,8 @@ export interface BoundSiteInfo {
   name: string;
   ownedByViewer: boolean;
   visibility: SiteVisibility;
-  lat: number;
-  lon: number;
+  lat: number | null;
+  lon: number | null;
   boundary: Boundary | null;
 }
 

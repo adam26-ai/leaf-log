@@ -73,13 +73,13 @@ describe("site flight management", () => {
     expect(new Set([...first.flights, ...second.flights].map(row => row.id)).size).toBe(53);
   });
 
-  it("requires ownership and a signed-in session for the linked flight list", async () => {
+  it("shows only the caller's flights at public sites and requires sign-in", async () => {
     const a = await site({ visibility: "public" });
     await flight({ takeoffSiteId: a.id });
-    for (const caller of [other, null]) {
-      vi.mocked(getCurrentUserId).mockResolvedValue(caller);
-      expect(await listSiteFlightsAction(a.id)).toMatchObject({ ok: false });
-    }
+    vi.mocked(getCurrentUserId).mockResolvedValue(other);
+    expect(await listSiteFlightsAction(a.id)).toMatchObject({ ok: true, value: { flights: [], total: 0 } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(null);
+    expect(await listSiteFlightsAction(a.id)).toMatchObject({ ok: false });
     await expect(listFlightsAtSite(owner, "missing-site")).rejects.toThrow();
     await expect(listFlightsAtSite(owner, a.id, -1)).rejects.toThrow(/valid page/);
   });

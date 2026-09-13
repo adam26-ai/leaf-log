@@ -7,9 +7,9 @@ import { BASEMAPS, hasMapTiler, styleFor, type BasemapId } from "@/components/fl
 import type { EntrySite } from "@/lib/logbook/options";
 import { EntryMapSearch } from "./entry-map-search";
 
-export function EntryMap({ lat: latitude, lon: longitude, landingLat: landingLatitude = null, landingLon: landingLongitude = null, label = "Flying site", sites = [], onPick, onPickLanding, draggable = false }: {
+export function EntryMap({ lat: latitude, lon: longitude, landingLat: landingLatitude = null, landingLon: landingLongitude = null, label = "Flight takeoff position", pointType = "flight", sites = [], onPick, onPickLanding, draggable = false }: {
   lat: number | null; lon: number | null; landingLat?: number | null; landingLon?: number | null;
-  label?: string; sites?: EntrySite[];
+  label?: string; pointType?: "site" | "flight"; sites?: EntrySite[];
   onPick?: (lat: number, lon: number) => void; onPickLanding?: (lat: number, lon: number) => void;
   draggable?: boolean;
 }) {
@@ -65,8 +65,8 @@ export function EntryMap({ lat: latitude, lon: longitude, landingLat: landingLat
       }
       ref.current.setLngLat([x, y]);
     }
-    updateMarker(marker, lat, lon, "#0099ff", "Flying site pin (blue)", onTakeoffPickRef);
-    updateMarker(landingMarker, landingLat, landingLon, "#ea580c", "Landing pin (orange)", onLandingPickRef);
+    updateMarker(marker, lat, lon, "#0099ff", pointType === "site" ? "Site pin (blue)" : "Takeoff position (blue)", onTakeoffPickRef);
+    updateMarker(landingMarker, landingLat, landingLon, "#ea580c", "Landing position (orange)", onLandingPickRef);
     if (lat != null && lon != null && landingLat != null && landingLon != null) {
       // Fit the shorter span when a flight crosses the antimeridian.
       const endLon = landingLon + 360 * Math.round((lon - landingLon) / 360);
@@ -75,11 +75,11 @@ export function EntryMap({ lat: latitude, lon: longitude, landingLat: landingLat
       const point: [number, number] | null = lat != null && lon != null ? [lon, lat] : landingLat != null && landingLon != null ? [landingLon, landingLat] : null;
       if (point) instance.easeTo({ center: point, zoom: Math.max(instance.getZoom(), 11), duration: 350 });
     }
-  }, [lat, lon, landingLat, landingLon, draggable]);
+  }, [lat, lon, landingLat, landingLon, draggable, pointType]);
   return <div className="overflow-hidden rounded-xl border border-gray-200">
     {onPick && onPickLanding && <div role="group" aria-label="Location to place" className="flex flex-wrap gap-2 border-b border-gray-200 p-3">
       <button type="button" aria-pressed={placement === "takeoff"} onClick={() => setPlacement("takeoff")} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${placement === "takeoff" ? "border-brand-blue bg-blue-50 text-ink" : "border-gray-200 text-gray-600"}`}>
-        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-brand-blue" />Flying site
+        <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-brand-blue" />Takeoff
       </button>
       <button type="button" aria-pressed={placement === "landing"} onClick={() => setPlacement("landing")} className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${placement === "landing" ? "border-orange-600 bg-orange-50 text-ink" : "border-gray-200 text-gray-600"}`}>
         <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-orange-600" />Landing
@@ -93,12 +93,12 @@ export function EntryMap({ lat: latitude, lon: longitude, landingLat: landingLat
       instance.getCanvas().focus();
     }} />}
     <div className="flex items-center justify-between gap-3 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-      <span>{onPick ? `${draggable ? "Drag the pin or click the map" : "Click the map"} to set the ${placement === "landing" ? "landing location" : "flying site"}` : `${label} · approximate site location`}</span>
+      <span>{onPick ? `${draggable ? "Drag the pin or click the map" : "Click the map"} to set the ${placement === "landing" ? "landing position" : "takeoff position"}` : label}</span>
       <select aria-label="Site map style" value={basemap} onChange={event => { const next = event.target.value as BasemapId; setBasemap(next); map.current?.setStyle(styleFor(next)); }} className="rounded border border-gray-300 bg-white p-1">
         {BASEMAPS.filter(item => !item.needsKey || hasMapTiler()).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select>
     </div>
-    <div ref={container} aria-label="Flight site map" className="h-80 w-full bg-gray-100 sm:h-96" />
+    <div ref={container} aria-label={pointType === "site" ? "Site map" : "Flight position map"} className="h-80 w-full bg-gray-100 sm:h-96" />
     {error && <p role="status" className="p-3 text-sm text-gray-600">The map is unavailable on this device. You can still enter coordinates in the fields.</p>}
   </div>;
 }

@@ -110,6 +110,7 @@ const LIST_SELECT = {
   takeoffSiteName: true,
   takeoffSiteId: true,
   takeoffSiteAssignment: true,
+  takeoffLat: true, takeoffLon: true, landingLat: true, landingLon: true,
   takeoffZoneName: true,
   takeoffZoneId: true,
   landingSiteName: true,
@@ -132,8 +133,8 @@ const LIST_SELECT = {
   restrictedLandingField: true,
 } as const;
 
-type AnalysisFields = "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM" | "recordingKind" | "reportedXcDistanceM" | "reportedXcType";
-export type FlightListItem = Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
+type AnalysisFields = "takeoffLat" | "takeoffLon" | "landingLat" | "landingLon" | "xcError" | "xcQueuedAt" | "metricsVersion" | "launchAltM" | "recordingKind" | "reportedXcDistanceM" | "reportedXcType";
+export type FlightListItem = Partial<SiteLocationView> & Pick<Flight, Exclude<keyof typeof LIST_SELECT, AnalysisFields>> & Partial<Pick<Flight, AnalysisFields>>;
 
 const FEED_SELECT = {
   ...LIST_SELECT,
@@ -231,7 +232,10 @@ function feedCursorWhere(cursor: FeedCursor | null): Prisma.FlightWhereInput {
   };
 }
 
+export type SiteLocationView = { takeoffSiteMapped: boolean; landingSiteMapped: boolean; takeoffHasGps: boolean; landingHasGps: boolean; takeoffSiteLat: number | null; takeoffSiteLon: number | null; landingSiteLat: number | null; landingSiteLon: number | null };
+
 interface LocationFieldRow {
+  takeoffLat?: number | null; takeoffLon?: number | null; landingLat?: number | null; landingLon?: number | null;
   recordingKind?: string;
   takeoffSiteId: string | null;
   takeoffSiteName: string | null;
@@ -244,6 +248,7 @@ interface LocationFieldRow {
 }
 
 interface VisibleSiteRow {
+  lat: number | null; lon: number | null;
   id: string;
   name: string;
   visibility: string;
@@ -328,7 +333,7 @@ function resolveEndpoint(
 async function resolveLocationFields<T extends LocationFieldRow>(
   rows: T[],
   viewerId: string | null,
-): Promise<T[]> {
+): Promise<Array<T & SiteLocationView>> {
   const zoneIds = new Set<string>();
   const siteIds = new Set<string>();
   for (const row of rows) {
@@ -337,7 +342,7 @@ async function resolveLocationFields<T extends LocationFieldRow>(
     if (row.takeoffZoneId) zoneIds.add(row.takeoffZoneId);
     if (row.landingZoneId) zoneIds.add(row.landingZoneId);
   }
-  if (siteIds.size === 0 && zoneIds.size === 0) return rows;
+
 
   const zoneRows =
     zoneIds.size === 0
@@ -357,7 +362,7 @@ async function resolveLocationFields<T extends LocationFieldRow>(
       ? []
       : await prisma.site.findMany({
           where: { id: { in: Array.from(siteIds) } },
-          select: { id: true, name: true, visibility: true, ownerId: true },
+          select: { id: true, name: true, visibility: true, ownerId: true, lat: true, lon: true },
         });
 
   const sites = new Map(siteRows.map((s) => [s.id, s]));
@@ -382,6 +387,14 @@ async function resolveLocationFields<T extends LocationFieldRow>(
     );
     return {
       ...row,
+      takeoffSiteMapped: Boolean(takeoff.siteId && sites.get(takeoff.siteId)?.lat != null),
+      landingSiteMapped: Boolean(landing.siteId && sites.get(landing.siteId)?.lat != null),
+      takeoffHasGps: row.takeoffLat != null && row.takeoffLon != null && !(row.recordingKind === "logbook" && row.takeoffSiteId && !takeoff.siteId),
+      landingHasGps: row.landingLat != null && row.landingLon != null && !(row.recordingKind === "logbook" && row.landingSiteId && !landing.siteId),
+      takeoffSiteLat: takeoff.siteId ? sites.get(takeoff.siteId)?.lat ?? null : null,
+      takeoffSiteLon: takeoff.siteId ? sites.get(takeoff.siteId)?.lon ?? null : null,
+      landingSiteLat: landing.siteId ? sites.get(landing.siteId)?.lat ?? null : null,
+      landingSiteLon: landing.siteId ? sites.get(landing.siteId)?.lon ?? null : null,
       ...(row.recordingKind === "logbook" && row.takeoffSiteId && !takeoff.siteId ? { takeoffLat: null, takeoffLon: null } : {}),
       ...(row.recordingKind === "logbook" && row.landingSiteId && !landing.siteId ? { landingLat: null, landingLon: null } : {}),
       takeoffSiteId: takeoff.siteId,
@@ -415,7 +428,7 @@ export async function areFriends(aId: string, bId: string): Promise<boolean> {
 export async function getFlightForViewer(
   flightId: string,
   viewerId: string | null,
-): Promise<Flight | null> {
+): Promise<(Flight & SiteLocationView) | null> {
   const flight = await prisma.flight.findUnique({ where: { id: flightId } });
   if (!flight) return null;
 
@@ -452,7 +465,7 @@ export async function getFlightForViewer(
   }
 
   const [resolved] = await resolveLocationFields([flight], viewerId);
-  return resolved;
+  return isOwner ? resolved : { ...resolved, takeoffLocationEvidence: null, landingLocationEvidence: null };
 }
 
 export async function visibleVisibilitiesFor(

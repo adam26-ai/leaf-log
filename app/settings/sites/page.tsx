@@ -15,8 +15,7 @@ export default async function SitesPage() {
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Sites</SectionHeading>
         <p className="mb-8 mt-3 max-w-3xl text-gray-600">
-          Create and map sites independently of an IGC track. A site boundary only finds possible flights;
-          changing it never changes your logbook until you review and confirm the flights below.
+          Manage sites with the same name, pin, boundary, and visibility tools everywhere. Site edits appear on flights that use the site; recorded flight positions stay unchanged.
         </p>
         <SiteManager sites={sites.map((site) => ({ ...site, updatedAt: site.updatedAt.toISOString() }))} />
       </main>

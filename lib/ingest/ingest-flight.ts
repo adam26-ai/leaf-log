@@ -140,6 +140,7 @@ export async function ingestFlight(input: IngestInput): Promise<IngestResult> {
         recorder: parsed.headers.recorder,
         takeoffAt: metrics ? new Date(metrics.takeoffAtMs) : null,
         landingAt: metrics ? new Date(metrics.landingAtMs) : null,
+        takeoffLocationSource: "flight_gps", landingLocationSource: "flight_gps",
         takeoffSiteAssignment: takeoffDecision?.ambiguous ? "needs_review" : takeoffPatch.takeoffSiteId ? "auto_matched" : "unassigned",
         landingSiteAssignment: landingDecision?.ambiguous ? "needs_review" : landingPatch.landingSiteId ? "auto_matched" : "unassigned",
         durationS: metrics?.durationS ?? null,

@@ -24,6 +24,9 @@ export function formatLocationLabel(
 }
 
 /** A saved flight label does not imply a link to a mapped Site record. */
-export function siteLinkLabel(siteId: string | null, siteName: string | null): string {
-  return siteId ? "Linked site" : siteName ? "Name only" : "No site";
+export function siteLinkLabel(siteId: string | null, siteName: string | null, mapped = Boolean(siteId), hasGps = false, needsReview = false): string {
+  if (needsReview) return "Location needs review";
+  if (siteId && mapped) return "Mapped";
+  if (hasGps) return siteName ? "Location needs review" : "GPS available";
+  return siteName ? "Name only" : "Site not recorded";
 }

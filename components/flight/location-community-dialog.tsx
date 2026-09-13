@@ -29,6 +29,7 @@ import type { SiteEndpoint } from "@/lib/sites/associate";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { Button } from "@/components/ui/button";
 import { SiteDialog } from "./site-dialog";
+import { PersistedSiteEditor } from "./persisted-site-editor";
 import { SiteAreaMap } from "./site-area-map";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
 
@@ -86,6 +87,7 @@ export function LocationCommunityDialog({
   onRenamed?: (newName: string) => void;
 }) {
   const [displayName, setDisplayName] = useState(name);
+  const [editingSite, setEditingSite] = useState(false);
   const [info, setInfo] = useState<LocationCommunityInfo | null | undefined>(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -144,6 +146,8 @@ export function LocationCommunityDialog({
     setBoundaryState(state);
     setEditingBoundary(true);
   }
+
+  if (editingSite) return <SiteDialog onClose={() => setEditingSite(false)}><PersistedSiteEditor context={{ siteId: id }} onCancel={() => setEditingSite(false)} onSaved={site => { setDisplayName(site.name); onRenamed?.(site.name); setEditingSite(false); getBoundaryForPublicRow(level, id).then(setBoundaryState); getCommunityInfoForRow(level, id).then(setInfo); }} /></SiteDialog>;
 
   if (editingBoundary && boundaryState) {
     return (
@@ -210,7 +214,7 @@ export function LocationCommunityDialog({
             )}
 
             <div className="flex flex-col gap-2">
-              {editingName ? (
+              {level === "site" ? <Button type="button" variant="outline" size="sm" onClick={() => setEditingSite(true)}>Edit site</Button> : editingName ? (
                 <div className="flex flex-col gap-2">
                   <input
                     type="text"
@@ -240,7 +244,7 @@ export function LocationCommunityDialog({
                 </div>
               )}
               <p className="text-xs text-gray-500">
-                This is a public {level} — any signed-in pilot can fix its name or shape.
+                This is a public {level} — signed-in pilots can edit its details.
               </p>
             </div>
 

@@ -48,14 +48,14 @@ export function SiteFlightList({ siteId, count, revision }: { siteId: string; co
         </button>
       </h3>
       {open && <div id={panelId} className="border-t border-gray-200 p-5">
-        <p className="mb-4 text-sm text-gray-600">Your flights linked to this site in Leaf Log. Each flight appears once, even when both takeoff and landing are here.</p>
+        <p className="mb-4 text-sm text-gray-600">Your flights that use this site. Each flight appears once, even when both takeoff and landing are here.</p>
         {!result && <p className="text-sm text-gray-500" role="status">Loading flights…</p>}
         {result && !result.ok && <div className="text-sm"><p role="alert">{result.error}</p><Button type="button" variant="outline" className="mt-2" onClick={() => setRetry(value => value + 1)}>Retry</Button></div>}
         {result?.ok && <>
-          {result.value.total === 0 ? <p className="text-sm text-gray-500">No flights are linked yet. Review matching flights below to find flights you can assign to this site.</p> : <ul className="max-h-96 overflow-y-auto rounded-md border border-gray-200">
+          {result.value.total === 0 ? <p className="text-sm text-gray-500">No flights use this site yet. Review matching flights below to find flights you can assign to this site.</p> : <ul className="max-h-96 overflow-y-auto rounded-md border border-gray-200">
             {result.value.flights.map(flight => <li key={flight.id} className="border-b border-gray-100 p-3 text-sm last:border-0">
               <SiteFlightSummary flight={flight} />
-              <p className="mt-2 text-xs font-medium text-brand-blue-strong">{flight.endpoints.length === 2 ? "Takeoff and landing" : flight.endpoints[0] === "takeoff" ? "Takeoff" : "Landing"} · Linked site</p>
+              <p className="mt-2 text-xs font-medium text-brand-blue-strong">{flight.endpoints.length === 2 ? "Takeoff and landing" : flight.endpoints[0] === "takeoff" ? "Takeoff" : "Landing"} · Uses this site</p>
             </li>)}
           </ul>}
           {result.value.pageCount > 1 && <div className="mt-3 flex items-center justify-between gap-2 text-xs text-gray-500">

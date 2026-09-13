@@ -153,7 +153,7 @@ export default async function FlightPage({
             <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
-            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} lat={flight.takeoffLat} lon={flight.takeoffLon} siteName={flight.takeoffSiteName} notes={flight.notes} owner={isOwner} /></div>
+            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} locationSource={flight.takeoffLocationSource} lat={flight.takeoffLat} lon={flight.takeoffLon} siteLat={flight.takeoffSiteLat} siteLon={flight.takeoffSiteLon} siteName={flight.takeoffSiteName} notes={flight.notes} owner={isOwner} /></div>
           </> : (
           <FlightViz
             viewerId={viewerId}

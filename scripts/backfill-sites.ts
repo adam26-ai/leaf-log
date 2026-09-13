@@ -47,8 +47,8 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
     select: {
       id: true,
       ownerId: true,
-      takeoffSiteId: true,
-      landingSiteId: true,
+      takeoffSiteId: true, takeoffSiteAssignment: true,
+      landingSiteId: true, landingSiteAssignment: true,
       takeoffLat: true,
       takeoffLon: true,
       landingLat: true,
@@ -70,7 +70,7 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
     // portion only. Zone-aware backfill has no urgency (production has no
     // Zone rows yet) and can follow whenever it's actually needed.
     const [takeoffMatch, landingMatch] = await Promise.all([
-      f.takeoffSiteId === null && f.takeoffLat != null && f.takeoffLon != null
+      f.takeoffSiteId === null && f.takeoffSiteAssignment === "unassigned" && f.takeoffLat != null && f.takeoffLon != null
         ? findLocation(prisma, {
             lat: f.takeoffLat,
             lon: f.takeoffLon,
@@ -78,7 +78,7 @@ export async function runBackfill(options: BackfillOptions = {}): Promise<number
             viewerId: f.ownerId,
           })
         : null,
-      f.landingSiteId === null && f.landingLat != null && f.landingLon != null
+      f.landingSiteId === null && f.landingSiteAssignment === "unassigned" && f.landingLat != null && f.landingLon != null
         ? findLocation(prisma, {
             lat: f.landingLat,
             lon: f.landingLon,

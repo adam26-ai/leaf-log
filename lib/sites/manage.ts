@@ -1,3 +1,4 @@
+import { hasSitePoint } from "./model";
 import type { Site } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { haversineM } from "@/lib/geo/distance";
@@ -7,7 +8,7 @@ import { locationCachePatch, type SiteEndpoint } from "./associate";
 import { assignmentPatch } from "./assignment";
 import { boundaryContains, isValidBoundaryShape, locationMatches, radiusForKind, SUGGEST_RADIUS_M } from "./geo";
 import { writeAuditEntry } from "./audit";
-import { DAILY_CREATE_CAP } from "./repo";
+import { DAILY_CREATE_CAP, siteVisibleWhere } from "./repo";
 import { flightCalendarDate } from "@/lib/flights/logbook-filters";
 import { formatLocalTime } from "@/lib/flights/format";
 
@@ -15,6 +16,7 @@ export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon
   kind: "takeoff" | "landing" | "both";
   hasBoundary: boolean;
   ownFlightCount: number;
+  hasLocationEvidence?: boolean;
 };
 
 function validCoordinate(lat: number, lon: number): boolean {
@@ -27,10 +29,11 @@ function validKind(kind: string): kind is "takeoff" | "landing" | "both" {
 
 export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> {
   const rows = await prisma.site.findMany({
-    where: { ownerId },
+    where: { OR: [{ ownerId }, { visibility: "public", OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] }] },
     select: {
       id: true, name: true, kind: true, visibility: true, lat: true, lon: true,
       updatedAt: true, boundaryMinLat: true,
+      _count: { select: { takeoffFlights: { where: { ownerId, OR: [{ takeoffLat: { not: null } }, { takeoffLon: { not: null } }] } }, landingFlights: { where: { ownerId, OR: [{ landingLat: { not: null } }, { landingLon: { not: null } }] } } } },
     },
     orderBy: { name: "asc" },
   });
@@ -57,6 +60,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     lon: row.lon,
     updatedAt: row.updatedAt,
     hasBoundary: row.boundaryMinLat !== null,
+    hasLocationEvidence: row._count.takeoffFlights > 0 || row._count.landingFlights > 0,
     ownFlightCount: counts.get(row.id) ?? 0,
   }));
 }
@@ -91,7 +95,7 @@ export async function createStandaloneSite(ownerId: string, input: {
       }),
     ]);
     if (siteCreates + zoneCreates >= DAILY_CREATE_CAP) throw new Error("Daily create limit reached. Try again tomorrow.");
-    const conflict = sameName.find((site) => haversineM(lat, lon, site.lat, site.lon) <= SUGGEST_RADIUS_M);
+    const conflict = sameName.find((site) => hasSitePoint(site) && haversineM(lat, lon, site.lat, site.lon) <= SUGGEST_RADIUS_M);
     if (conflict) throw new Error(`“${conflict.name}” already exists nearby. Select that site instead.`);
 
     const site = await tx.site.create({
@@ -166,7 +170,7 @@ export interface SiteFlightPage {
 
 export async function listFlightsAtSite(ownerId: string, siteId: string, page = 1): Promise<SiteFlightPage> {
   if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) throw new Error("Choose a valid page.");
-  const site = await prisma.site.findFirst({ where: { id: siteId, ownerId }, select: { id: true } });
+  const site = await prisma.site.findFirst({ where: { id: siteId, ...siteVisibleWhere(ownerId) }, select: { id: true } });
   if (!site) throw new Error("Site not found or not owned by caller.");
   // Membership is by site ID, regardless of names, coordinates, or the site's current boundary.
   const where = { ownerId, OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }] };
@@ -192,6 +196,7 @@ export interface SiteFlightCandidate extends SiteFlightDetails {
   endpoint: SiteEndpoint;
   currentSiteId: string | null;
   currentSiteName: string | null;
+  currentSiteMapped?: boolean;
   currentSiteState: "linked" | "name_only" | "unassigned" | "unavailable";
   assignment: string;
   lat: number;
@@ -200,7 +205,7 @@ export interface SiteFlightCandidate extends SiteFlightDetails {
 }
 
 export async function previewFlightsForSite(ownerId: string, siteId: string): Promise<SiteFlightCandidate[]> {
-  const site = await prisma.site.findFirst({ where: { id: siteId, ownerId } });
+  const site = await prisma.site.findFirst({ where: { id: siteId, ...siteVisibleWhere(ownerId) } });
   if (!site) throw new Error("Site not found or not owned by caller.");
   const endpoints: SiteEndpoint[] = site.kind === "takeoff" ? ["takeoff"] : site.kind === "landing" ? ["landing"] : ["takeoff", "landing"];
   const rows = await prisma.flight.findMany({
@@ -216,8 +221,8 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
       ...flightDetailsSelect,
       takeoffLat: true, takeoffLon: true, takeoffSiteId: true, takeoffSiteName: true, takeoffSiteAssignment: true,
       landingLat: true, landingLon: true, landingSiteId: true, landingSiteName: true, landingSiteAssignment: true,
-      takeoffSite: { select: { id: true, name: true, visibility: true, ownerId: true } },
-      landingSite: { select: { id: true, name: true, visibility: true, ownerId: true } },
+      takeoffSite: { select: { id: true, name: true, visibility: true, ownerId: true, lat: true, lon: true } },
+      landingSite: { select: { id: true, name: true, visibility: true, ownerId: true, lat: true, lon: true } },
     },
     orderBy: [{ flightDate: { sort: "desc", nulls: "last" } }, { takeoffAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
   });
@@ -237,6 +242,7 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
         endpoint,
         currentSiteId: visible ? currentSite.id : null,
         currentSiteName: currentSite ? (visible ? currentSite.name : null) : savedName,
+        currentSiteMapped: Boolean(currentSite && visible && hasSitePoint(currentSite)),
         currentSiteState: currentSite ? (visible ? "linked" : "unavailable") : savedName ? "name_only" : "unassigned",
         assignment: row[`${endpoint}SiteAssignment`],
         lat,
@@ -255,7 +261,7 @@ export async function assignFlightsToSite(ownerId: string, siteId: string, selec
   const unique = [...new Map(selections.map((item) => [`${item.id}:${item.endpoint}`, item])).values()];
   if (unique.length === 0 || unique.length > 200) throw new Error("Choose between 1 and 200 flight locations.");
   return prisma.$transaction(async (tx) => {
-    let site = await tx.site.findFirst({ where: { id: siteId, ownerId } });
+    let site = await tx.site.findFirst({ where: { id: siteId, ...siteVisibleWhere(ownerId) } });
     if (!site || !canSeeSite(normalizeSiteVisibility(site.visibility), site.ownerId, ownerId)) throw new Error("Site is not available.");
     const endpointKinds = new Set(unique.map((item) => item.endpoint));
     if (site.kind !== "both" && (endpointKinds.size > 1 || !endpointKinds.has(site.kind as SiteEndpoint))) {

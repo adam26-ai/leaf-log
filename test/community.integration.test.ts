@@ -69,7 +69,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
       },
     });
     siteIds.push(site.id);
-    return site;
+    return { ...site, lat: site.lat!, lon: site.lon! };
   }
 
   async function createZone(opts: { siteId: string; lat: number; lon: number; visibility: "private" | "public"; ownerId: string }) {
@@ -114,7 +114,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
   describe("writeAuditEntry", () => {
     it("writes exactly one entry for a public target", async () => {
       const owner = await createPilot("aud");
-      const site = await createSite({ lat: -150.1, lon: -150.1, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -50.1, lon: -150.1, visibility: "public", ownerId: owner });
       await audit.writeAuditEntry(prisma, { siteId: site.id }, owner, "create", "public", { name: site.name });
       const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id } });
       expect(rows).toHaveLength(1);
@@ -124,7 +124,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("is a no-op for a private target — nothing to leak later", async () => {
       const owner = await createPilot("audpriv");
-      const site = await createSite({ lat: -150.2, lon: -150.2, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -50.2, lon: -150.2, visibility: "private", ownerId: owner });
       await audit.writeAuditEntry(prisma, { siteId: site.id }, owner, "create", "private", { name: site.name });
       await audit.writeAuditEntry(prisma, { siteId: site.id }, owner, "renamed", "private", { from: "a", to: "b" });
       const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id } });
@@ -133,7 +133,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("a publish writes a `published` entry with no reference to a prior name", async () => {
       const owner = await createPilot("audpub");
-      const site = await createSite({ lat: -150.3, lon: -150.3, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -50.3, lon: -150.3, visibility: "public", ownerId: owner });
       await audit.writeAuditEntry(prisma, { siteId: site.id }, owner, "published", "public", {});
       const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id } });
       expect(rows).toHaveLength(1);
@@ -152,8 +152,8 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("refuses a row with BOTH siteId and zoneId", async () => {
       const owner = await createPilot("chk2");
-      const site = await createSite({ lat: -150.4, lon: -150.4, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -150.4, lon: -150.4, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -50.4, lon: -150.4, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -50.4, lon: -150.4, visibility: "public", ownerId: owner });
       await expect(
         prisma.locationAuditEntry.create({
           data: { siteId: site.id, zoneId: zone.id, actorId: owner, action: "create" },
@@ -163,7 +163,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("refuses an action outside the enum", async () => {
       const owner = await createPilot("chk3");
-      const site = await createSite({ lat: -150.5, lon: -150.5, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -50.5, lon: -150.5, visibility: "public", ownerId: owner });
       await expect(
         prisma.locationAuditEntry.create({
           data: { siteId: site.id, actorId: owner, action: "deleted_everything" },
@@ -177,7 +177,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
       const creator = await createPilot("c1");
       const editor = await createPilot("c2");
       const bystander = await createPilot("c3");
-      const site = await createSite({ lat: -151.0, lon: -151.0, visibility: "public", ownerId: creator });
+      const site = await createSite({ lat: -51, lon: -151.0, visibility: "public", ownerId: creator });
 
       await audit.writeAuditEntry(prisma, { siteId: site.id }, creator, "create", "public", { name: site.name });
       await new Promise((r) => setTimeout(r, 5));
@@ -191,8 +191,8 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("a zone roster is independent of its parent site's", async () => {
       const owner = await createPilot("c4");
-      const site = await createSite({ lat: -151.1, lon: -151.1, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -151.1, lon: -151.1, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -51.1, lon: -151.1, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -51.1, lon: -151.1, visibility: "public", ownerId: owner });
       await audit.writeAuditEntry(prisma, { zoneId: zone.id }, owner, "create", "public", { name: zone.name });
 
       expect(await contributors.contributorsForZone(zone.id)).toHaveLength(1);
@@ -204,7 +204,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("toggles on then off, mirroring toggleKudo's mechanic", async () => {
       const owner = await createPilot("e1");
       const voter = await createPilot("e2");
-      const site = await createSite({ lat: -152.0, lon: -152.0, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -52, lon: -152.0, visibility: "public", ownerId: owner });
 
       const on = await endorsements.toggleSiteEndorsement(site.id, voter);
       expect(on).toEqual({ endorsed: true });
@@ -219,7 +219,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("self-endorsement is allowed — decision 2", async () => {
       const owner = await createPilot("e3");
-      const site = await createSite({ lat: -152.1, lon: -152.1, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -52.1, lon: -152.1, visibility: "public", ownerId: owner });
       const result = await endorsements.toggleSiteEndorsement(site.id, owner);
       expect(result).toEqual({ endorsed: true });
     });
@@ -227,15 +227,15 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("refuses to endorse a private site", async () => {
       const owner = await createPilot("e4");
       const voter = await createPilot("e5");
-      const site = await createSite({ lat: -152.2, lon: -152.2, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -52.2, lon: -152.2, visibility: "private", ownerId: owner });
       await expect(endorsements.toggleSiteEndorsement(site.id, voter)).rejects.toThrow();
     });
 
     it("refuses to endorse a public zone under a PRIVATE site — the effective-visibility conjunction", async () => {
       const owner = await createPilot("e6");
       const voter = await createPilot("e7");
-      const site = await createSite({ lat: -152.3, lon: -152.3, visibility: "private", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -152.3, lon: -152.3, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -52.3, lon: -152.3, visibility: "private", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -52.3, lon: -152.3, visibility: "public", ownerId: owner });
       await expect(endorsements.toggleZoneEndorsement(zone.id, voter)).rejects.toThrow();
       const summary = await endorsements.zoneEndorsementSummary(zone.id, voter);
       expect(summary).toBeNull();
@@ -245,8 +245,8 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
       const owner = await createPilot("e8");
       const voterA = await createPilot("e9");
       const voterB = await createPilot("e10");
-      const siteA = await createSite({ lat: -152.4, lon: -152.4, visibility: "public", ownerId: owner });
-      const siteB = await createSite({ lat: -152.5, lon: -152.5, visibility: "public", ownerId: owner });
+      const siteA = await createSite({ lat: -52.4, lon: -152.4, visibility: "public", ownerId: owner });
+      const siteB = await createSite({ lat: -52.5, lon: -152.5, visibility: "public", ownerId: owner });
       await endorsements.toggleSiteEndorsement(siteA.id, voterA);
       await endorsements.toggleSiteEndorsement(siteA.id, voterB);
       await endorsements.toggleSiteEndorsement(siteB.id, voterA);
@@ -259,7 +259,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("cascades away when the site is deleted", async () => {
       const owner = await createPilot("e11");
       const voter = await createPilot("e12");
-      const site = await createSite({ lat: -152.6, lon: -152.6, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -52.6, lon: -152.6, visibility: "public", ownerId: owner });
       await endorsements.toggleSiteEndorsement(site.id, voter);
       await prisma.site.delete({ where: { id: site.id } });
       siteIds.splice(siteIds.indexOf(site.id), 1); // already gone
@@ -272,7 +272,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("SetNulls the audit actor but the entry survives; the contributor roster drops them", async () => {
       const owner = await createPilot("d1");
       const editor = await createPilot("d2");
-      const site = await createSite({ lat: -153.0, lon: -153.0, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -53, lon: -153.0, visibility: "public", ownerId: owner });
       await audit.writeAuditEntry(prisma, { siteId: site.id }, editor, "renamed", "public", { from: "a", to: "b" });
 
       await prisma.user.delete({ where: { id: editor } });
@@ -290,7 +290,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
   describe("PR2: community edit-control", () => {
     it("requires the caller to be ONBOARDED (a real Profile), not merely a User row", async () => {
       const owner = await createPilot("onb1");
-      const site = await createSite({ lat: -154.0, lon: -154.0, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -54, lon: -154.0, visibility: "public", ownerId: owner });
 
       const bareUser = await prisma.user.create({ data: { email: `bare${suffix}@test.local` } });
       ids.push(bareUser.id);
@@ -303,7 +303,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("a non-owner's real community edit blocks the creator's own delete/unpublish — hasCommunityFootprint", async () => {
       const owner = await createPilot("fp1");
       const editor = await createPilot("fp2");
-      const site = await createSite({ lat: -154.1, lon: -154.1, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -54.1, lon: -154.1, visibility: "public", ownerId: owner });
 
       await associate.renameSite(site.id, editor, "Edited by someone else", "edited by someone else");
 
@@ -314,7 +314,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
     it("an endorsement with NO edit behind it does NOT block the creator's delete — decision 3", async () => {
       const owner = await createPilot("fp3");
       const voter = await createPilot("fp4");
-      const site = await createSite({ lat: -154.2, lon: -154.2, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -54.2, lon: -154.2, visibility: "public", ownerId: owner });
 
       await endorsements.toggleSiteEndorsement(site.id, voter);
       await expect(associate.deleteSite(site.id, owner)).resolves.not.toThrow();
@@ -322,7 +322,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("the creator can still delete/demote a public row nobody else has touched", async () => {
       const owner = await createPilot("fp5");
-      const site = await createSite({ lat: -154.3, lon: -154.3, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -54.3, lon: -154.3, visibility: "public", ownerId: owner });
       await expect(associate.unpublishOwnSite(site.id, owner)).resolves.not.toThrow();
     });
 
@@ -370,7 +370,7 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
 
     it("publishing a private site writes exactly one `published` audit entry with no reference to the prior name", async () => {
       const owner = await createPilot("pub1");
-      const site = await createSite({ lat: -154.4, lon: -154.4, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -54.4, lon: -154.4, visibility: "private", ownerId: owner });
       await associate.setSiteVisibility(site.id, owner, "public");
 
       const rows = await prisma.locationAuditEntry.findMany({ where: { siteId: site.id } });
@@ -384,18 +384,18 @@ describe("SPRINT-007: audit log, contributors, endorsements", () => {
       const siteOwner = await createPilot("zc1");
       const zoneOwner = await createPilot("zc2");
       const stranger = await createPilot("zc3");
-      const publicSite = await createSite({ lat: -154.5, lon: -154.5, visibility: "public", ownerId: siteOwner });
-      const publicZone = await createZone({ siteId: publicSite.id, lat: -154.5, lon: -154.5, visibility: "public", ownerId: zoneOwner });
+      const publicSite = await createSite({ lat: -54.5, lon: -154.5, visibility: "public", ownerId: siteOwner });
+      const publicZone = await createZone({ siteId: publicSite.id, lat: -54.5, lon: -154.5, visibility: "public", ownerId: zoneOwner });
 
       const renamed = await associate.renameZone(publicZone.id, stranger, "Stranger's rename", "strangers rename");
       expect(renamed.name).toBe("Stranger's rename");
       const roster = await contributors.contributorsForZone(publicZone.id);
       expect(roster.map((r) => r.profileId)).toContain(stranger);
 
-      const privateSite = await createSite({ lat: -154.6, lon: -154.6, visibility: "private", ownerId: siteOwner });
+      const privateSite = await createSite({ lat: -54.6, lon: -154.6, visibility: "private", ownerId: siteOwner });
       const zoneUnderPrivateSite = await createZone({
         siteId: privateSite.id,
-        lat: -154.6,
+        lat: -54.6,
         lon: -154.6,
         visibility: "public",
         ownerId: zoneOwner,

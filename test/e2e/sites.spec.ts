@@ -84,45 +84,29 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   // A site can be created independently, without borrowing an IGC.
   await page.goto("/settings/sites");
   await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
-  const createSiteToggle = page.getByRole("button", { name: "Create a site", exact: true });
-  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator('input[name="name"]')).toBeHidden();
-  await createSiteToggle.click();
-  await expect(createSiteToggle).toHaveAttribute("aria-expanded", "true");
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
-  await page.locator('input[name="name"]').fill(standaloneName);
-  await page.getByLabel("Flight site map").locator("canvas").click({ position: { x: 160, y: 160 } });
-  await page.getByRole("button", { name: "Create site", exact: true }).click();
-  await expect(page.getByRole("heading", { name: standaloneName })).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByText(/Site created/)).toBeVisible();
-
-  // Change an owned site's visibility in settings, including after a reload.
-  await createSiteToggle.click();
-  const visibility = page.getByRole("combobox", { name: "Site visibility", exact: true });
-  const saveVisibility = page.getByRole("button", { name: "Save visibility", exact: true });
-  const siteRow = page.getByRole("button", { name: new RegExp(standaloneName) });
-  await expect(visibility).toHaveValue("private");
-  await expect(saveVisibility).toBeDisabled();
-  await visibility.selectOption("public");
-  await saveVisibility.click();
-  await expect(page.getByRole("status")).toHaveText(`${standaloneName} is now public.`);
-  await expect(siteRow).toContainText("public");
-  await page.reload();
-  await expect(visibility).toHaveValue("public");
-  await expect(saveVisibility).toBeDisabled();
-  await visibility.selectOption("private");
-  await saveVisibility.click();
-  await expect(page.getByRole("status")).toHaveText(`${standaloneName} is now private.`);
-  await expect(siteRow).toContainText("private");
-  await expect(saveVisibility).toBeDisabled();
-  await page.reload();
-  await expect(visibility).toHaveValue("private");
+  const editor = page.getByRole('dialog', { name: 'Site details' });
+  await page.getByRole('button', { name: 'Create a site', exact: true }).click();
+  await editor.getByLabel('Name', { exact: true }).fill(standaloneName);
+  await editor.getByLabel('Pin latitude').fill('35');
+  await editor.getByLabel('Pin longitude').fill('15');
+  await editor.getByRole('button', { name: 'Save site', exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const siteRow = page.getByRole('button', { name: new RegExp(standaloneName) });
+  await expect(siteRow).toContainText('private');
+  for (const visibility of ['public', 'private']) {
+    await page.getByRole('button', { name: 'Edit site', exact: true }).click();
+    await editor.getByRole('combobox', { name: 'Visibility', exact: true }).selectOption(visibility);
+    await editor.getByRole('button', { name: 'Save site', exact: true }).click();
+    await expect(editor).toHaveCount(0);
+    await page.reload(); await expect(siteRow).toContainText(visibility);
+  }
 
   // 2. Upload a flight far from every curated site -> "Unknown site".
   await page.goto("/upload");
   await uploadFlight(page, { name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
   // 3. Name it, public, in place — no navigation. SPRINT-008: zones are
   // hidden from the product, so "Next" saves and closes the dialog
@@ -131,7 +115,9 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   const siteName = `E2E Desert Ridge ${suffix}`;
   await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Create site", exact: true }).click();
+  await editor.getByRole("combobox", { name: "Visibility", exact: true }).selectOption("public");
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // 4. A distinct second IGC nearby (same pilot) auto-associates on upload —

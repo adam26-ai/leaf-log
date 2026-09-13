@@ -1,3 +1,4 @@
+import { hasSitePoint } from "./model";
 import { Prisma, type Site, type Zone } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
@@ -186,19 +187,14 @@ interface LocationCacheWriteDb {
  * its parent unchanged (see docs/sprints/SPRINT-005.md's "Effective
  * visibility" section for why that's deliberate, not an oversight).
  */
-async function recomputeSiteAndZoneCaches(
+export async function recomputeSiteAndZoneCaches(
   tx: LocationCacheWriteDb,
   site: Pick<Site, "id" | "name" | "visibility">,
 ): Promise<void> {
   const cachedSiteName = normalizeSiteVisibility(site.visibility) === "public" ? site.name : null;
-  await tx.flight.updateMany({
-    where: { takeoffSiteId: site.id },
-    data: { takeoffSiteName: cachedSiteName },
-  });
-  await tx.flight.updateMany({
-    where: { landingSiteId: site.id },
-    data: { landingSiteName: cachedSiteName },
-  });
+  // Display-cache refreshes do not count as an edit to a flight or break import undo.
+  await tx.$executeRaw`UPDATE "Flight" SET "takeoffSiteName" = ${cachedSiteName} WHERE "takeoffSiteId" = ${site.id}`;
+  await tx.$executeRaw`UPDATE "Flight" SET "landingSiteName" = ${cachedSiteName} WHERE "landingSiteId" = ${site.id}`;
 
   await tx.$executeRaw`
     UPDATE "Flight" f
@@ -214,6 +210,18 @@ async function recomputeSiteAndZoneCaches(
              ELSE NULL END
       FROM "Zone" z JOIN "Site" s ON s."id" = z."siteId"
      WHERE f."landingZoneId" = z."id" AND s."id" = ${site.id}`;
+}
+
+/** Convert representation without changing recorded positions or flight edit history. */
+export async function writeMigratedEndpoint(tx: Pick<typeof prisma, "flight">, input: {
+  ownerId: string; flightId: string; expectedUpdatedAt: Date; endpoint: SiteEndpoint;
+  site: SiteForCacheRow; needsReview: boolean; evidence?: Prisma.InputJsonObject;
+}) {
+  const { endpoint } = input;
+  return tx.flight.updateMany({ where: { id: input.flightId, ownerId: input.ownerId, updatedAt: input.expectedUpdatedAt, [`${endpoint}SiteId`]: null }, data: {
+    ...locationCachePatch(input.site, null, endpoint), [`${endpoint}SiteAssignment`]: input.needsReview ? "needs_review" : "legacy",
+    ...(input.evidence ? { [`${endpoint}LocationEvidence`]: input.evidence } : {}), updatedAt: input.expectedUpdatedAt,
+  } });
 }
 
 // ---------------------------------------------------------------------
@@ -241,7 +249,7 @@ async function isOnboardedCaller(tx: CommunityEditDb, callerId: string): Promise
 
 /** True once `callerId` may rename or boundary-edit this SITE: its owner
  *  (any visibility), or — for a PUBLIC site only — any onboarded pilot. */
-async function canCommunityEditSite(
+export async function canCommunityEditSite(
   tx: CommunityEditDb,
   site: { visibility: string; ownerId: string | null },
   callerId: string,
@@ -769,7 +777,8 @@ export async function setSiteBoundary(siteId: string, callerId: string, raw: unk
     if (!existing) throw notFoundOrNotEditable();
     if (!(await canCommunityEditSite(tx, existing, callerId))) throw notFoundOrNotEditable();
 
-    const validated = validateBoundary(raw, "site", { lat: existing.lat, lon: existing.lon });
+    if (!hasSitePoint(existing)) throw new Error("Add a site pin before saving a boundary.");
+    const validated = validateBoundary(raw, "site", existing);
     if (!validated.ok) throw boundaryInvalid(validated.error);
 
     await enforceDailyCommunityEditCap(tx, callerId);
@@ -900,7 +909,7 @@ export async function listOwnedSitesForBoundaryEditing(callerId: string): Promis
     select: { id: true, name: true, visibility: true, lat: true, lon: true, boundaryMinLat: true },
     orderBy: { name: "asc" },
   });
-  return rows.map((r) => ({
+  return rows.filter(hasSitePoint).map((r) => ({
     id: r.id,
     name: r.name,
     visibility: r.visibility,

@@ -168,6 +168,8 @@ function MapIconButton({
  *  pending boundary edit, rather than showing a second, confusingly
  *  identical "Save" of its own. */
 export interface BoundaryEditorHandle {
+  readDraft(): unknown;
+  locate(point: { lat: number; lon: number }): void;
   /** Commits the current draft via `onSave` only if it's actually been
    *  touched since load (see `dirtyRef`) — returns null when there's
    *  nothing pending, so the caller can skip its own boundary-specific
@@ -182,6 +184,7 @@ export interface BoundaryEditorHandle {
 
 export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   anchor: { lat: number; lon: number };
+  anchorVisible?: boolean;
   initialBoundary: Boundary | null;
   editingMode?: "boundary" | "anchor";
   onAnchorChange?: (point: { lat: number; lon: number }) => void;
@@ -217,6 +220,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
 }>(function BoundaryEditor(
   {
     anchor,
+    anchorVisible = true,
     initialBoundary,
     editingMode = "boundary",
     onAnchorChange,
@@ -350,9 +354,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   }, [editingMode, onAnchorChange]);
   useEffect(() => {
     anchorMarkerRef.current?.setLngLat([anchor.lon, anchor.lat]);
+    if (anchorMarkerRef.current) anchorMarkerRef.current.getElement().style.display = anchorVisible ? "" : "none";
     const source = mapRef.current?.getSource("reference-circle") as maplibregl.GeoJSONSource | undefined;
     if (source && referenceRadiusM) source.setData(ringGeoJson(circleRing(anchor.lat, anchor.lon, referenceRadiusM)));
-  }, [anchor.lat, anchor.lon, referenceRadiusM]);
+  }, [anchor.lat, anchor.lon, referenceRadiusM, anchorVisible]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -365,7 +370,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       // set, so the editor still works with no key — just without imagery.
       style: styleFor("satellite"),
       center: [anchor.lon, anchor.lat],
-      zoom: 15,
+      zoom: anchorVisible || flightPoint ? 15 : 2,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
@@ -387,6 +392,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
 
     const anchorMarker = new maplibregl.Marker({ color: "#0099ff", draggable: modeRef.current === "anchor" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
     anchorMarkerRef.current = anchorMarker;
+    anchorMarker.getElement().style.display = anchorVisible ? "" : "none";
     anchorMarker.getElement().setAttribute("aria-label", "Site pin (blue)");
     // In boundary mode the pin is a reference, so it must not block edges
     // or vertices underneath it. Moving the pin has its own editing tool.
@@ -610,6 +616,11 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   }
 
   useImperativeHandle(ref, () => ({
+    readDraft() {
+      const vertices = stateRef.current.vertices;
+      return vertices.length ? { type: "Polygon", coordinates: [[...vertices, vertices[0]]] } : null;
+    },
+    locate(point) { mapRef.current?.flyTo({ center: [point.lon, point.lat], zoom: 13 }); },
     async commitIfDirty() {
       if (!dirtyRef.current) return null;
       if (!canSave) return "invalid";

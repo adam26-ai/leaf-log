@@ -10,11 +10,11 @@ const flights = [
   { id: "woodrat", status: "ready", takeoffSiteId: "site", takeoffSiteName: "Woodrat", glider: "Wing B", durationS: 7200 },
 ] as FlightListItem[];
 
-it("distinguishes a linked site and a saved name with identical text in the site filter", () => {
+it("distinguishes a mapped site and an unmapped site with identical text in the site filter", () => {
   render(<LogbookList flights={[flights[1], { ...flights[1], id: "name-only", takeoffSiteId: null }]} trophies={{}} />);
-  fireEvent.click(screen.getByRole("button", { name: "Select Sites" }));
-  const choices = screen.getByRole("group", { name: "Sites choices" });
-  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Linked site" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Select Takeoff sites" }));
+  const choices = screen.getByRole("group", { name: "Takeoff sites choices" });
+  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Mapped" })).toBeInTheDocument();
   expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" })).toBeInTheDocument();
   fireEvent.click(within(choices).getByRole("button", { name: "None" }));
   fireEvent.click(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" }));
@@ -24,22 +24,22 @@ it("distinguishes a linked site and a saved name with identical text in the site
 
 it("combines icon and choices, clears with All, and dismisses lists on outside touches or Escape", () => {
   render(<LogbookList flights={flights} trophies={{}} />);
-  const sites = screen.getByRole("button", { name: "Select Sites" });
+  const sites = screen.getByRole("button", { name: "Select Takeoff sites" });
   fireEvent.click(sites);
-  const choices = screen.getByRole("group", { name: "Sites choices" });
+  const choices = screen.getByRole("group", { name: "Takeoff sites choices" });
   fireEvent.click(within(choices).getByRole("button", { name: "None" }));
-  fireEvent.click(within(choices).getByRole("checkbox", { name: "Unknown site (1)" }));
+  fireEvent.click(within(choices).getByRole("checkbox", { name: "Site not recorded (1)" }));
   expect(screen.getByRole("link", { name: "unknown" })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
   expect(sites).toHaveAttribute("aria-expanded", "true");
   fireEvent.pointerDown(document.body, { pointerType: "touch" });
   expect(sites).toHaveAttribute("aria-expanded", "false");
   fireEvent.click(sites);
-  fireEvent.click(within(screen.getByRole("group", { name: "Sites choices" })).getByRole("button", { name: "All" }));
+  fireEvent.click(within(screen.getByRole("group", { name: "Takeoff sites choices" })).getByRole("button", { name: "All" }));
   expect(screen.getByRole("link", { name: "woodrat" })).toBeInTheDocument();
   expect(sites).not.toHaveClass("bg-brand-blue");
   fireEvent.click(screen.getByRole("button", { name: "Select Wings" }));
-  expect(screen.queryByRole("group", { name: "Sites choices" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Takeoff sites choices" })).not.toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Wings choices" })).toBeInTheDocument();
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("group", { name: "Wings choices" })).not.toBeInTheDocument();
