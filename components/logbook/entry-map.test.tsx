@@ -135,7 +135,7 @@ it("places only the chosen endpoint, retains two labeled pins, and removes only 
   const { rerender } = render(<EntryMap lat={45.9} lon={6.13} onPick={onPick} onPickLanding={onPickLanding} />);
   const click = map.on.mock.calls.find(([name]) => name === "click")![1];
   const mapClick = () => click({ lngLat: { lat: 45.85, wrap: () => ({ lng: 6.17 }) } });
-  expect(screen.getByRole("button", { name: "Flying site" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Takeoff" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: "Landing" }));
   expect(screen.getByRole("button", { name: "Landing" })).toHaveAttribute("aria-pressed", "true");
   act(mapClick);
@@ -144,12 +144,12 @@ it("places only the chosen endpoint, retains two labeled pins, and removes only 
   rerender(<EntryMap lat={45.9} lon={6.13} landingLat={45.85} landingLon={6.17} onPick={onPick} onPickLanding={onPickLanding} />);
   expect(markers).toHaveLength(2);
   expect(markers[0].color).not.toBe(markers[1].color);
-  expect(markers[0].element).toHaveAttribute("aria-label", "Flying site pin (blue)");
-  expect(markers[1].element).toHaveAttribute("aria-label", "Landing pin (orange)");
+  expect(markers[0].element).toHaveAttribute("aria-label", "Takeoff position (blue)");
+  expect(markers[1].element).toHaveAttribute("aria-label", "Landing position (orange)");
   expect(markers[0].setLngLat).toHaveBeenLastCalledWith([6.13, 45.9]);
   expect(markers[1].setLngLat).toHaveBeenLastCalledWith([6.17, 45.85]);
   expect(map.fitBounds).toHaveBeenLastCalledWith([6.13, 45.85, 6.17, 45.9], expect.objectContaining({ maxZoom: 13 }));
-  fireEvent.click(screen.getByRole("button", { name: "Flying site" }));
+  fireEvent.click(screen.getByRole("button", { name: "Takeoff" }));
   act(mapClick);
   expect(onPick).toHaveBeenCalledWith(45.85, 6.17);
   expect(onPickLanding).toHaveBeenCalledTimes(1);

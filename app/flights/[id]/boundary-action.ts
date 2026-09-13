@@ -1,4 +1,5 @@
 "use server";
+import { hasSitePoint } from "@/lib/sites/model";
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -235,7 +236,7 @@ export async function getBoundaryForOwnedRow(
       where: { id, ownerId: userId },
       select: { lat: true, lon: true, boundary: true },
     });
-    if (!site) return null;
+    if (!site || !hasSitePoint(site)) return null;
     return {
       anchor: { lat: site.lat, lon: site.lon },
       boundary: (site.boundary as Boundary | null) ?? null,
@@ -274,7 +275,7 @@ export async function getBoundaryForPublicRow(
 
   if (level === "site") {
     const site = await getSiteForViewer(id, userId);
-    if (!site) return null;
+    if (!site || !hasSitePoint(site)) return null;
     return {
       anchor: { lat: site.lat, lon: site.lon },
       boundary: (site.boundary as Boundary | null) ?? null,

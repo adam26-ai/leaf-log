@@ -8,19 +8,21 @@ export const ENTRY_FIELDS = {
   maxAltitude: "Maximum altitude (MSL)", launchAltitude: "Launch altitude (MSL)", heightGained: "Total climbs",
   altitudeUnit: "Altitude unit", xcDistance: "XC distance", xcType: "XC type", distanceUnit: "Distance unit",
   maxClimb: "Best climb", maxSink: "Max sink", varioUnit: "Vertical speed unit",
-  takeoffLat: "Site latitude", takeoffLon: "Site longitude", landingLat: "Landing latitude", landingLon: "Landing longitude",
+  takeoffLat: "Takeoff latitude", takeoffLon: "Takeoff longitude", landingLat: "Landing latitude", landingLon: "Landing longitude",
   flightTypes: "Flight types", occupancy: "Solo or tandem", notes: "Notes",
 } as const;
 export type EntryField = keyof typeof ENTRY_FIELDS;
-export type EntryDraft = Record<EntryField, string> & { takeoffSiteId: string; landingSiteId: string };
+export type EntryDraft = Record<EntryField, string> & { takeoffSiteId: string; landingSiteId: string; takeoffSiteCleared: string; landingSiteCleared: string; takeoffSiteDraft: string; landingSiteDraft: string; takeoffOriginalLocation: string; landingOriginalLocation: string; takeoffCoordinateMeaning: string; landingCoordinateMeaning: string };
 export const emptyEntry = (imperial = false): EntryDraft => ({
   date: "", durationMinutes: "", glider: "", takeoffSiteName: "", landingSiteName: "", takeoffSiteId: "", landingSiteId: "",
+  takeoffOriginalLocation: "", landingOriginalLocation: "",
+  takeoffSiteCleared: "", landingSiteCleared: "", takeoffSiteDraft: "", landingSiteDraft: "", takeoffCoordinateMeaning: "flight", landingCoordinateMeaning: "flight",
   takeoffTime: "", timeZone: "", maxAltitude: "", launchAltitude: "", heightGained: "", altitudeUnit: imperial ? "ft" : "m",
   xcDistance: "", xcType: "", distanceUnit: imperial ? "mi" : "km", maxClimb: "", maxSink: "", varioUnit: imperial ? "ft/min" : "m/s",
   takeoffLat: "", takeoffLon: "", landingLat: "", landingLon: "", flightTypes: "", occupancy: "", notes: "",
 });
 
-export const draftSchema = z.object(Object.fromEntries(Object.keys(emptyEntry()).map(key => [key, z.string().max(key === "notes" ? 2000 : 200)])) as Record<keyof EntryDraft, z.ZodString>).strict();
+export const draftSchema = z.object(Object.fromEntries(Object.keys(emptyEntry()).map(key => [key, z.string().max(key.endsWith("SiteDraft") ? 50_000 : key === "notes" || key.endsWith("OriginalLocation") ? 2000 : 200).default(key.endsWith("CoordinateMeaning") ? "flight" : "")])) as Record<keyof EntryDraft, z.ZodDefault<z.ZodString>>).strict();
 export type EntryIssue = { field: keyof EntryDraft; message: string };
 
 export function parseEntry(value: unknown) {
@@ -54,6 +56,10 @@ export function parseEntry(value: unknown) {
   if (draft.occupancy && !["solo", "tandem"].includes(draft.occupancy)) issue("occupancy", "Choose solo, tandem, or leave unknown.");
   const takeoffLat = number("takeoffLat", -90, 90), takeoffLon = number("takeoffLon", -180, 180);
   const landingLat = number("landingLat", -90, 90), landingLon = number("landingLon", -180, 180);
+  for (const endpoint of ["takeoff", "landing"] as const) {
+    if (!["", "true"].includes(draft[`${endpoint}SiteCleared`])) issue(`${endpoint}SiteCleared`, "Invalid site selection.");
+    if (!["flight", "site"].includes(draft[`${endpoint}CoordinateMeaning`])) issue(`${endpoint}CoordinateMeaning`, "Choose whether the coordinates describe the flight position or the site pin.");
+  }
   if ((takeoffLat === null) !== (takeoffLon === null)) issue("takeoffLat", "Enter both latitude and longitude, or leave both blank.");
   if ((landingLat === null) !== (landingLon === null)) issue("landingLat", "Enter both latitude and longitude, or leave both blank.");
   const varioFactor = draft.varioUnit === "ft/min" ? 0.3048 / 60 : draft.varioUnit === "knots" ? 1852 / 3600 : 1;
@@ -80,7 +86,9 @@ export function parseEntry(value: unknown) {
     maxClimbMs: climb == null ? null : climb * varioFactor, maxSinkMs: sink == null ? null : -Math.abs(sink * varioFactor),
     reportedXcDistanceM: distance == null ? null : Math.round(distance * (draft.distanceUnit === "mi" ? 1609.344 : draft.distanceUnit === "nmi" ? 1852 : 1000)),
     reportedXcType: distance == null ? null : draft.xcType,
-    takeoffLat, takeoffLon, landingLat, landingLon, notes: draft.notes || null, flightFlags: flags.data, launchTypes: flags.data.includes("tow") ? ["ST"] : [], occupancy: flags.data.includes("tandem") ? "tandem" : draft.occupancy || null,
+    takeoffLat: draft.takeoffCoordinateMeaning === "site" ? null : takeoffLat, takeoffLon: draft.takeoffCoordinateMeaning === "site" ? null : takeoffLon,
+    landingLat: draft.landingCoordinateMeaning === "site" ? null : landingLat, landingLon: draft.landingCoordinateMeaning === "site" ? null : landingLon,
+    notes: draft.notes || null, flightFlags: flags.data, launchTypes: flags.data.includes("tow") ? ["ST"] : [], occupancy: flags.data.includes("tandem") ? "tandem" : draft.occupancy || null,
     takeoffSiteName: draft.takeoffSiteName || null, landingSiteName: draft.landingSiteName || null,
   } };
 }

@@ -34,6 +34,8 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [matches, setMatches] = useState<Record<string, Match>>({});
   const [review, setReview] = useState<Review[] | null>(null);
+  const [siteSignature, setSiteSignature] = useState<string | undefined>();
+  const [sitePreview, setSitePreview] = useState<Array<{ name: string; mapped: boolean; visibility: string; flights: number }>>([]);
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -73,14 +75,14 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
           const endpoint = field === "takeoffSiteName" ? "takeoff" : "landing";
           const site = options.sites.find(site => site.id === match.siteId);
           draft[`${endpoint}SiteId`] = site?.id ?? "";
-          if (site) { draft[field] = site.name; draft[`${endpoint}Lat`] = String(site.lat); draft[`${endpoint}Lon`] = String(site.lon); }
+          if (site) draft[field] = site.name;
         }
       }
       return { ...row, draft, allowDuplicate: false };
     });
     setRows(updated); setReview(null); setPage(0); setEditing(null); setDuplicateGate(false); setStep(3); void check(updated);
   }
-  const payload = (items: ImportRow[]) => ({ requestId: requestId.current, csv, filename, visibility, rows: items });
+  const payload = (items: ImportRow[]) => ({ requestId: requestId.current, csv, filename, visibility, rows: items, sitePlanSignature: siteSignature });
   async function check(items = rows, showUnhandledDuplicates = false) {
     setPending(true); setError(""); setConfirm(false);
     try {
@@ -88,11 +90,13 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not review these flights.");
       setReview(result.rows);
+      setSiteSignature(result.sitePlanSignature); setSitePreview(result.sites ?? []);
       setDuplicateGate(showUnhandledDuplicates && result.rows.some((item: Review, index: number) => item.duplicates.length > 0 && !items[index].excluded && !items[index].allowDuplicate));
     } catch (error) { setError(error instanceof Error ? error.message : "Could not review. Please retry."); }
     finally { setPending(false); }
   }
   function updateRow(index: number, patch: Partial<ImportRow>) {
+    setSiteSignature(undefined);
     setRows(current => current.map((row, i) => i === index ? { ...row, ...patch } : row));
     setConfirm(false);
     if (patch.draft) { setReview(null); setDuplicateGate(false); }
@@ -105,6 +109,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
         : { excluded: false, allowDuplicate: false });
   }
   function chooseAllDuplicates(choice: "include" | "skip", onlyUnhandled = false) {
+    setSiteSignature(undefined);
     if (!review) return;
     setRows(current => current.map((row, index) => review[index]?.duplicates.length && (!onlyUnhandled || (!row.excluded && !row.allowDuplicate))
       ? choice === "include"
@@ -170,7 +175,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
             <input aria-label={`${title}: ${name || "missing name"}`} list={`names-${field}`} value={match.name} onChange={e => setMatch({ name: e.target.value, siteId: "" })} placeholder="Leave unknown, or fill in a name" className={entryInputClass} />
             {field !== "glider" && <select aria-label={`Map location for ${title.toLowerCase()}: ${name || "missing name"}`} value={match.siteId} onChange={e => { const site = options.sites.find(site => site.id === e.target.value); setMatch({ name: site?.name ?? match.name, siteId: site?.id ?? "" }); }} className={entryInputClass}>
               <option value="">Keep coordinates from CSV, or choose a known site…</option>
-              {options.sites.map(site => <option key={site.id} value={site.id}>{site.previous ? "★ " : ""}{site.name} ({site.lat.toFixed(2)}, {site.lon.toFixed(2)})</option>)}
+              {options.sites.map(site => <option key={site.id} value={site.id}>{site.previous ? "★ " : ""}{site.name} ({site.lat?.toFixed(2) ?? "No pin"}, {site.lon?.toFixed(2) ?? ""})</option>)}
             </select>}
             {suggestions.length > 0 && <p className="flex flex-wrap gap-x-2 text-xs text-gray-500">Similar:{suggestions.map(suggestion => <button type="button" key={suggestion} onClick={() => setMatch({ name: suggestion, siteId: "" })} className="text-brand-blue-strong underline">{suggestion}</button>)}</p>}
           </div>
@@ -199,6 +204,13 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       ><span className="mb-3 block font-medium">Drop your completed CSV here</span><input ref={csvInputRef} aria-label="Choose logbook CSV" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values" disabled={pending || !hydrated} onChange={e => void openFile(e.target.files?.[0])} className="max-w-full text-xs" /><span className="mt-3 block text-xs text-gray-500">Drag and drop, or choose a file. Up to 5,000 flights / 2 MB. Nothing is saved until you confirm the review.</span></label>
     </Card>}
     {step === 1 && table && <Card className="flex flex-col gap-5 p-5">
+      <div className="grid gap-3 sm:grid-cols-2">{(["takeoff", "landing"] as const).map(endpoint => <label key={endpoint} className="text-sm">
+        {endpoint === "takeoff" ? "Takeoff" : "Landing"} coordinates describe
+        <select aria-label={`${endpoint} coordinate meaning`} value={formats[`${endpoint}CoordinateMeaning`] ?? "flight"} className={entryInputClass}
+          onChange={event => setFormats({ ...formats, [`${endpoint}CoordinateMeaning`]: event.target.value })}>
+          <option value="flight">This flight’s position</option><option value="site">The site’s reference location</option>
+        </select></label>)}</div>
+      <p className="text-xs text-gray-600">Site-reference coordinates can create a map pin, but do not become a recorded flight position. New imported sites stay private.</p>
       <div><h2 className="font-condensed text-xl font-bold">Match your columns</h2><p className="mt-1 break-all text-sm text-gray-500">{filename} · {table.rows.length} {table.rows.length === 1 ? "flight" : "flights"}</p></div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">Date format<select value={formats.dateFormat} onChange={e => setFormats({ ...formats, dateFormat: e.target.value as CsvOptions["dateFormat"] })} className={entryInputClass}><option value="ymd">Year-month-day (2020-06-15)</option><option value="mdy">Month/day/year (06/15/2020)</option><option value="dmy">Day/month/year (15/06/2020)</option></select></label>
@@ -218,6 +230,9 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
       <div className="flex gap-3"><Button variant="outline" onClick={() => setStep(1)}>Back to columns</Button><Button onClick={applyNames}>Review flights</Button></div>
     </Card>}
     {step === 3 && <Card className="flex flex-col gap-5 p-5">
+      {sitePreview.length > 0 && <details><summary className="cursor-pointer text-sm font-medium">Sites to create ({sitePreview.length})</summary>
+        <ul className="mt-2 space-y-1 text-sm text-gray-600">{sitePreview.map((site, index) => <li key={index}>{site.name} · {site.mapped ? "Mapped" : "Unmapped"} · {site.visibility} · {site.flights} flights</li>)}</ul>
+        <p className="mt-2 text-xs text-gray-600">Edit a flight below to open the full site editor. Changes are saved only when you import.</p></details>}
       <h2 className="font-condensed text-xl font-bold">Review your flights</h2>
       <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible overlaps need an explicit keep-or-discard choice.</p>
       {duplicateGate && unresolvedDuplicateIndexes.length > 0 ? <div className="flex flex-col gap-4 rounded-lg border border-emergency-orange/30 bg-emergency-orange-light/40 p-4">
@@ -239,8 +254,8 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
         })}</div>
         {rows.length > 25 && <div className="flex items-center justify-between gap-3 text-sm"><Button variant="outline" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page + 1} of {Math.ceil(rows.length / 25)}</span><Button variant="outline" disabled={(page + 1) * 25 >= rows.length} onClick={() => setPage(page + 1)}>Next</Button></div>}
       </>}
-      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); setDuplicateGate(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(rows, true); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review ? blocking ? `${blocking} ${blocking === 1 ? "flight needs" : "flights need"} a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
-      {review && !blocking && included.length > 0 && editing === null && <div className="flex flex-col gap-4 border-t border-gray-200 pt-5">
+      <div className="flex flex-wrap items-center gap-3"><Button variant="outline" disabled={pending} onClick={() => { setStep(2); setMatches({}); setReview(null); setConfirm(false); setDuplicateGate(false); }}>Back to names</Button><Button disabled={pending} onClick={() => { setEditing(null); void check(rows, true); }}>{pending ? "Checking…" : "Check preview"}</Button><span className="text-sm text-gray-500" role="status">{review && siteSignature ? blocking ? `${blocking} ${blocking === 1 ? "flight needs" : "flights need"} a correction or duplicate choice.` : "Preview checked." : "Check the preview after making changes."}</span></div>
+      {review && siteSignature && !blocking && included.length > 0 && editing === null && <div className="flex flex-col gap-4 border-t border-gray-200 pt-5">
         <p className="text-sm"><strong>{included.length} {included.length === 1 ? "flight" : "flights"}</strong> · {(totalMinutes / 60).toFixed(1)} {(totalMinutes / 60).toFixed(1) === "1.0" ? "hour" : "hours"}{unknownDurations > 0 && ` + ${unknownDurations} ${unknownDurations === 1 ? "flight" : "flights"} with unknown duration`} · {rows.length - included.length} skipped</p>
         <label className="max-w-xs text-sm">Visibility for these flights<select value={visibility} disabled={pending} onChange={e => { setVisibility(e.target.value); setConfirm(false); }} className={entryInputClass}><option value="private">Private</option><option value="friends">Friends only</option><option value="public">Public</option></select></label>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={confirm} disabled={pending} onChange={e => setConfirm(e.target.checked)} className="mt-1" />I have checked the dates, units, and selected flights.</label>

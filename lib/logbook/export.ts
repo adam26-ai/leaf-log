@@ -2,18 +2,20 @@ import type { Flight } from "@prisma/client";
 import { Readable } from "node:stream";
 import { Uint8ArrayReader, ZipWriter } from "@zip.js/zip.js";
 import { prisma } from "@/lib/prisma";
-import { listOwnFlightsForExport } from "@/lib/flights/repo";
+import { listOwnFlightsForExport, type SiteLocationView } from "@/lib/flights/repo";
 import { igcFilename } from "@/lib/flights/igc-filename";
 import { readXcScore } from "@/lib/igc/xc-types";
 import { CSV_HEADERS } from "./csv";
 import { flightToEntryDraft } from "./flight-draft";
 
-type ExportFlight = Flight & { data: { flightId: string } | null };
+type ExportFlight = Flight & Partial<SiteLocationView> & { data: { flightId: string } | null };
 
 const EXTRA_HEADERS = [
   "flight_id", "igc_filename", "recording_kind", "source", "status", "visibility",
   "takeoff_utc", "landing_utc", "duration_seconds", "track_distance_m", "straight_distance_m",
   "recorded_xc_distance_m", "recorded_xc_type", "recorded_xc_points", "xc_status",
+  "takeoff_site_id", "landing_site_id", "takeoff_site_pin_latitude", "takeoff_site_pin_longitude", "landing_site_pin_latitude", "landing_site_pin_longitude",
+  "takeoff_location_source", "landing_location_source", "takeoff_original_location", "landing_original_location",
   "takeoff_zone", "landing_zone", "flight_type_tags", "launch_types", "restricted_landing_field",
 ] as const;
 
@@ -42,6 +44,8 @@ export function exportCsvRow(flight: ExportFlight) {
     flight.id, flight.data ? igcFilename(flight) : "", flight.recordingKind, flight.source, flight.status, flight.visibility,
     flight.takeoffAt?.toISOString(), flight.landingAt?.toISOString(), flight.durationS, flight.trackDistM, flight.straightDistM,
     best?.distanceM, best?.shape, best?.points, flight.xcStatus,
+    flight.takeoffSiteId, flight.landingSiteId, flight.takeoffSiteLat, flight.takeoffSiteLon, flight.landingSiteLat, flight.landingSiteLon,
+    flight.takeoffLocationSource, flight.landingLocationSource, flight.takeoffLocationEvidence ? JSON.stringify(flight.takeoffLocationEvidence) : "", flight.landingLocationEvidence ? JSON.stringify(flight.landingLocationEvidence) : "",
     flight.takeoffZoneName, flight.landingZoneName, flight.flightTypeTags.join(";"), flight.launchTypes.join(";"), flight.restrictedLandingField,
   ];
   return [...entry, ...extra.map(value => csvCell(value))].join(",") + "\r\n";

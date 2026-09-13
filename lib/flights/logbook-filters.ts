@@ -7,13 +7,15 @@ export function matchesLogbookFilters(f: FilterFlight & { id: string }, sites: s
 
 export interface LogbookFilters {
   sites: string[] | null;
+  landingSites?: string[] | null;
+  siteLocation?: string | null;
   wings: string[] | null;
   friends: string[] | null;
   trophiesOnly: boolean;
   from: string;
   until: string;
 }
-export const EMPTY_FILTERS: LogbookFilters = { sites: null, wings: null, friends: null, trophiesOnly: false, from: "", until: "" };
+export const EMPTY_FILTERS: LogbookFilters = { sites: null, landingSites: null, siteLocation: null, wings: null, friends: null, trophiesOnly: false, from: "", until: "" };
 
 /** Read only known fields; old or malformed browser state must not break a logbook. */
 export function readLogbookFilters(value: string | null): LogbookFilters {
@@ -25,7 +27,7 @@ export function readLogbookFilters(value: string | null): LogbookFilters {
     // Retire the old unshared/category selections without leaving invisible filters.
     const friends = selection("friends")?.filter(key => key !== "__no_shared_flights__");
     const trophiesOnly = typeof parsed.trophiesOnly === "boolean" ? parsed.trophiesOnly : Boolean(selection("trophies")?.some(key => key !== "none"));
-    return { sites: selection("sites"), wings: selection("wings"), friends: friends?.length ? friends : null, trophiesOnly, from: date("from"), until: date("until") };
+    return { sites: selection("sites"), landingSites: selection("landingSites"), siteLocation: ["mapped", "unmapped", "review", "gps", "missing"].includes(parsed.siteLocation) ? parsed.siteLocation : null, wings: selection("wings"), friends: friends?.length ? friends : null, trophiesOnly, from: date("from"), until: date("until") };
   } catch { return EMPTY_FILTERS; }
 }
 

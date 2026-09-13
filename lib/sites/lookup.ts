@@ -1,3 +1,4 @@
+import { hasSitePoint } from "./model";
 import type { Db } from "@/lib/prisma";
 import { haversineM } from "@/lib/geo/distance";
 import {
@@ -127,6 +128,7 @@ async function siteCandidates(
     where: {
       AND: [
         { OR: locationOr },
+        { archivedAt: null },
         { OR: [{ kind }, { kind: "both" }] },
         { OR: siteVisibilityOr(viewerId) },
       ],
@@ -142,7 +144,7 @@ async function siteCandidates(
       license: true,
       boundary: true,
     },
-  });
+  }).then(rows => rows.filter(hasSitePoint));
 }
 
 interface ZoneRow {
@@ -209,7 +211,7 @@ async function zoneCandidates(
         select: { id: true, name: true, lat: true, lon: true, kind: true, visibility: true, ownerId: true },
       },
     },
-  });
+  }).then(rows => rows.flatMap(row => hasSitePoint(row.site) ? [{ ...row, site: row.site }] : []));
 }
 
 /**

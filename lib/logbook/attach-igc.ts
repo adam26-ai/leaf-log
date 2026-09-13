@@ -7,9 +7,10 @@ import { buildTrackArtifact } from "@/lib/igc/track-artifact";
 import { buildReplayArtifact } from "@/lib/igc/replay-artifact";
 import { sha256Hex } from "@/lib/ingest/dedupe";
 import { PARSER_VERSION } from "@/lib/ingest/ingest-flight";
-import { findLocationDecision } from "@/lib/sites/lookup";
 import { resolveLocationCache } from "@/lib/sites/associate";
-import { assignmentPatch, type SiteAssignment } from "@/lib/sites/assignment";
+import { emptyEntry } from "./entry";
+import { planEntrySites, commitEntrySites, resolvedLocationPatch } from "./locations";
+import { lockFlightRow } from "@/lib/sites/locks";
 import { EntryError } from "./service";
 import { duplicateKey } from "./duplicates";
 import { lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
@@ -37,12 +38,6 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
       takeoffAt: flight.takeoffAt?.toISOString() ?? null, landingAt: flight.landingAt?.toISOString() ?? null,
       takeoffLat: flight.takeoffLat, takeoffLon: flight.takeoffLon, landingLat: flight.landingLat, landingLon: flight.landingLon }, recorded };
   if (expectedHash !== hash || expectedUpdatedAt !== flight.updatedAt.toISOString()) throw new EntryError("The flight or selected file changed. Review the comparison again before attaching.", 409);
-  const [takeoffDecision, landingDecision] = await Promise.all([
-    findLocationDecision(prisma, { ...metrics.takeoff, kind: "takeoff", viewerId: ownerId }),
-    findLocationDecision(prisma, { ...metrics.landing, kind: "landing", viewerId: ownerId }),
-  ]);
-  const takeoffMatch = takeoffDecision.match;
-  const landingMatch = landingDecision.match;
   try {
     return await prisma.$transaction(async tx => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
@@ -51,26 +46,26 @@ export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8A
       const current = await tx.flight.findFirst({ where: { id: flightId, ownerId } });
       if (current?.recordingKind === "igc" && current.igcSha256 === hash) return { id: flightId, attached: true as const };
       if (!current || current.recordingKind !== "logbook" || current.updatedAt.toISOString() !== expectedUpdatedAt) throw new EntryError("This flight changed. Review the comparison again.", 409);
-      // Retain a chosen site; if no site was entered, look one up from the recorded endpoints.
-      const patches = await Promise.all((["takeoff", "landing"] as const).map(async endpoint => {
-        const match = endpoint === "takeoff" ? takeoffMatch : landingMatch;
-        const id = current[`${endpoint}SiteId`];
-        if (id || !current[`${endpoint}SiteName`]) {
-          const patch = await resolveLocationCache(tx, id ?? match?.site.id ?? null, id ? null : match?.zone?.id ?? null, endpoint, ownerId);
-          const decision = endpoint === "takeoff" ? takeoffDecision : landingDecision;
-          const assignment = id
-            ? current[`${endpoint}SiteAssignment`] as SiteAssignment
-            : decision.ambiguous
-              ? "needs_review"
-              : patch[`${endpoint}SiteId`]
-              ? "auto_matched"
-              : "unassigned";
-          return { ...patch, ...assignmentPatch(endpoint, assignment) };
+      const draft = emptyEntry();
+      for (const endpoint of ['takeoff', 'landing'] as const) {
+        draft[`${endpoint}SiteId`] = current[`${endpoint}SiteId`] ?? '';
+        draft[`${endpoint}SiteName`] = current[`${endpoint}SiteName`] ?? '';
+        draft[`${endpoint}SiteCleared`] = current[`${endpoint}SiteAssignment`] === 'cleared' ? 'true' : '';
+        draft[`${endpoint}Lat`] = String(metrics[endpoint].lat);
+        draft[`${endpoint}Lon`] = String(metrics[endpoint].lon);
+      }
+      const { plan, candidates } = await planEntrySites(tx, ownerId, [{ key: 'entry', draft }]);
+      const sites = await commitEntrySites(tx, ownerId, plan, candidates, hash, 'flight_gps');
+      const patch = resolvedLocationPatch(draft, 'entry', plan, sites.sites, sites.groupIds);
+      for (const endpoint of ['takeoff', 'landing'] as const) {
+        if (current[`${endpoint}SiteId`] && current[`${endpoint}SiteId`] === patch[`${endpoint}SiteId`]) {
+          Object.assign(patch, await resolveLocationCache(tx, current[`${endpoint}SiteId`], current[`${endpoint}ZoneId`], endpoint, ownerId));
+          if (patch[`${endpoint}SiteAssignment`] !== 'needs_review') patch[`${endpoint}SiteAssignment`] = current[`${endpoint}SiteAssignment`];
         }
-        return {};
-      }));
+      }
+      await lockFlightRow(tx, flightId, ownerId);
       const updated = await tx.flight.updateMany({ where: { id: flightId, ownerId, recordingKind: "logbook", updatedAt: new Date(expectedUpdatedAt!) }, data: {
-        ...measurements, ...patches[0], ...patches[1], flightDate: new Date(`${recordedDay}T00:00:00Z`),
+        ...measurements, ...patch, takeoffLocationSource: "flight_gps", landingLocationSource: "flight_gps", flightDate: new Date(`${recordedDay}T00:00:00Z`),
         recordingKind: "igc", igcSha256: hash, parserVersion: PARSER_VERSION, pilot: current.pilot ?? parsed.headers.pilot,
         recorder: parsed.headers.recorder, glider: current.glider || parsed.headers.glider,
         ...tandemFlightData(current.flightFlags, current.tandemOverride ?? wingIsTandem(settings.tandemWings, current.glider || parsed.headers.glider)),

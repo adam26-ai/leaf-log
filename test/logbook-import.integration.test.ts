@@ -109,7 +109,7 @@ it("resolves chosen sites, rejects someone else's private sites, and hides priva
   const result = await saveLogbookEntry(owners[0], { ...request, visibility: "public" });
   if (!("id" in result)) throw new Error("Unexpected duplicate");
   expect(await getFlightForViewer(result.id, owners[0])).toMatchObject({ takeoffSiteName: site.name, takeoffLat: 0, takeoffLon: 0 });
-  expect(await prisma.flight.findUnique({ where: result })).toMatchObject({ takeoffSiteName: null, takeoffLat: 0, takeoffLon: 0, takeoffSiteAssignment: "user_selected" });
+  expect(await prisma.flight.findUnique({ where: result })).toMatchObject({ takeoffSiteName: null, takeoffLat: 0, takeoffLon: 0, takeoffSiteAssignment: "needs_review" });
   expect(await getFlightForViewer(result.id, null)).toMatchObject({ takeoffSiteName: null, takeoffLat: null, takeoffLon: null });
   await prisma.site.delete({ where: { id: site.id } });
 });
@@ -119,8 +119,8 @@ it("undo removes only unchanged entries, never another pilot's entries or later 
   const changed = await prisma.flight.findFirstOrThrow({ where: { logbookImportId: batch.id, glider: "Edited" } });
   await saveLogbookEntry(owners[0], { ...manual(), flightId: changed.id, expectedUpdatedAt: changed.updatedAt.toISOString(), draft: { ...flightToEntryDraft(changed), notes: "Keep this memory" } });
   await expect(undoLogbookImport(owners[1], batch.id)).rejects.toMatchObject({ status: 404 });
-  expect(await undoLogbookImport(owners[0], batch.id)).toEqual({ removed: 1, retained: 1 });
-  expect(await undoLogbookImport(owners[0], batch.id)).toEqual({ removed: 0, retained: 1 });
+  expect(await undoLogbookImport(owners[0], batch.id)).toMatchObject({ removed: 1, retained: 1 });
+  expect(await undoLogbookImport(owners[0], batch.id)).toMatchObject({ removed: 0, retained: 1 });
   expect(await prisma.flight.findUnique({ where: { id: changed.id } })).toMatchObject({ notes: "Keep this memory" });
 });
 
@@ -183,7 +183,7 @@ it("attaches a reviewed IGC to the same entry, retaining reported XC and rejecti
   const other = await saveLogbookEntry(owners[0], manual({ date: "2005-01-01" }));
   if (!("id" in other)) throw new Error("Unexpected duplicate");
   await expect(attachIgc(owners[0], other.id, bytes, false)).rejects.toMatchObject({ status: 409 });
-  expect(await undoLogbookImport(owners[0], batch.id)).toEqual({ removed: 0, retained: 1 });
+  expect(await undoLogbookImport(owners[0], batch.id)).toMatchObject({ removed: 0, retained: 1 });
 });
 
 it("handles the advertised 5,000-row limit and concurrent retries as one import", async () => {
@@ -193,5 +193,5 @@ it("handles the advertised 5,000-row limit and concurrent retries as one import"
   expect(a.id).toBe(b.id);
   expect(a.importedCount).toBe(5000);
   expect(await prisma.flight.count({ where: { ownerId: owners[1], logbookImportId: a.id } })).toBe(5000);
-  expect(await undoLogbookImport(owners[1], a.id)).toEqual({ removed: 5000, retained: 0 });
+  expect(await undoLogbookImport(owners[1], a.id)).toMatchObject({ removed: 5000, retained: 0 });
 }, 30000);

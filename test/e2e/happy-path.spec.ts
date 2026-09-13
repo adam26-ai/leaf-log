@@ -53,12 +53,12 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
 
   // 5. Land on the flight page with real metrics. Sites are fully
   // community-driven (no curated seed), so a first-ever flight here reads
-  // "Unknown site" until a pilot names it — that's the correct, honest state.
+  // "Site not identified" until a pilot names it — that's the correct, honest state.
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   const flightUrl = page.url();
   await expect(page.getByText("Airtime")).toBeVisible();
   await expect(page.getByText("Max altitude")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Unknown site" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Site not identified" })).toBeVisible();
 
   // 6. Share through the real edit UI and wait for persistence.
   await page.goto(`${flightUrl}/edit`);

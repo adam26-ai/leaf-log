@@ -260,6 +260,10 @@ model Flight {
   takeoffLon            Float?
   landingLat            Float?
   landingLon            Float?
+  takeoffLocationSource String        @default("legacy")
+  landingLocationSource String        @default("legacy")
+  takeoffLocationEvidence Json?
+  landingLocationEvidence Json?
   bounds                Json?
   // located sites (denormalized name kept for history)
   takeoffSiteId         String?
@@ -329,6 +333,7 @@ model LogbookImport {
   importedCount Int
   skippedCount Int
   snapshot    Json
+  siteChanges Json     @default("[]")
   undoneAt    DateTime?
   createdAt   DateTime @default(now())
   flights     Flight[]
@@ -462,8 +467,11 @@ model Site {
   name           String
   normalizedName String // NFKC + folded, for proximity-scoped dup checks
   kind           String    @default("unknown") // takeoff | landing | both | unknown
-  lat            Float
-  lon            Float
+  lat            Float?
+  lon            Float?
+  pinSource      String    @default("legacy") // manual | csv | flight_gps | legacy
+  autoGroupKey   String? // retry-safe, owner-scoped import/name group identity
+  archivedAt     DateTime?
   countryCode    String?
   region         String?
   source         String    @default("manual") // manual | user
@@ -502,6 +510,7 @@ model Site {
   @@index([lat, lon])
   @@index([ownerId])
   @@index([ownerId, normalizedName])
+  @@unique([ownerId, autoGroupKey])
 }
 
 // SPRINT-005: a specific launch/landing spot within a Site (e.g. "North

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { hasSitePoint, type SitePoint } from "@/lib/sites/model";
 import type { EntrySite } from "@/lib/logbook/options";
 import { searchPlaces, type MapPlace } from "@/lib/logbook/place-search";
 
@@ -8,7 +9,7 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
   const id = useId();
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<MapPlace[]>([]);
-  const [siteMatches, setSiteMatches] = useState<EntrySite[]>([]);
+  const [siteMatches, setSiteMatches] = useState<Array<EntrySite & SitePoint>>([]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -29,7 +30,7 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
     const text = query.trim();
     if (text.length < 2) { setMessage("Enter at least two characters to search."); return; }
     const normalize = (name: string) => name.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
-    const matches = sites.filter(site => normalize(site.name).includes(normalize(text))).slice(0, 5);
+    const matches = sites.filter(hasSitePoint).filter(site => normalize(site.name).includes(normalize(text))).slice(0, 5);
     setSiteMatches(matches);
     if (!key) {
       setMessage("City and landmark search is unavailable. You can search known flying sites or move the map.");

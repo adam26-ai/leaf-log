@@ -1,6 +1,8 @@
 import type { SiteEndpoint } from "./associate";
 
 export const SITE_ASSIGNMENTS = [
+  "imported",
+  "cleared",
   "unassigned",
   "custom_name",
   "auto_matched",

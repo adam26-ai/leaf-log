@@ -372,11 +372,12 @@ export function isValidBoundaryShape(value: unknown): value is Boundary {
 }
 
 export function locationMatches(
-  row: { lat: number; lon: number; boundary: unknown },
+  row: { lat: number | null; lon: number | null; boundary: unknown },
   lat: number,
   lon: number,
   radiusM: number,
 ): LocationMatchResult {
+  if (row.lat === null || row.lon === null) return { matched: false, distanceM: Infinity };
   const distanceM = haversineM(lat, lon, row.lat, row.lon);
 
   if (row.boundary == null) {

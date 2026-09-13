@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { createSiteFromFlight, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -71,12 +71,7 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   const flightUrl = page.url();
 
   const siteName = `E2E Community Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
+  await createSiteFromFlight(page, siteName, "public");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.goto(`${flightUrl}/edit`);
@@ -97,14 +92,16 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await expect(siteButton).toBeEnabled({ timeout: 10_000 });
   await siteButton.click();
   await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
-  await bPage.getByRole("button", { name: "Rename", exact: true }).click();
-  const nameInput = bPage.locator("input[maxlength='60']");
+  await bPage.getByRole("button", { name: "Edit site", exact: true }).click();
+  const editor = bPage.getByRole("dialog", { name: "Site details" });
+  await expect(editor.getByLabel("Visibility", { exact: true })).toBeDisabled();
+  const nameInput = editor.getByLabel("Name", { exact: true });
   await nameInput.fill(newName);
-  await bPage.getByRole("button", { name: "Save name" }).click();
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
   // The rename must be visible LIVE, with no reload — both the dialog's own
   // header and the underlying flight's h1 (via SiteNameControl's onRenamed
   // callback). A prior version of this dialog updated neither until reload.
-  await expect(bPage.getByRole("button", { name: "Save name" })).not.toBeVisible({ timeout: 5_000 });
+  await expect(editor.getByRole("button", { name: "Save site", exact: true })).toHaveCount(0);
   await expect(bPage.locator("h2").getByText(newName, { exact: true })).toBeVisible({ timeout: 5_000 });
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 5_000 });
   await bPage.getByRole("button", { name: "Close", exact: true }).click();

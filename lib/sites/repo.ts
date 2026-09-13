@@ -1,3 +1,4 @@
+import { hasSitePoint } from "./model";
 import { prisma } from "@/lib/prisma";
 import { Prisma, type Site, type Zone } from "@prisma/client";
 import { haversineM } from "@/lib/geo/distance";
@@ -216,6 +217,7 @@ export async function suggestNearbyLocations(
 
   const merged: SiteSuggestion[] = [];
   for (const site of siteById.values()) {
+    if (!hasSitePoint(site)) continue;
     const zones = zonesBySite.get(site.id) ?? [];
     const ownDistanceM = haversineM(lat, lon, site.lat, site.lon);
     const nearestZoneDistanceM = zones.length > 0 ? Math.min(...zones.map((z) => z.distanceM)) : Infinity;
@@ -275,6 +277,7 @@ export async function reassociateOwnFlights(
 
   const matchKind: MatchKind = endpoint;
   const anchor = zone ?? site;
+  if (!hasSitePoint(anchor)) return { updated: 0, truncated: false };
   const radius = zone ? zoneRadiusForKind(matchKind) : radiusForKind(matchKind);
   // SPRINT-006: scan by the boundary's own bbox (not the radius box) when
   // the anchor row has one — a widened boundary can reach flights well past

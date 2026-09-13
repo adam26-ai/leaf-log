@@ -11,6 +11,7 @@
 import type { Prisma } from "@prisma/client";
 
 export type AuditAction =
+  | "updated"
   | "create"
   | "published"
   | "renamed"

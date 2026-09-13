@@ -1,5 +1,6 @@
 "use client";
 
+import { SiteField } from "./site-field";
 import { FlightTypeFields } from "@/components/flight/type-flags";
 import { flightFlags } from "@/lib/flights/type-flags";
 import { useId, useState } from "react";
@@ -25,7 +26,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
     const error = fieldError(field);
     return <label className="flex min-w-0 flex-col gap-1.5 text-sm"><span className="font-medium text-gray-700">{label}</span>
       <input type={type} value={value[field]} {...props} maxLength={type === "text" ? 200 : undefined} step={type === "number" ? "any" : type === "time" ? 1 : undefined} aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${uid}-${field}-error` : undefined}
-        onChange={event => set({ [field]: event.target.value, ...(["takeoffLat", "takeoffLon"].includes(field) ? { takeoffSiteId: "" } : ["landingLat", "landingLon"].includes(field) ? { landingSiteId: "" } : {}) })} className={entryInputClass} />
+        onChange={event => set({ [field]: event.target.value })} className={entryInputClass} />
       {error && <span id={`${uid}-${field}-error`} className="text-xs text-red-600">{error}</span>}
     </label>;
   }
@@ -37,22 +38,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
     </label>;
   }
   function site(endpoint: "takeoff" | "landing", label: string) {
-    return <div className="flex flex-col gap-2">
-      <label className="flex flex-col gap-1.5 text-sm"><span className="font-medium text-gray-700">{label}</span>
-        <select aria-label={`Choose ${label.toLowerCase()}`} value={value[`${endpoint}SiteId`]} onChange={event => {
-          const selected = options.sites.find(site => site.id === event.target.value);
-          if (selected) set({ [`${endpoint}SiteId`]: selected.id, [`${endpoint}SiteName`]: selected.name,
-            ...(!value[`${endpoint}Lat`] || !value[`${endpoint}Lon`] ? { [`${endpoint}Lat`]: String(selected.lat), [`${endpoint}Lon`]: String(selected.lon) } : {}) });
-          else set({ [`${endpoint}SiteId`]: "" });
-        }} className={entryInputClass}>
-          <option value="">Enter a name below, or choose a site…</option>
-          <optgroup label="From your logbook">{options.sites.filter(site => site.previous).map(site => <option key={site.id} value={site.id}>{site.name} ({site.lat.toFixed(2)}, {site.lon.toFixed(2)})</option>)}</optgroup>
-          <optgroup label="Other available sites">{options.sites.filter(site => !site.previous).map(site => <option key={site.id} value={site.id}>{site.name} ({site.lat.toFixed(2)}, {site.lon.toFixed(2)})</option>)}</optgroup>
-        </select>
-      </label>
-      <input aria-label={`${label} name`} value={value[`${endpoint}SiteName`]} list={`${uid}-sites`} placeholder="Site name (optional)"
-        onChange={event => set({ [`${endpoint}SiteName`]: event.target.value, [`${endpoint}SiteId`]: "" })} className={entryInputClass} />
-    </div>;
+    return <SiteField endpoint={endpoint} label={label} value={value} sites={options.sites} onChange={set} />;
   }
   const total = Number(value.durationMinutes);
   const knownDuration = value.durationMinutes !== "" && Number.isFinite(total);
@@ -105,15 +91,15 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
 
       </div>
     </details>
-    <details open={issues.some(issue => ["takeoffLat", "takeoffLon", "landingLat", "landingLon"].includes(issue.field)) || undefined} className="rounded-lg border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-gray-700">Site location</summary>
-      <p className="my-3 text-xs text-gray-500">A known site fills this in automatically. For an unlisted site, enter coordinates or choose a point on the map.</p>
-      <div className="grid grid-cols-2 gap-3">{input("takeoffLat", "Site latitude", "number", { min: -90, max: 90 })}{input("takeoffLon", "Site longitude", "number", { min: -180, max: 180 })}</div>
+    <details open={issues.some(issue => ["takeoffLat", "takeoffLon", "landingLat", "landingLon"].includes(issue.field)) || undefined} className="rounded-lg border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-gray-700">Flight positions</summary>
+      <p className="my-3 text-xs text-gray-500">These are this flight’s positions. Choosing or editing a site does not change them. Leave them blank if they were not recorded.</p>
+      <div className="grid grid-cols-2 gap-3">{input("takeoffLat", "Takeoff latitude", "number", { min: -90, max: 90 })}{input("takeoffLon", "Takeoff longitude", "number", { min: -180, max: 180 })}</div>
       <button type="button" onClick={() => setShowMap(!showMap)} className="my-3 text-sm text-brand-blue-strong underline">{showMap ? "Hide map" : "Choose on map"}</button>
       {showMap && <EntryMap sites={options.sites}
         lat={value.takeoffLat ? Number(value.takeoffLat) : null} lon={value.takeoffLon ? Number(value.takeoffLon) : null}
         landingLat={value.landingLat ? Number(value.landingLat) : null} landingLon={value.landingLon ? Number(value.landingLon) : null}
-        onPick={(lat, lon) => set({ takeoffSiteId: "", takeoffLat: String(lat), takeoffLon: String(lon) })}
-        onPickLanding={(lat, lon) => set({ landingSiteId: "", landingLat: String(lat), landingLon: String(lon) })} />}
+        onPick={(lat, lon) => set({ takeoffLat: String(lat), takeoffLon: String(lon) })}
+        onPickLanding={(lat, lon) => set({ landingLat: String(lat), landingLon: String(lon) })} />}
       <div className="mt-3 grid grid-cols-2 gap-3">{input("landingLat", "Landing latitude", "number", { min: -90, max: 90 })}{input("landingLon", "Landing longitude", "number", { min: -180, max: 180 })}</div>
     </details>
     <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-700">{ENTRY_FIELDS.notes}

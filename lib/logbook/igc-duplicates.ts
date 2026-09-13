@@ -1,3 +1,4 @@
+import { duplicateSiteSelect, withOwnerSiteName } from "./site-names";
 import { prisma } from "@/lib/prisma";
 import { parseIgc } from "@/lib/igc/parse";
 import { deriveMetrics } from "@/lib/igc/derive";
@@ -6,6 +7,7 @@ import { sha256Hex } from "@/lib/ingest/dedupe";
 import { duplicateKey, duplicateTimeLabel, possibleIgcDuplicate } from "./duplicates";
 
 const duplicateSelect = {
+  ...duplicateSiteSelect,
   id: true,
   flightDate: true,
   takeoffAt: true,
@@ -85,7 +87,7 @@ export async function inspectIgcDuplicates(
 
   return {
     exact: null,
-    candidates: existing
+    candidates: existing.map(row => withOwnerSiteName(row, ownerId))
       .filter((flight) => possibleIgcDuplicate(candidate, flight))
       .slice(0, 5)
       .map((flight) => ({
