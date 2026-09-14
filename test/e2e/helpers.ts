@@ -44,7 +44,8 @@ export async function uploadFlight(page: Page, files: Parameters<FileChooser["se
   await (await chooser).setFiles(files);
 }
 
-/** Space must control replay even when a map control retains focus. */
+/** Space must control replay even when a map control retains focus.
+ * Use accessible control names so metric icon size and layout stay independent. */
 export async function expectReplaySpaceShortcut(page: Page) {
   const refresh = page.getByRole("button", { name: "Refresh friends" });
   await refresh.focus();
