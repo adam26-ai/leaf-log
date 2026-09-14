@@ -39,6 +39,10 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
 /** Opening the real picker waits for the client event handler; setting the
  * hidden input directly can fire before React hydrates and lose the upload. */
 export async function uploadFlight(page: Page, files: Parameters<FileChooser["setFiles"]>[0]) {
+  // Exercise real map rendering without external basemap downloads competing
+  // with the software WebGL renderer used in CI.
+  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
+  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);
@@ -51,7 +55,9 @@ export async function expectReplaySpaceShortcut(page: Page) {
   await refresh.focus();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  await page.locator(".flight-replay-map canvas").first().click();
+  const canvas = page.locator(".flight-replay-map canvas").first();
+  await canvas.focus();
+  await expect(canvas).toBeFocused();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 }
