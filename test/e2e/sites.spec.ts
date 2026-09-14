@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { createSiteFromFlight, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -93,13 +93,14 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await editor.getByRole('button', { name: 'Save site', exact: true }).click();
   await expect(editor).toHaveCount(0);
   const siteRow = page.getByRole('button', { name: new RegExp(standaloneName) });
-  await expect(siteRow).toContainText('private');
-  for (const visibility of ['public', 'private']) {
+  await expect(siteRow.getByLabel('Private', { exact: true })).toBeVisible();
+  for (const visibility of ['public', 'private'] as const) {
     await page.getByRole('button', { name: 'Edit site', exact: true }).click();
-    await editor.getByRole('combobox', { name: 'Visibility', exact: true }).selectOption(visibility);
+    await setSiteVisibility(editor, visibility);
     await editor.getByRole('button', { name: 'Save site', exact: true }).click();
     await expect(editor).toHaveCount(0);
-    await page.reload(); await expect(siteRow).toContainText(visibility);
+    await page.reload();
+    await expect(siteRow.getByLabel(visibility === 'public' ? 'Public' : 'Private', { exact: true })).toBeVisible();
   }
 
   // 2. Upload a flight far from every curated site -> "Unknown site".
@@ -111,14 +112,8 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   // 3. Name it, public, in place — no navigation. SPRINT-008: zones are
   // hidden from the product, so "Next" saves and closes the dialog
   // directly — the SPRINT-004 one-step flow this always was.
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
   const siteName = `E2E Desert Ridge ${suffix}`;
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Create site", exact: true }).click();
-  await editor.getByRole("combobox", { name: "Visibility", exact: true }).selectOption("public");
-  await editor.getByRole("button", { name: "Save site", exact: true }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+  await createSiteFromFlight(page, siteName, "public");
 
   // 4. A distinct second IGC nearby (same pilot) auto-associates on upload —
   // no interaction with the naming dialog at all.

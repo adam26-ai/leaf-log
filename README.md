@@ -22,7 +22,7 @@ A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ## Prerequisites
 
-- Node 20+ and `pnpm`
+- Node 24.14.0 (see `.node-version`) and `pnpm` 10.28.2
 - Docker (for local Postgres)
 
 ## Local development
@@ -101,14 +101,20 @@ system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 ## Testing
 
 ```bash
+pnpm check       # required before submitting: typecheck, lint, tests, build AND browsers
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
 pnpm e2e         # Playwright browser suite (needs local Postgres running)
 ```
 
-Integration tests (`*.integration.test.ts`, `lib/sites/lookup.test.ts`) auto-skip
-when `DATABASE_URL` is unset.
+The test suite requires a local `DATABASE_URL` and running PostgreSQL. Missing
+configuration fails immediately instead of skipping integration coverage.
+`pnpm check` uses the same pinned Node version and entry points as CI
+(`check:gates` and `check:e2e`), and rejects focused tests such as `test.only`.
+It requires installed dependencies and Chromium. A passing `pnpm test` alone
+does not validate browser workflows. See [the CI audit](docs/testing.md) for the
+failure history and the rules for changing shared UI workflows.
 
 With a local database configured, the unit/integration suite applies migrations
 to its own temporary schema and removes it afterward. Files run serially because
@@ -121,7 +127,10 @@ run. This avoids development rebuilds and Fast Refresh interrupting browser
 interactions. It applies migrations, generates the IGC fixture, and removes the
 schema after the run; your normal logbook and phone-testing settings are left alone. Real email is
 disabled for this server, and its magic links use a separate temporary file.
-Keep port 3100 free. Test traces are saved under `test-results/playwright` on failure.
+Keep port 3100 free. Test traces and screenshots are saved under
+`test-results/playwright` on failure. Open the HTML report with
+`pnpm exec playwright show-report`; CI retains it and both suites' JUnit results
+for seven days, including successful runs.
 
 Install Chromium once with `pnpm exec playwright install chromium` (CI uses
 `--with-deps`). Windows falls back to installed Edge if bundled Chromium is

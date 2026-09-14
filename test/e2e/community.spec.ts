@@ -1,4 +1,4 @@
-import { createSiteFromFlight, uploadFlight } from "./helpers";
+import { createSiteFromFlight, expectSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -94,7 +94,10 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
   await bPage.getByRole("button", { name: "Edit site", exact: true }).click();
   const editor = bPage.getByRole("dialog", { name: "Site details" });
-  await expect(editor.getByLabel("Visibility", { exact: true })).toBeDisabled();
+  await expectSiteVisibility(editor, "public");
+  await editor.getByRole("button", { name: "Private", exact: true }).click();
+  await expect(editor.getByRole("status").filter({ hasText: "Only the site owner can change visibility." })).toBeVisible();
+  await expectSiteVisibility(editor, "public");
   const nameInput = editor.getByLabel("Name", { exact: true });
   await nameInput.fill(newName);
   await editor.getByRole("button", { name: "Save site", exact: true }).click();

@@ -1,4 +1,17 @@
-import { expect, type FileChooser, type Page } from "@playwright/test";
+import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
+
+/** Assert the selected state as well as the available visibility choices. */
+export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
+  const group = editor.getByRole("group", { name: "Visibility", exact: true });
+  await expect(group.getByRole("button", { name: "Private", exact: true })).toHaveAttribute("aria-pressed", String(visibility === "private"));
+  await expect(group.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", String(visibility === "public"));
+}
+
+export async function setSiteVisibility(editor: Locator, visibility: "private" | "public") {
+  await editor.getByRole("group", { name: "Visibility", exact: true })
+    .getByRole("button", { name: visibility === "public" ? "Public" : "Private", exact: true }).click();
+  await expectSiteVisibility(editor, visibility);
+}
 
 /** Site details load on the server before naming is safe. CI also renders a
  * WebGL replay here, so allow the form to become ready without a fixed sleep. */
@@ -16,8 +29,8 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
   await name.fill(siteName);
   await dialog.getByRole("button", { name: "Create site", exact: true }).click();
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
-  await expect(dialog.getByLabel("Visibility", { exact: true })).toHaveValue("private");
-  if (visibility === "public") await dialog.getByLabel("Visibility", { exact: true }).selectOption("public");
+  await expectSiteVisibility(dialog, "private");
+  if (visibility === "public") await setSiteVisibility(dialog, "public");
   await dialog.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName);

@@ -88,6 +88,14 @@ export function SiteNameControl({
   const router = useRouter();
   const [siteName, setSiteName] = useState(initialSiteName);
   const [zoneName, setZoneName] = useState(initialZoneName);
+  const [serverNames, setServerNames] = useState({ site: initialSiteName, zone: initialZoneName });
+  // A refresh may update the names while a community dialog is open. Reconcile
+  // the labels without remounting this control and losing its dialog state.
+  if (serverNames.site !== initialSiteName || serverNames.zone !== initialZoneName) {
+    setServerNames({ site: initialSiteName, zone: initialZoneName });
+    setSiteName(initialSiteName);
+    setZoneName(initialZoneName);
+  }
   const [open, setOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
   const hydrated = useHydrated();

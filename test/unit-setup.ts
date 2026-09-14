@@ -6,7 +6,9 @@ import { PrismaClient } from "@prisma/client";
 /** Integration tests must not scan or alter a developer's existing logbook. */
 export default async function setup() {
   config({ path: ".env.local", quiet: true });
-  if (!process.env.DATABASE_URL) return;
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required: this suite includes database-backed integration and privacy tests. Start local PostgreSQL and configure .env.local.");
+  }
   const database = new URL(process.env.DATABASE_URL);
   if (!["localhost", "127.0.0.1", "[::1]"].includes(database.hostname)) {
     throw new Error("Integration tests require a local PostgreSQL database");

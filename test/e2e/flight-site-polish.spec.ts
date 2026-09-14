@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { openSiteChooser, uploadFlight } from "./helpers";
+import { expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -86,8 +86,12 @@ test("site management separates linked flights from matching names and counts ea
     const named = await db.flight.create({ data: { ...base, flightDate: new Date("2012-02-11"), takeoffSiteName: site.name, landingSiteName: site.name, takeoffSiteAssignment: "custom_name", landingSiteAssignment: "custom_name", landingLat: site.lat, landingLon: site.lon } });
     const otherLink = await db.flight.create({ data: { ...base, flightDate: new Date("2011-07-17"), takeoffSiteId: different.id, takeoffSiteName: different.name } });
     await page.goto("/settings/sites");
-    const siteRow = page.getByRole("button", { name: /Ed Levin 1750.*private.*1 flight/ });
+    const siteRow = page.getByRole("region", { name: "Sites list", exact: true }).getByRole("button")
+      .filter({ hasText: "Ed Levin 1750", has: page.getByLabel("Private", { exact: true }) });
     await expect(siteRow).toBeVisible();
+    await expect(siteRow.getByLabel("Private", { exact: true })).toBeVisible();
+    await expect(siteRow.getByLabel("1 flights", { exact: true })).toHaveText("1");
+    await siteRow.click();
     await page.getByRole("button", { name: "Edit site", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Site details" });
     await expect(page.getByText("Add at least 3 points.", { exact: true })).toBeHidden();
@@ -113,7 +117,8 @@ test("site management separates linked flights from matching names and counts ea
     await expect(namedRow.getByText("Location needs review", { exact: true })).toHaveCount(2);
     await expect(namedRow.getByRole("checkbox")).toHaveCount(2);
     const otherRow = review.getByRole("listitem").filter({ hasText: "2011-07-17" });
-    await expect(otherRow.getByText("Mapped", { exact: true })).toBeVisible();
+    await expect(otherRow.getByText(different.name, { exact: true })).toBeVisible();
+    await expect(otherRow.getByText("Location needs review", { exact: true })).toHaveCount(0);
     await expect(otherRow.getByText(/different site with the same name/)).toBeVisible();
     await namedRow.getByRole("checkbox").first().check();
     await namedRow.getByRole("checkbox").last().check();
@@ -126,16 +131,18 @@ test("site management separates linked flights from matching names and counts ea
     await review.getByRole("button", { name: "Select all on this page" }).click();
     await review.getByRole("button", { name: "Assign site to 2 selected flights", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Ed Levin 1750 assigned to 2 flights." })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Ed Levin 1750.*3 flights/ })).toBeVisible();
+    await expect(siteRow.getByLabel("3 flights", { exact: true })).toHaveText("3");
     await expect(flights.getByRole("listitem")).toHaveCount(3);
     await expect(review.getByRole("listitem")).toHaveCount(0);
     await expect(review.getByText(/No additional flights match/)).toBeVisible();
     expect(await db.flight.findUniqueOrThrow({ where: { id: named.id } })).toMatchObject({ takeoffSiteId: site.id, landingSiteId: site.id, takeoffLat: site.lat, landingLat: site.lat, durationS: 900 });
     expect(await db.flight.findUniqueOrThrow({ where: { id: otherLink.id } })).toMatchObject({ takeoffSiteId: site.id });
-    await page.getByRole("button", { name: new RegExp(`${empty.name}.*0 flights`) }).click();
+    const emptyRow = page.getByRole("region", { name: "Sites list", exact: true }).getByRole("button").filter({ hasText: empty.name });
+    await expect(emptyRow.getByLabel("0 flights", { exact: true })).toHaveText("0");
+    await emptyRow.click();
     await expect(flights.getByText(/No flights use this site yet/)).toBeVisible();
     await expect(flights.getByRole("listitem")).toHaveCount(0);
-    await page.getByRole("button", { name: /Ed Levin 1750.*3 flights/ }).click();
+    await siteRow.click();
     await expect(flights.getByRole("listitem")).toHaveCount(3);
     await page.reload();
     await expect(flights.getByRole("listitem")).toHaveCount(3);
@@ -198,7 +205,7 @@ test("CSV site names use the full editor and keep their identity and flight coor
     await expect(dialog.getByText("Name only", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Edit this site", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Draw or edit boundary" })).toBeVisible();
-    await expect(dialog.getByLabel("Visibility", { exact: true })).toHaveValue("private");
+    await expectSiteVisibility(dialog, "private");
     await dialog.getByLabel("Name", { exact: true }).fill("Remembered Hill");
     await dialog.getByLabel("Pin latitude", { exact: true }).fill("37.6");
     await dialog.getByLabel("Pin longitude", { exact: true }).fill("-122.4");
@@ -218,7 +225,7 @@ test("CSV site names use the full editor and keep their identity and flight coor
     const box = await map.boundingBox();
     for (const [x, y] of [[0.3, 0.3], [0.7, 0.3], [0.7, 0.7], [0.3, 0.7]]) await map.locator("canvas").click({ position: { x: box!.width * x, y: box!.height * y } });
     await expect(dialog.getByTestId("boundary-vertex")).toHaveCount(4);
-    await dialog.getByLabel("Visibility", { exact: true }).selectOption("public");
+    await setSiteVisibility(dialog, "public");
     await dialog.getByRole("button", { name: "Save site", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     const site = await db.site.findUniqueOrThrow({ where: { id: mapped.takeoffSiteId! } });

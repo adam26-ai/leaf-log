@@ -104,7 +104,7 @@ export function FlightHeader({
         <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-2">
           <FlightTypeBadges flags={flightFlags(flight)} />
           <SiteNameControl
-            key={`${flight.id}:${primaryEndpoint}:${flight[`${primaryEndpoint}SiteName`]}`}
+            key={`${flight.id}:${primaryEndpoint}`}
             as="h1"
             flightId={flight.id}
             endpoint={primaryEndpoint}

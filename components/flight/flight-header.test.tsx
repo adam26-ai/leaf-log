@@ -9,6 +9,13 @@ vi.mock("./type-flags", () => ({ FlightTypeBadges: () => null }));
 afterEach(cleanup);
 const flight = { id: "flight", flightDate: new Date("2026-08-01"), takeoffSiteName: "Main Ridge", takeoffSiteId: "main", landingSiteName: "Valley Field", landingSiteId: null, landingLat: null, landingLon: null } as Flight;
 
+it("keeps the site control mounted when a server refresh updates its name", () => {
+  const { rerender } = render(<FlightHeader flight={flight} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);
+  const control = screen.getByRole("button", { name: "Main Ridge" });
+  rerender(<FlightHeader flight={{ ...flight, takeoffSiteName: "Renamed Ridge" }} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);
+  expect(screen.getByRole("button", { name: "Renamed Ridge" })).toBe(control);
+});
+
 it("shows an editable name-only landing without GPS, below the primary site's emphasis", () => {
   render(<FlightHeader flight={flight} isOwner previousFlightId={null} nextFlightId={null} actions={null} />);
   expect(within(screen.getByRole("heading", { level: 1 })).getByRole("button", { name: "Main Ridge" })).toBeInTheDocument();

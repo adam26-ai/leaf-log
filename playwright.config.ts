@@ -32,15 +32,22 @@ const channel = process.env.PLAYWRIGHT_CHANNEL ||
 export default defineConfig({
   testDir: "./test/e2e",
   timeout: 60_000,
+  forbidOnly: !!process.env.CI,
   fullyParallel: false,
   workers: 1,
   outputDir: "test-results/playwright",
-  reporter: [["list"], ["./test/e2e/cleanup-reporter.ts"]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ["junit", { outputFile: "test-results/e2e.xml" }],
+    ["./test/e2e/cleanup-reporter.ts"],
+  ],
   use: {
     baseURL,
     channel,
     launchOptions: { args: ["--enable-unsafe-swiftshader"] },
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },

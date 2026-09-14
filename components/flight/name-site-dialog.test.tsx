@@ -12,9 +12,19 @@ vi.mock("@/app/flights/[id]/boundary-action", () => ({}));
 vi.mock("@/app/settings/sites/editor-actions", () => ({}));
 vi.mock("./persisted-site-editor", () => ({ PersistedSiteEditor: () => <div>New site editor</div> }));
 vi.mock("@/components/flight/boundary-editor", () => ({ BoundaryEditor: () => null }));
-vi.mock("@/components/flight/location-community-dialog", () => ({ LocationCommunityDialog: () => null }));
+vi.mock("@/components/flight/location-community-dialog", () => ({ LocationCommunityDialog: () => <div role="dialog">Community details</div> }));
 vi.mock("@/components/flight/site-area-map", () => ({ SiteAreaMap: () => null }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+it("updates refreshed names without dismissing an open community dialog", () => {
+  const props = { flightId: "flight", endpoint: "takeoff" as const, initialSiteName: "Old Ridge", initialZoneName: null, siteId: "site", zoneId: null, isOwner: false, zonesEnabled: false };
+  const { rerender } = render(<SiteNameControl {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Old Ridge" }));
+  expect(screen.getByRole("dialog")).toBeVisible();
+  rerender(<SiteNameControl {...props} initialSiteName="Renamed Ridge" />);
+  expect(screen.getByRole("button", { name: "Renamed Ridge" })).toBeVisible();
+  expect(screen.getByRole("dialog")).toBeVisible();
+});
 
 async function openChooser(zonesEnabled = false) {
   render(<SiteNameControl flightId="flight" endpoint="takeoff" initialSiteName="Old Ridge" initialZoneName={null} siteId={null} zoneId={null} isOwner zonesEnabled={zonesEnabled} needsReview />);
