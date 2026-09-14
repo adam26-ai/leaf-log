@@ -54,3 +54,8 @@ export async function expectReplaySpaceShortcut(page: Page) {
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 }
+
+/** Scope per-entry calculation actions outside the flight navigation link. */
+export function logbookEntry(page: Page, flightId: string) {
+  return page.getByRole("listitem").filter({ has: page.locator(`a[href="/flights/${flightId}"]`) });
+}
