@@ -17,6 +17,8 @@ import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 import { useUnits } from "@/lib/flights/use-units";
 
+import { AnalysisStatus } from "@/components/flight/analysis-status";
+
 interface FlightRowOwner {
   handle: string;
   displayName: string;
@@ -43,6 +45,7 @@ export function FlightRow({
   distanceScore = 0,
   previewAutoUpload = false,
   trophies,
+  showAnalysis = false,
   friendFlightsFound = false,
 }: {
   flight: FlightListItem;
@@ -53,6 +56,7 @@ export function FlightRow({
   distanceScore?: number;
   previewAutoUpload?: boolean;
   trophies?: FlightTrophy[];
+  showAnalysis?: boolean;
   friendFlightsFound?: boolean;
 }) {
   const { units } = useUnits();
@@ -96,6 +100,7 @@ export function FlightRow({
           <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
         </span>
       </Link>
+      {showAnalysis && <AnalysisStatus flight={flight} owner compact />}
       </div>
     );
   }

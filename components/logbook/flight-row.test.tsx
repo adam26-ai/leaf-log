@@ -1,9 +1,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { FlightListItem } from "@/lib/flights/repo";
 import { FlightRow } from "./flight-row";
 
 
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueMissingFlightAnalysis: vi.fn() }));
 
 afterEach(cleanup);
 
@@ -85,8 +88,16 @@ it("reserves the companion column for flights without a match", () => {
 });
 
 it.each(["manual_entry", "csv_import"])("identifies %s with an icon without an extra status row", (source) => {
-  const { container } = render(<FlightRow flight={{ ...flight, source, recordingKind: "logbook" }} compact />);
+  const { container } = render(<FlightRow flight={{ ...flight, source, recordingKind: "logbook" }} compact showAnalysis />);
   expect(screen.getByRole("img", { name: source === "manual_entry" ? "Manual logbook entry" : "Imported logbook entry" })).toBeInTheDocument();
   expect(screen.queryByText(/No track recorded|Reported XC/)).not.toBeInTheDocument();
   expect(container.firstElementChild?.children).toHaveLength(1);
+});
+
+it("shows calculation actions only in the owner's logbook", () => {
+  const { rerender } = render(<FlightRow flight={{ ...flight, xcStatus: "unscored" }} compact showAnalysis />);
+  const action = screen.getByRole("button", { name: "Calculate XC" });
+  expect(action.closest("a")).toBeNull();
+  rerender(<FlightRow flight={{ ...flight, xcStatus: "unscored" }} compact />);
+  expect(screen.queryByRole("button", { name: "Calculate XC" })).not.toBeInTheDocument();
 });
