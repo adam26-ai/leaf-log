@@ -2,8 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
-import { makeRealisticFlight } from "../igc/make-igc";
-import { expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
+import { createHash } from "node:crypto";
+import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
+import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -327,14 +328,17 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     const entry = await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "csv_import", flightDate: new Date("2024-07-12"), glider: "Test Wing", durationS: 400, notes: "Original notes", flightFlags: ["siv", "competition"] } });
     await page.goto("/upload");
-    await uploadFlight(page, { name: "found.igc", mimeType: "text/plain", buffer: Buffer.from(makeRealisticFlight().igc) });
+    const recordedIgc = makeIgc({ glider: "Test Wing", fixes: Array.from({ length: 12 }, (_, index) => ({
+      tSec: 36000 + index * 10, lat: 37.6685 + index * 0.001, lon: -122.4936, baro: 500 + index * 10,
+    })) });
+    await uploadFlight(page, { name: "found.igc", mimeType: "text/plain", buffer: Buffer.from(recordedIgc) });
     await expect(page.getByText("Overlapping flight found")).toBeVisible();
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.getByRole("rowheader", { name: "Recorder ID" })).toBeVisible();
     await expect(page.getByRole("rowheader", { name: "Start time" })).toBeVisible();
     await page.getByRole("button", { name: "Add uploaded IGC to this flight" }).click();
     await expect(page).toHaveURL(`/flights/${entry.id}`);
-    await expect.poll(async () => (await db.flight.findUniqueOrThrow({ where: { id: entry.id } })).xcStatus, { timeout: 45000 }).not.toMatch(/queued|scoring/);
+    await expect.poll(async () => (await db.flight.findUniqueOrThrow({ where: { id: entry.id } })).xcStatus, { timeout: 45000 }).not.toMatch(/queued|processing|repairing|improving/);
     const point = (lat: number, lon: number) => ({ lat, lon, timeMs: 1720785600000 });
     const makeRoute = (shape: XcCandidate["shape"], name: string, distanceM: number): XcCandidate => ({ shape, name, distanceM, points: distanceM / 1000, optimal: true, multiplier: 1, closingGapM: 0, vertices: [point(37.6685, -122.4936), point(37.67, -122.48), point(37.66, -122.47)], start: null, finish: null });
     const open = makeRoute("open", "Open distance", 12000), fai = makeRoute("fai-triangle", "FAI triangle", 8000), free = makeRoute("free-triangle", "Free triangle", 9000);
@@ -342,7 +346,6 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.reload();
     const map = page.locator(".flight-replay-map");
     await expect(map).toHaveAttribute("data-scored-route", "hidden");
-    await expectReplaySpaceShortcut(page);
     const metric = page.getByTitle(/credited distance/);
     for (const [shape, name] of [["open", "Open distance"], ["fai-triangle", "FAI triangle"], ["free-triangle", "Free triangle"], ["hidden", "Open distance"]]) {
       await metric.click();
@@ -374,5 +377,39 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.screenshot({ path: "test-results/replay-trophies.png", fullPage: true });
     expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(1);
     expect((await db.flight.findUniqueOrThrow({ where: { id: entry.id } })).notes).toBe("Original notes");
+    await expectReplaySpaceShortcut(page);
+  } finally { await db.$disconnect(); }
+});
+
+test("logbook calculation notice disappears after automatic refresh and stays absent after reload", async ({ page }) => {
+  // Keep the simulated refresh timer out of replay's WebGL animation loop.
+  await page.clock.install();
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    // Four valid fixes exercise the real queue and finish with no eligible route,
+    // without making a UI lifecycle assertion depend on the XC search budget.
+    const shortIgc = Buffer.from(makeIgc({ fixes: Array.from({ length: 4 }, (_, index) => ({
+      tSec: 36000 + index * 10, lat: 37.8 + index * 0.001, lon: -122.5, baro: 500 + index * 10,
+    })) }));
+    const pendingEntry = await db.flight.create({ data: {
+      ownerId: owner.id, status: "ready", recordingKind: "igc", xcStatus: "unscored", metricsVersion: METRICS_VERSION,
+      igcSha256: createHash("sha256").update(shortIgc).digest("hex"), data: { create: { rawIgc: shortIgc } },
+    } });
+    await page.goto("/logbook");
+    const row = logbookEntry(page, pendingEntry.id);
+    await row.getByRole("button", { name: "Calculate XC", exact: true }).click();
+    await expect(page).toHaveURL(/\/logbook$/);
+    await expect.poll(async () => (await db.flight.findUniqueOrThrow({ where: { id: pendingEntry.id } })).xcStatus).toBe("empty");
+    // Exercise the five-second automatic refresh without racing the default
+    // five-second assertion deadline against that same timer.
+    await expect.poll(async () => {
+      await page.clock.fastForward(5000);
+      return row.locator("[data-flight-analysis]").count();
+    }).toBe(0);
+    await page.reload();
+    await expect(row.locator("[data-flight-analysis]")).toHaveCount(0);
+
   } finally { await db.$disconnect(); }
 });

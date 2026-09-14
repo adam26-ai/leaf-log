@@ -17,6 +17,8 @@ import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 import { useUnits } from "@/lib/flights/use-units";
 
+import { AnalysisStatus } from "@/components/flight/analysis-status";
+
 interface FlightRowOwner {
   handle: string;
   displayName: string;
@@ -43,6 +45,7 @@ export function FlightRow({
   distanceScore = 0,
   previewAutoUpload = false,
   trophies,
+  showAnalysis = false,
   friendFlightsFound = false,
 }: {
   flight: FlightListItem;
@@ -53,6 +56,7 @@ export function FlightRow({
   distanceScore?: number;
   previewAutoUpload?: boolean;
   trophies?: FlightTrophy[];
+  showAnalysis?: boolean;
   friendFlightsFound?: boolean;
 }) {
   const { units } = useUnits();
@@ -88,14 +92,15 @@ export function FlightRow({
           <span title="Maximum altitude" className="hidden shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-brand-blue-strong sm:inline-flex"><Cloud className="h-3.5 w-3.5" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
         </span>
         <span className="flex h-6 w-11 shrink-0 items-center justify-center">
-          {friendFlightsFound && <span title="Friend flights found" aria-label="Friend flights found" className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-brand-blue bg-brand-blue px-1.5 text-white"><WingIcon aria-hidden="true" className="h-4 w-4" /><Users aria-hidden="true" className="h-3.5 w-3.5" /></span>}
+          {friendFlightsFound && <span title="Friend flights found" aria-label="Friend flights found" className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-brand-blue bg-brand-blue px-0.5 text-white"><WingIcon aria-hidden="true" className="h-5 w-5" /><Users aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></span>}
         </span>
         <ResponsiveTrophies trophies={trophies ?? []} />
         <span className="hidden items-center gap-1 min-[400px]:flex sm:gap-3">
-          <span title={`Visibility: ${visibility.label}`} aria-label={`Visibility: ${visibility.label}`} className={`inline-flex h-6 items-center justify-center gap-0.5 rounded-full border px-1.5 ${visibility.className}`}><Eye aria-hidden="true" className="h-3.5 w-3.5" /><VisibilityIcon aria-hidden="true" className="h-3.5 w-3.5" /></span>
+          <span title={`Visibility: ${visibility.label}`} aria-label={`Visibility: ${visibility.label}`} className={`inline-flex h-6 items-center justify-center gap-0.5 rounded-full border px-1.5 ${visibility.className}`}><Eye aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><VisibilityIcon aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></span>
           <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
         </span>
       </Link>
+      {showAnalysis && <AnalysisStatus flight={flight} owner compact />}
       </div>
     );
   }

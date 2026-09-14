@@ -45,6 +45,11 @@ it("keeps lag bounded for a fast moving target at different render rates", () =>
     }
   }
 });
+it("settles safely after a long rendering stall using the full elapsed time", () => {
+  const [position, velocity] = cameraSpring(0, 50, 100, 5, 8);
+  expect(position).toBeCloseTo(100, 8);
+  expect(velocity).toBeCloseTo(0, 8);
+});
 it("keeps low and high pilot positions between bottom and badge clearance", () => {
   expect(altitudeAnchorY(0, 0, 1000, 600, 180, false)).toBeCloseTo(528);
   expect(altitudeAnchorY(1000, 0, 1000, 600, 180, false)).toBe(268);

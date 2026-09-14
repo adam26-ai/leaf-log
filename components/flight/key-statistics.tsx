@@ -28,20 +28,17 @@ import { isLogbookEntry } from "@/lib/flights/recording";
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
   const content = (
     <>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
-          <Icon className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
-        </span>
-        <span
-          className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink"
-          title={value}
-        >
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+        <Icon aria-hidden="true" className="h-5 w-5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink" title={value}>
           {value}
         </span>
+        <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500" title={label}>
+          {label}
+        </span>
       </div>
-      <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
     </>
   );
   return seek || onClick ? (
@@ -49,11 +46,11 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
       type="button"
       onClick={onClick ?? (() => seek && seekReplayToMetric(seek))}
       title={description ?? `Go to ${label.toLowerCase()}`}
-      className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
+      className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
     >
       {content}
     </button>
-  ) : <div title={description} className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">{content}</div>;
+  ) : <div title={description} className="flex min-w-0 items-center gap-2 px-2 py-1.5">{content}</div>;
 }
 
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */

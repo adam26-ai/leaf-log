@@ -1733,7 +1733,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     let previous = performance.now();
     const track = (now: number) => {
       frame = requestAnimationFrame(track);
-      const dt = Math.min(0.1, Math.max(0, (now - previous) / 1000));
+      // The exact spring is stable for long frames. Capping elapsed time makes
+      // a slow renderer keep chasing a paused target and repainting for minutes.
+      const dt = Math.max(0, (now - previous) / 1000);
       previous = now;
       const map = mapRef.current;
       const target = trackingTargetRef.current;

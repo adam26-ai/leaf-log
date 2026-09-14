@@ -1,4 +1,11 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
+import sharp from "sharp";
+
+// Terrarium encodes zero metres as RGB(128, 0, 0). Keep terrain enabled while
+// removing network-dependent terrain shape and tile timing from UI assertions.
+const flatTerrainTile = sharp({ create: {
+  width: 256, height: 256, channels: 3, background: { r: 128, g: 0, b: 0 },
+} }).png().toBuffer();
 
 /** Assert the selected state as well as the available visibility choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
@@ -39,18 +46,37 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
 /** Opening the real picker waits for the client event handler; setting the
  * hidden input directly can fire before React hydrates and lose the upload. */
 export async function uploadFlight(page: Page, files: Parameters<FileChooser["setFiles"]>[0]) {
+  // Exercise real map rendering without external basemap downloads competing
+  // with the software WebGL renderer used in CI.
+  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
+  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
+  await page.route("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**", async route => {
+    await route.fulfill({ contentType: "image/png", body: await flatTerrainTile });
+  });
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);
 }
 
-/** Space must control replay even when a map control retains focus. */
+/** Space must control replay even when a map control retains focus.
+ * Use accessible control names so metric icon size and layout stay independent. */
 export async function expectReplaySpaceShortcut(page: Page) {
+  // Test the shortcut at normal speed so a slow renderer cannot finish the
+  // flight between the Play assertion and the key intended to pause it.
+  await page.getByRole("button", { name: /^Playback speed:/ }).click();
+  await page.getByRole("option", { name: "1×", exact: true }).click();
   const refresh = page.getByRole("button", { name: "Refresh friends" });
   await refresh.focus();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
-  await page.locator(".flight-replay-map canvas").first().click();
+  const canvas = page.locator(".flight-replay-map canvas").first();
+  await canvas.focus();
+  await expect(canvas).toBeFocused();
   await page.keyboard.press("Space");
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+}
+
+/** Scope per-entry calculation actions outside the flight navigation link. */
+export function logbookEntry(page: Page, flightId: string) {
+  return page.getByRole("listitem").filter({ has: page.locator(`a[href="/flights/${flightId}"]`) });
 }
