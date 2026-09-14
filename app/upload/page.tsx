@@ -1,8 +1,7 @@
 import { requireProfile } from "@/lib/profile";
 import { AppHeader } from "@/components/app-header";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { Dropzone } from "@/components/upload/dropzone";
-import { ManualEntryForm } from "@/components/logbook/manual-entry-form";
+import { AddFlightForm } from "@/components/upload/add-flight-form";
 import { getEntryOptions } from "@/lib/logbook/options";
 
 export default async function UploadPage() {
@@ -17,11 +16,7 @@ export default async function UploadPage() {
           Drop an .igc file from your Leaf (or any flight recorder). We&apos;ll parse it and build your flight
           page. Flights are private until you choose to share them.
         </p>
-        <Dropzone />
-        <section className="mt-10 border-t border-gray-200 pt-8">
-          <h2 className="mb-5 font-condensed text-2xl font-bold text-ink">Or manually enter flight details</h2>
-          <ManualEntryForm options={options} imperial={profile.defaultUnits === "imperial"} />
-        </section>
+        <AddFlightForm options={options} imperial={profile.defaultUnits === "imperial"} />
       </main>
     </div>
   );

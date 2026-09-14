@@ -14,7 +14,7 @@ Private and Public describe visibility, independently of whether a site is mappe
 
 ## Edit a site from any starting point
 
-Open a flight’s site name, then choose **Edit this site**. You can also open **Settings → Sites → Edit site**, or **Edit site** inside a manual entry or CSV review.
+Open a flight’s site name, then choose **Edit this site**. You can also open **Settings → Sites → Edit site**, or **Site details** on a selected site inside a manual entry or CSV review. For a new site, choose **Add location or details**.
 
 The editor always includes:
 
@@ -42,7 +42,11 @@ Changing a site’s name or location affects how all flights using that site dis
 
 ## Manual entries and CSV imports
 
-Enter a new site name, select an existing site, or open the full editor. A name alone creates a private unmapped site. A name with usable coordinates normally creates a private mapped site, or reuses a matching existing site.
+Use **Search or enter a site name** for both flying and landing sites. Matching sites appear immediately, with names starting with your text first and previously used sites prioritized within each match group. Choose a result, or explicitly choose **Add “[name]” as a new site**. Typing alone does not attach or create a site.
+
+After choosing a site, **Change** reopens search and **Clear** removes the selection from this flight while retaining flight coordinates. Escape or **Keep current site** cancels a replacement. **Site details** opens the full editor for an existing site; **Add location or details** does the same for a new name. New sites and pending edits are saved with the flight or confirmed import, never while searching. Leaving an unsaved entry creates nothing.
+
+A name alone creates a private unmapped site. A name with usable coordinates normally creates a private mapped site, or reuses a matching existing site.
 
 In CSV column matching, specify whether coordinates describe **this flight’s position** or **the site’s reference location**. Reference coordinates can establish a site pin without becoming recorded flight positions.
 
@@ -71,6 +75,10 @@ Attaching an IGC recording to an existing entry keeps an explicitly chosen site.
 ## Manage existing flights and undo imports
 
 Settings → Sites lists your sites and public sites used in your logbook. **Flights at this site** lists flights using the selected site. **Review matching flights** finds additional endpoint candidates for explicit selection. It does not reassign history automatically.
+
+**Replace site**, inside **Flights at this site**, lets you choose another available site and review the number of affected flights before confirming. It replaces every takeoff and landing reference to the selected site in your own logbook, including flights on other pages. Flight coordinates and other flight details are preserved; neither site nor other pilots’ flights are changed. If the sites or flight references change while the confirmation is open, review the replacement again.
+
+**Delete site** is available to the site owner and requires confirmation showing the affected flight count. It permanently removes the reusable site and its saved zones, while keeping the flights and recorded positions. Sites used or edited by other pilots cannot be deleted this way; use replacement to change your own logbook instead.
 
 The logbook has separate takeoff and landing site filters. The site-location filter can find missing or uncertain locations at either endpoint.
 

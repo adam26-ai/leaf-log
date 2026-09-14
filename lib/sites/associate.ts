@@ -5,6 +5,8 @@ import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } 
 import { validateBoundary, boundaryColumns, type BoundaryColumns } from "./boundary";
 import { writeAuditEntry, type AuditAction } from "./audit";
 import { assignmentPatch } from "./assignment";
+import { createHash } from "node:crypto";
+import { lockSiteRows } from "./locks";
 
 export type SiteEndpoint = "takeoff" | "landing";
 
@@ -494,13 +496,19 @@ async function siteHasOtherOwnedZone(
  * first — once the site is naturally unreferenced and footprint-free, this
  * same guard passes.
  */
-export async function deleteSite(siteId: string, ownerId: string): Promise<void> {
+export async function deleteSite(siteId: string, ownerId: string, expectedRevision?: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    await lockSiteRows(tx, [siteId]);
     const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
     if (!existing) throw notFoundOrNotOwned();
     if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
     if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
     if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
+
+    if (expectedRevision && (await siteDeletionPreview(tx, siteId, ownerId)).revision !== expectedRevision) {
+      throw new Error("This site or its flights changed. Review the deletion again before confirming.");
+    }
 
     await tx.$executeRaw`
       UPDATE "Flight" f SET "takeoffZoneId" = NULL, "takeoffZoneName" = NULL
@@ -522,6 +530,27 @@ export async function deleteSite(siteId: string, ownerId: string): Promise<void>
 
     await tx.site.delete({ where: { id: siteId } });
   });
+}
+
+export type SiteDeletionPreview = { id: string; name: string; flightCount: number; zoneCount: number; revision: string };
+
+async function siteDeletionPreview(db: Pick<typeof prisma, "site" | "flight" | "zone" | "locationAuditEntry">, siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
+  const site = await db.site.findFirst({ where: { id: siteId, ownerId } });
+  if (!site) throw new Error("Only the site owner can delete this site.");
+  if (await referencedByOthers(db, siteId, ownerId) || await siteHasOtherOwnedZone(db, siteId, ownerId)) {
+    throw new Error("Other pilots use this site or own locations within it, so it cannot be deleted. You can replace it in your own logbook instead.");
+  }
+  if (await hasCommunityFootprint(db, "site", siteId, ownerId)) {
+    throw new Error("Other pilots have contributed to this site, so it cannot be deleted. You can replace it in your own logbook instead.");
+  }
+  const flights = await db.flight.findMany({ where: { ownerId, OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }] }, select: { id: true, takeoffSiteId: true, landingSiteId: true }, orderBy: { id: "asc" } });
+  const zones = await db.zone.findMany({ where: { siteId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } });
+  return { id: site.id, name: site.name, flightCount: flights.length, zoneCount: zones.length,
+    revision: createHash("sha256").update(JSON.stringify([site.id, site.updatedAt, flights, zones])).digest("hex") };
+}
+
+export async function previewSiteDeletion(siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
+  return siteDeletionPreview(prisma, siteId, ownerId);
 }
 
 /**

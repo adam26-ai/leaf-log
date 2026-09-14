@@ -10,3 +10,9 @@ export async function lockSiteRows(tx: LockDb, ids: string[]) {
 export async function lockFlightRow(tx: LockDb, id: string, ownerId: string) {
   await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "id" = ${id} AND "ownerId" = ${ownerId} FOR UPDATE`;
 }
+
+/** Lock the caller's linked flights after locking the affected site rows. */
+export async function lockSiteFlights(tx: LockDb, ownerId: string, siteId: string) {
+  await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "ownerId" = ${ownerId}
+    AND ("takeoffSiteId" = ${siteId} OR "landingSiteId" = ${siteId}) ORDER BY "id" FOR UPDATE`;
+}

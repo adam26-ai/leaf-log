@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
+import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -248,7 +248,7 @@ test("IGC upload and editing save multiple flight types without changing an exac
   const file = { name: "typed-flight.igc", mimeType: "text/plain", buffer: Buffer.from(makeRealisticFlight().igc) };
   try {
     await page.goto("/upload");
-    for (const name of ["Tandem", "SIV", "Competition", "Tow"]) await page.getByRole("checkbox", { name, exact: true }).first().check();
+    await setNewFlightTypes(page, ["Tandem", "SIV", "Competition", "Tow"]);
     await uploadFlight(page, file);
     await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
     const id = page.url().split("/").at(-1)!;
@@ -261,7 +261,7 @@ test("IGC upload and editing save multiple flight types without changing an exac
     await expect(page.getByRole("checkbox", { name: "Tandem", exact: true })).not.toBeChecked();
     await expect(page.getByRole("checkbox", { name: "SIV", exact: true })).toBeChecked();
     await page.goto("/upload");
-    await page.getByRole("checkbox", { name: "Tandem", exact: true }).first().check();
+    await setNewFlightTypes(page, ["Tandem"]);
     await uploadFlight(page, file);
     await expect(page.getByText("Already uploaded", { exact: false })).toBeVisible();
     expect(await db.flight.findUniqueOrThrow({ where: { id } })).toMatchObject({ flightFlags: ["siv", "competition"], occupancy: "solo", launchTypes: [] });

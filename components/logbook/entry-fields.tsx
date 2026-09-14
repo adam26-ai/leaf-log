@@ -44,7 +44,6 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
   const knownDuration = value.durationMinutes !== "" && Number.isFinite(total);
   return <div className="flex flex-col gap-5">
     <datalist id={`${uid}-wings`}>{options.wings.map(wing => <option key={wing} value={wing} />)}</datalist>
-    <datalist id={`${uid}-sites`}>{options.siteNames.map(name => <option key={name} value={name} />)}</datalist>
     <div className="grid gap-4 sm:grid-cols-2">
       {input("date", "Flight date", "date")}
       <fieldset><legend className="mb-1.5 text-sm font-medium text-gray-700">Duration <span className="font-normal text-gray-400">(optional)</span></legend>
@@ -87,7 +86,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
         <div />
         {input("maxClimb", "Best climb", "number", { min: 0 })}
         {input("maxSink", "Max sink", "number")}
-        {site("landing", "Landing site (optional)")}
+        {site("landing", "Landing site")}
 
       </div>
     </details>

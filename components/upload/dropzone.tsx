@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { FlightTypeFields } from "@/components/flight/type-flags";
 import type { FlightFlag } from "@/lib/flights/type-flags";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,9 +25,7 @@ type ActiveComparison = {
   preview: IgcComparisonPreview;
 };
 
-export function Dropzone() {
-  const [flags, setFlags] = useState<FlightFlag[]>([]);
-  const [tandemTouched, setTandemTouched] = useState(false);
+export function Dropzone({ flags = [], tandemTouched = false }: { flags?: FlightFlag[]; tandemTouched?: boolean }) {
   const hydrated = useHydrated();
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -146,7 +143,6 @@ export function Dropzone() {
 
   return (
     <div className="flex flex-col gap-5">
-      <FlightTypeFields value={flags} onChange={(next, changed) => { setFlags(next); if (changed === "tandem") setTandemTouched(true); }} disabled={busy || Boolean(results)} />
       <div
         onDragOver={(event) => {
           event.preventDefault();

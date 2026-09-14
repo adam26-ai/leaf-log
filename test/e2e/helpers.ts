@@ -7,6 +7,26 @@ const flatTerrainTile = sharp({ create: {
   width: 256, height: 256, channels: 3, background: { r: 128, g: 0, b: 0 },
 } }).png().toBuffer();
 
+/** Typing only searches; explicitly add the name to the unsaved flight. */
+export async function addEntrySite(page: Page, name: string, label = "Flying site") {
+  const field = page.getByRole("group", { name: label, exact: true });
+  await field.getByRole("combobox", { name: `Search ${label.toLowerCase()}`, exact: true }).fill(name);
+  await expect(field.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
+  await field.getByRole("option", { name: `Add “${name}” as a new site`, exact: true }).click();
+  await expect(field.getByText(name, { exact: true })).toBeVisible();
+  await expect(field.getByText("Will be created when you save this flight.", { exact: true })).toBeVisible();
+  return field;
+}
+
+/** The single type control applies to both IGC uploads and manual entries. */
+export async function setNewFlightTypes(page: Page, names: string[]) {
+  const fields = page.getByRole("group", { name: "Flight type (select all that apply)", exact: true });
+  await expect(fields).toHaveCount(1);
+  for (const name of ["Tandem", "SIV", "Competition", "Tow"]) {
+    await fields.getByRole("checkbox", { name, exact: true }).setChecked(names.includes(name));
+  }
+}
+
 /** Assert the selected state as well as the available visibility choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
   const group = editor.getByRole("group", { name: "Visibility", exact: true });

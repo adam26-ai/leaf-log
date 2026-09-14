@@ -2,8 +2,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { listManagedSites, listFlightsAtSite, previewFlightsForSite, assignFlightsToSite } from "@/lib/sites/manage";
-import { listSiteFlightsAction } from "@/app/settings/sites/actions";
+import { listManagedSites, listFlightsAtSite, previewFlightsForSite, assignFlightsToSite, previewSiteReplacement, replaceLogbookSite, listReplacementSites } from "@/lib/sites/manage";
+import { deleteSite, previewSiteDeletion } from "@/lib/sites/associate";
+import { listSiteFlightsAction, replaceSiteAction, deleteSiteAction } from "@/app/settings/sites/actions";
 import { getCurrentUserId } from "@/lib/profile";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -130,5 +131,75 @@ describe("site flight management", () => {
     expect((await listManagedSites(owner)).find(row => row.id === a.id)?.ownFlightCount).toBe(2);
     expect((await listFlightsAtSite(owner, a.id)).total).toBe(2);
     expect((await previewFlightsForSite(owner, a.id)).some(row => row.id === both.id || row.id === takeoff.id)).toBe(false);
+  });
+
+  it("replaces all linked endpoints beyond a page or selection limit while preserving sites, other pilots and flight evidence", async () => {
+    const a = await site({ visibility: "public" }), b = await site({ kind: "takeoff" });
+    const zone = await prisma.zone.create({ data: { siteId: a.id, ownerId: owner, name: "Old zone", normalizedName: "old zone", kind: "both", visibility: "public", lat: 37, lon: -122 } });
+    await prisma.flight.createMany({ data: Array.from({ length: 105 }, () => ({
+      ownerId: owner, status: "ready", recordingKind: "logbook", source: "manual_entry", takeoffSiteId: a.id, landingSiteId: a.id,
+      takeoffZoneId: zone.id, landingZoneId: zone.id, takeoffLat: 37, takeoffLon: -122, landingLat: 38, landingLon: -121,
+      notes: "Keep my history", durationS: 900,
+    })) });
+    const stranger = await flight({ ownerId: other, takeoffSiteId: a.id });
+    const nameOnly = await flight({ takeoffSiteName: a.name, takeoffSiteAssignment: "custom_name" });
+    const preview = await previewSiteReplacement(owner, a.id, b.id);
+    expect(preview).toMatchObject({ flightCount: 105, takeoffCount: 105, landingCount: 105 });
+    expect(await replaceLogbookSite(owner, a.id, b.id, preview.revision)).toBe(105);
+    const replaced = await prisma.flight.findMany({ where: { ownerId: owner, takeoffSiteId: b.id } });
+    expect(replaced).toHaveLength(105);
+    for (const row of replaced) expect(row).toMatchObject({
+      landingSiteId: b.id, takeoffZoneId: null, landingZoneId: null, takeoffSiteName: null, landingSiteName: null,
+      takeoffSiteAssignment: "user_selected", landingSiteAssignment: "user_selected", takeoffLat: 37, takeoffLon: -122,
+      landingLat: 38, landingLon: -121, notes: "Keep my history", durationS: 900, source: "manual_entry",
+    });
+    expect(await prisma.site.findUnique({ where: { id: a.id } })).toEqual(a);
+    expect(await prisma.site.findUnique({ where: { id: b.id } })).toEqual(b);
+    expect(await prisma.flight.findUnique({ where: { id: stranger.id } })).toEqual(stranger);
+    expect(await prisma.flight.findUnique({ where: { id: nameOnly.id } })).toEqual(nameOnly);
+  });
+
+  it("rejects stale replacement confirmations and unavailable destinations without partial changes", async () => {
+    const a = await site(), b = await site({ visibility: "public" }), hidden = await site({ ownerId: other });
+    const first = await flight({ takeoffSiteId: a.id, landingSiteId: a.id });
+    expect((await listReplacementSites(owner, a.id)).some(row => row.id === hidden.id || row.id === a.id)).toBe(false);
+    await expect(previewSiteReplacement(owner, a.id, hidden.id)).rejects.toThrow(/available/);
+    await expect(previewSiteReplacement(owner, a.id, a.id)).rejects.toThrow(/different/);
+    const stale = await previewSiteReplacement(owner, a.id, b.id);
+    await flight({ landingSiteId: a.id });
+    await expect(replaceLogbookSite(owner, a.id, b.id, stale.revision)).rejects.toThrow(/changed/);
+    expect(await prisma.flight.findUnique({ where: { id: first.id } })).toEqual(first);
+    const revised = await previewSiteReplacement(owner, a.id, b.id);
+    await prisma.site.update({ where: { id: b.id }, data: { name: "Changed destination", updatedAt: new Date(b.updatedAt.getTime() + 1000) } });
+    await expect(replaceLogbookSite(owner, a.id, b.id, revised.revision)).rejects.toThrow(/changed/);
+    vi.mocked(getCurrentUserId).mockResolvedValue(other);
+    expect(await replaceSiteAction({ sourceId: a.id, targetId: b.id, revision: revised.revision })).toMatchObject({ ok: false });
+    vi.mocked(getCurrentUserId).mockResolvedValue(null);
+    expect(await replaceSiteAction({ sourceId: a.id, targetId: b.id, revision: revised.revision })).toMatchObject({ ok: false });
+  });
+
+  it("confirms deletion against current usage and enforces ownership and community protection", async () => {
+    const a = await site(), shared = await site({ visibility: "public" });
+    const original = await flight({ takeoffSiteId: a.id, landingSiteId: a.id, notes: "Keep this flight" });
+    const preview = await previewSiteDeletion(a.id, owner);
+    expect(preview).toMatchObject({ flightCount: 1, zoneCount: 0 });
+    const extra = await flight({ landingSiteId: a.id });
+    await expect(deleteSite(a.id, owner, preview.revision)).rejects.toThrow(/changed/);
+    expect(await prisma.flight.findUnique({ where: { id: original.id } })).toEqual(original);
+    await expect(previewSiteDeletion(a.id, other)).rejects.toThrow(/owner/);
+    vi.mocked(getCurrentUserId).mockResolvedValue(other);
+    expect(await deleteSiteAction({ siteId: a.id, revision: preview.revision })).toMatchObject({ ok: false });
+    vi.mocked(getCurrentUserId).mockResolvedValue(null);
+    expect(await deleteSiteAction({ siteId: a.id, revision: preview.revision })).toMatchObject({ ok: false });
+    await flight({ ownerId: other, takeoffSiteId: shared.id });
+    await expect(previewSiteDeletion(shared.id, owner)).rejects.toThrow(/Other pilots/);
+    const fresh = await previewSiteDeletion(a.id, owner);
+    await deleteSite(a.id, owner, fresh.revision);
+    expect(await prisma.site.findUnique({ where: { id: a.id } })).toBeNull();
+    expect(await prisma.flight.findUnique({ where: { id: original.id } })).toMatchObject({
+      takeoffSiteId: null, landingSiteId: null, takeoffLat: 37, takeoffLon: -122, landingLat: 37, landingLon: -122, notes: "Keep this flight",
+    });
+    expect(await prisma.flight.findUnique({ where: { id: extra.id } })).toMatchObject({ landingSiteId: null });
+    expect(await prisma.site.findUnique({ where: { id: shared.id } })).not.toBeNull();
   });
 });

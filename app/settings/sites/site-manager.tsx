@@ -13,9 +13,10 @@ import { radiusForKind, type Boundary } from "@/lib/sites/geo";
 import { previewSiteFlightsAction, assignSiteFlightsAction } from "./actions";
 import type { SiteFlightCandidate } from "@/lib/sites/manage";
 import { SiteFlightList, SiteFlightSummary } from "./site-flight-list";
+import { DeleteSiteDialog, ReplaceSiteDialog } from "./site-management-dialogs";
 
 type ManagedSiteView = { id: string; name: string; kind: "takeoff" | "landing" | "both"; visibility: string;
-  lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number };
+  lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number; canDelete?: boolean };
 const candidateKey = (row: SiteFlightCandidate) => row.id + ":" + row.endpoint;
 
 export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
@@ -36,6 +37,7 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [management, setManagement] = useState<{ kind: "delete" | "replace"; site: ManagedSiteView } | null>(null);
   function choose(id: string) { setSelectedId(id); setCandidates(null); setChecked(new Set()); setPage(0); setError(null); setMessage(null); }
   function preview() {
     if (!selected) return;
@@ -96,9 +98,12 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
       {selected && <>
         <Card className="p-5"><h2 className="font-condensed text-2xl font-bold">{selected.name}</h2>
           <div className="my-3">{hasSitePoint(selected) ? <SiteAreaMap key={selected.id + selected.updatedAt} anchor={{ lat: selected.lat, lon: selected.lon }} boundary={selected.boundary ?? null} radiusM={radiusForKind(selected.kind === "landing" ? "landing" : "takeoff")} flightPoint={null} /> : <div className="rounded-md bg-orange-50 px-3 py-6 text-sm text-orange-700">Not mapped. Edit this site to add a map location.</div>}</div>
-          <Button type="button" onClick={() => setEditor("edit")}>Edit site</Button>
+          <div className="flex flex-wrap gap-3"><Button type="button" onClick={() => setEditor("edit")}>Edit site</Button>
+            <Button type="button" variant="ghost" disabled={!selected.canDelete} className="text-red-700 hover:bg-red-50" onClick={() => setManagement({ kind: "delete", site: selected })}>Delete site</Button>
+          </div>
+          {!selected.canDelete && <p className="mt-2 text-xs text-gray-500">Only the site owner can delete this site.</p>}
         </Card>
-        <SiteFlightList key={selected.id + ":" + revision} siteId={selected.id} count={selected.ownFlightCount} revision={revision} />
+        <SiteFlightList key={selected.id + ":" + revision} siteId={selected.id} count={selected.ownFlightCount} revision={revision} onReplace={() => setManagement({ kind: "replace", site: selected })} />
         <Card className="p-5">
             <section aria-labelledby="review-flights-heading">
             <h3 id="review-flights-heading" className="font-condensed text-xl font-bold text-ink">Review matching flights</h3>
@@ -144,5 +149,15 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
     </div>
     {editor && <SiteDialog onClose={()=>setEditor(null)}><PersistedSiteEditor context={editor === "create" ? {create:true} : {siteId:selected?.id}}
       onCancel={()=>setEditor(null)} onSaved={site=>{setSearch("");setVisibility("all");setLocation("all");choose(site.id);setEditor(null);setRevision(n=>n+1);router.refresh();}} /></SiteDialog>}
+    {management?.kind === "delete" && <DeleteSiteDialog key={management.site.id} site={management.site} onClose={() => setManagement(null)} onDeleted={() => {
+      const name = management.site.name;
+      choose(sites.find(site => site.id !== management.site.id)?.id ?? "");
+      setManagement(null); setRevision(n => n + 1); setMessage(`${name} deleted. Your flights were kept.`); router.refresh();
+    }} />}
+    {management?.kind === "replace" && <ReplaceSiteDialog key={management.site.id} site={management.site} onClose={() => setManagement(null)} onReplaced={(target, count) => {
+      const name = management.site.name;
+      setSearch(""); setVisibility("all"); setLocation("all"); choose(target.id);
+      setManagement(null); setRevision(n => n + 1); setMessage(`Replaced ${name} with ${target.name} in ${count} flight${count === 1 ? "" : "s"}. Flight coordinates were preserved.`); router.refresh();
+    }} />}
   </div>;
 }
