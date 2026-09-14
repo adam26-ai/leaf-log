@@ -322,7 +322,6 @@ test("hidden wings keep their hours and disappear from new and recorded flight s
 
 test("duplicate upload attaches to the original entry and replay cycles scored routes and trophies", async ({ page }) => {
   test.setTimeout(120000);
-  await page.clock.install();
   const handle = await signUp(page);
   const db = new PrismaClient();
   try {
@@ -376,6 +375,16 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.screenshot({ path: "test-results/replay-trophies.png", fullPage: true });
     expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(1);
     expect((await db.flight.findUniqueOrThrow({ where: { id: entry.id } })).notes).toBe("Original notes");
+  } finally { await db.$disconnect(); }
+});
+
+test("logbook calculation notice disappears after automatic refresh and stays absent after reload", async ({ page }) => {
+  // Keep the simulated refresh timer out of replay's WebGL animation loop.
+  await page.clock.install();
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     // Four valid fixes exercise the real queue and finish with no eligible route,
     // without making a UI lifecycle assertion depend on the XC search budget.
     const shortIgc = Buffer.from(makeIgc({ fixes: Array.from({ length: 4 }, (_, index) => ({
