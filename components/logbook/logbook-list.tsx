@@ -135,7 +135,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
     </div>
     <p className="mt-3 text-xs text-gray-500" role="status">{visible.length} of {flights.length} {flights.length === 1 ? "flight" : "flights"}</p>
     <ul className="mt-3 flex flex-col gap-1">
-      {visible.map(f => <li key={f.id}><FlightRow flight={f} compact showAnalysis friendFlightsFound={sharedFlightIds.has(f.id)} trophies={trophies[f.id] ?? []} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} /></li>)}
+      {visible.map(f => <li key={f.id}><FlightRow flight={f} compact friendFlightsFound={sharedFlightIds.has(f.id)} trophies={trophies[f.id] ?? []} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} /></li>)}
     </ul>
     {!visible.length && <p className="py-8 text-center text-gray-500">{Boolean(filters.friends?.length) && friends === null ? friendError ? "Could not load shared flights. Open Friends to retry." : "Finding shared flights…" : "No flights match these filters."}</p>}
   </>;

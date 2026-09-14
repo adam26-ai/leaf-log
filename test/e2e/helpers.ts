@@ -16,7 +16,7 @@ export async function setSiteVisibility(editor: Locator, visibility: "private" |
 /** Site details load on the server before naming is safe. CI also renders a
  * WebGL replay here, so allow the form to become ready without a fixed sleep. */
 export async function openSiteChooser(page: Page) {
-  await page.locator("h1 button").click();
+  await page.getByRole("heading", { level: 1 }).getByRole("button").click();
   const dialog = page.getByRole("dialog", { name: "Site details" });
   const name = dialog.getByPlaceholder("e.g. Sonoma Ridge");
   await expect(name).toBeVisible({ timeout: 15_000 });
@@ -42,4 +42,15 @@ export async function uploadFlight(page: Page, files: Parameters<FileChooser["se
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);
+}
+
+/** Space must control replay even when a map control retains focus. */
+export async function expectReplaySpaceShortcut(page: Page) {
+  const refresh = page.getByRole("button", { name: "Refresh friends" });
+  await refresh.focus();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+  await page.locator(".flight-replay-map canvas").first().click();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
 }

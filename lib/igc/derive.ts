@@ -6,7 +6,6 @@ import { baroGpsOffset, playbackAltitude, recordAltitude } from "./altitude";
 import { calculatedVario } from "./vario";
 
 const GAIN_HALF_WINDOW_S = 3; // altitude smoothing for cumulative gain only
-const GAIN_NOISE_THRESHOLD_M = 1.0; // ignore sub-metre jitter in cumulative gain
 
 /** Choose the altitude source: prefer baro when present on a usable fraction of fixes. */
 function chooseAltSource(fixes: Fix[]): "baro" | "gps" {
@@ -64,11 +63,12 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
   }
   if (!Number.isFinite(maxAltM)) maxAltM = 0;
 
-  // Cumulative gain from the smoothed series, with a noise threshold.
+  // Sum every ascent in the smoothed series. A per-fix threshold discards
+  // sustained gentle climbs and makes the result depend on recording frequency.
   let altGainM = 0;
   for (let i = takeoffIndex + 1; i <= landingIndex; i++) {
     const d = smoothAlt[i] - smoothAlt[i - 1];
-    if (d > GAIN_NOISE_THRESHOLD_M) altGainM += d;
+    if (d > 0) altGainM += d;
   }
 
   // Prefer the logger's recorded vario. Older files fall back to a calculated

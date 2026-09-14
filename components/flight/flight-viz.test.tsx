@@ -164,3 +164,26 @@ it("shows the selected flight's statistics and seeks that flight's metrics on th
       .toHaveAttribute("data-statistics-pilot", "own");
   } finally { Object.assign(group, original); }
 });
+
+it("uses space before button, slider, and map handlers while leaving typing alone", () => {
+  view();
+  const refresh = screen.getByRole("button", { name: "Refresh friends" });
+  const map = screen.getByTestId("replay");
+  const mapHandler = vi.fn((event: Event) => event.stopPropagation());
+  map.addEventListener("keydown", mapHandler);
+  fireEvent.keyDown(refresh, { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  expect(group.discover).not.toHaveBeenCalled();
+  fireEvent.keyDown(map, { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+  expect(mapHandler).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("slider"), { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  fireEvent.keyDown(refresh, { code: "Space", key: " ", repeat: true });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  const { unmount } = render(<div><input aria-label="Typing" /><div contentEditable suppressContentEditableWarning><span>Editable text</span></div></div>);
+  fireEvent.keyDown(screen.getByLabelText("Typing"), { code: "Space", key: " " });
+  fireEvent.keyDown(screen.getByText("Editable text"), { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  unmount();
+});

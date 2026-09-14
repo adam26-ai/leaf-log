@@ -51,7 +51,7 @@ export function ReplayPilots({
           aria-label={`Follow ${primary.displayName}`}
           aria-pressed={primarySelected}
           title={`${primary.displayName} · Primary flight`}
-          className="flex w-full min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)] sm:flex-row sm:items-start"
+          className="flex w-full min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)] sm:flex-row sm:items-center sm:gap-3"
         >
           <span
             className={`block shrink-0 rounded-full border-[3px] ${primarySelected ? "outline-2 outline-offset-1" : ""}`}
