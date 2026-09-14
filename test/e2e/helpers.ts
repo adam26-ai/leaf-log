@@ -1,4 +1,11 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
+import sharp from "sharp";
+
+// Terrarium encodes zero metres as RGB(128, 0, 0). Keep terrain enabled while
+// removing network-dependent terrain shape and tile timing from UI assertions.
+const flatTerrainTile = sharp({ create: {
+  width: 256, height: 256, channels: 3, background: { r: 128, g: 0, b: 0 },
+} }).png().toBuffer();
 
 /** Assert the selected state as well as the available visibility choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
@@ -43,6 +50,9 @@ export async function uploadFlight(page: Page, files: Parameters<FileChooser["se
   // with the software WebGL renderer used in CI.
   await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
+  await page.route("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**", async route => {
+    await route.fulfill({ contentType: "image/png", body: await flatTerrainTile });
+  });
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);
