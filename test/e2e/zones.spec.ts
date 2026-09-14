@@ -1,5 +1,5 @@
 import { createSiteFromFlight, uploadFlight } from "./helpers";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 

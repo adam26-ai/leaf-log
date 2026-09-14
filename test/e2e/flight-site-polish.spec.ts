@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
@@ -11,8 +11,6 @@ import type { XcCandidate } from "@/lib/igc/xc-types";
 async function signUp(page: Page) {
   const handle = `polish${Date.now()}`.slice(0, 18);
   rmSync(DEV_MAGIC_LINK_FILE, { force: true });
-  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(`${handle}@test.local`);
   await page.getByRole("button", { name: /send magic link/i }).click();

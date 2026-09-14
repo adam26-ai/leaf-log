@@ -135,7 +135,10 @@ for seven days, including successful runs.
 Install Chromium once with `pnpm exec playwright install chromium` (CI uses
 `--with-deps`). Windows falls back to installed Edge if bundled Chromium is
 missing; `PLAYWRIGHT_CHANNEL=msedge` can also select it explicitly. The test
-browser enables software WebGL for map interactions on machines without a GPU.
+browser explicitly uses software WebGL locally and in CI. Shared browser
+fixtures cover every pilot's session and replace third-party map data; real app
+requests and map rendering remain enabled. Unexpected external requests fail
+with diagnostics instead of silently depending on live services.
 
 ## Sites data
 

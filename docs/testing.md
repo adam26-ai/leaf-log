@@ -1,5 +1,43 @@
 # Testing and CI reliability
 
+## Follow-up: PR 74, September 14, 2026
+
+[Run 34898317777](https://github.com/adam26-ai/leaf-log/actions/runs/34898317777)
+passed the gates job but failed two browser workflows after passing locally.
+The downloaded report and traces show:
+
+- Community: the third pilot's site dialog remained loading. Secondary contexts
+  bypassed the upload helper's map routes: the second and third pilots requested
+  78 and 37 live OpenFreeMap resources respectively. Server actions returned in
+  tens of milliseconds while browser interactions took seconds.
+- Photos: both thumbnail URLs returned HTTP 200, but the browser stalled during
+  the image inspection. This was not evidence of a failed upload or photo API.
+  The test also inspected lazy images without bringing the gallery into view.
+- Local browser configuration only *allowed* SwiftShader; it could still select
+  hardware acceleration. Local checks now explicitly select ANGLE/SwiftShader
+  to exercise the same rendering path as CI.
+
+All browser specs import `test` from `test/e2e/fixtures.ts`. It installs map data
+fixtures at context creation, before navigation, for primary pages, popups and
+secondary pilots. Use its `newContext` fixture for independent users; sessions
+are closed even after failed assertions. Lint rejects direct test imports and
+direct context creation in specs. Keep real authentication, uploads, database
+access, MapLibre/deck.gl rendering, and terrain enabled.
+
+Only third-party style and terrain requests have default fixtures. Place-search
+tests provide their own geocoding responses using page routes. Unexpected
+external HTTP requests are blocked and fail the test, with addresses in a
+`browser-diagnostics` report attachment alongside failed requests, HTTP errors
+and browser exceptions. The policy does not blanket-mock application endpoints
+or treat expected authorization responses (such as 404) as test failures.
+
+Photo checks scroll each lazy thumbnail into view, verify actual image decoding,
+and open both the JPEG and HEIC in the lightbox. Rename permissions and endorsement
+persistence are independent browser scenarios, each creating its own public
+flight through the UI. Endorsements are checked after reload and by the owner.
+Do not remove these checks or
+disable WebGL to make a browser failure disappear.
+
 ## Audit: September 13, 2026 (Pacific time)
 
 The 25 most recent workflow runs contained 8 failures, all in Playwright; the

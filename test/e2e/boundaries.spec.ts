@@ -1,5 +1,5 @@
 import { createSiteFromFlight, uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 
@@ -14,18 +14,6 @@ async function getMagicLink(): Promise<string> {
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error("magic link file never appeared");
-}
-
-/** A minimal, valid, source-and-tile-free MapLibre style — the basemap
- *  itself has no matching value for this test, and depending on a live
- *  third-party tile CDN (OpenFreeMap) would make a map-driving test a
- *  flake generator. `map.on('load')` fires against this exactly as it
- *  would against the real style. */
-const EMPTY_STYLE = { version: 8, sources: {}, layers: [] };
-
-async function stubBasemapTiles(page: Page) {
-  await page.route("**/tiles.openfreemap.org/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
-  await page.route("**/api.maptiler.com/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
 }
 
 /** The editor no longer displays a "N points" line (removed per the user's
@@ -137,7 +125,6 @@ test("draw a boundary from site management without binding the current flight, t
   const email = `boundaries_e2e_${suffix}@test.local`;
   const handle = `b6e${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   // Near the equator — keeps Web Mercator meters-per-pixel large (a fixed
   // real-world distance needs fewer on-screen pixels), so the boundary
@@ -249,7 +236,6 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   const email = `boundaries_e2e_excl_${suffix}@test.local`;
   const handle = `b6x${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 20.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -169.0;
@@ -331,7 +317,6 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   const email = `boundaries_e2e_reopen_${suffix}@test.local`;
   const handle = `b6ro${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 40.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -170.0;
@@ -422,7 +407,6 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   const email = `boundaries_e2e_midpoint_${suffix}@test.local`;
   const handle = `b6mp${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 30.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -172.0;
@@ -543,7 +527,6 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   const email = `boundaries_e2e_vertex_${suffix}@test.local`;
   const handle = `b6vx${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 25.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -173.0;

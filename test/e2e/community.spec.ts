@@ -1,5 +1,5 @@
 import { createSiteFromFlight, expectSiteVisibility, uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 
@@ -47,20 +47,13 @@ function remoteFlightIgc(lat: number, lon: number, seed: number): Buffer {
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
 }
 
-test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from someone else's flight", async ({
-  page,
-  browser,
-}) => {
-  const suffix = `${Date.now()}`;
+async function createPublicFlight(page: Page) {
+  const suffix = String(Date.now());
   const aHandle = `commA${suffix}`.slice(0, 18);
-  const bHandle = `commB${suffix}`.slice(0, 18);
-  const cHandle = `commC${suffix}`.slice(0, 18);
   const lat = 33.0 + (Number(suffix) % 5000) * 0.001;
-  const lon = -180.0 + 33.0;
-
+  const lon = -147;
   await signUp(page, `comm_a_${suffix}@test.local`, aHandle, "Community A");
-
-  // Pilot A: upload, name the site PUBLIC, make the flight itself public.
+  // Set up each scenario through the real owner workflow.
   await page.goto("/upload");
   await uploadFlight(page, {
     name: "comm-a.igc",
@@ -79,9 +72,15 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.goto(flightUrl);
 
+  return { suffix, flightUrl, siteName };
+}
+
+test("a non-owner renames a public site while visibility remains owner-only", async ({ page, newContext }) => {
+  const { suffix, flightUrl, siteName } = await createPublicFlight(page);
+  const bHandle = `commB${suffix}`.slice(0, 18);
   // Pilot B: a completely separate context, viewing pilot A's public flight
   // — the label must be clickable even though this isn't B's own flight.
-  const bContext = await browser.newContext();
+  const bContext = await newContext();
   const bPage = await bContext.newPage();
   await signUp(bPage, `comm_b_${suffix}@test.local`, bHandle, "Community B");
   await bPage.goto(flightUrl);
@@ -116,30 +115,31 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
 
-  // Pilot C endorses it — a third, independent viewer.
-  const cContext = await browser.newContext();
-  const cPage = await cContext.newPage();
-  await signUp(cPage, `comm_c_${suffix}@test.local`, cHandle, "Community C");
-  await cPage.goto(flightUrl);
-  await expect(cPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-  await cPage.locator("h1 button").click();
-  await expect(cPage.getByText("0 endorsements")).toBeVisible({ timeout: 5_000 });
-  await cPage.getByRole("button", { name: "Endorse", exact: true }).click();
-  await expect(cPage.getByText("1 endorsement", { exact: true })).toBeVisible({ timeout: 5_000 });
-  await expect(cPage.getByRole("button", { name: /Endorsed/ })).toBeVisible();
-
-  await cContext.close();
   await bContext.close();
 });
 
-// SPRINT-007 used to add a "Contributors & endorsements" entry point to the
-// flight owner's own naming/editing dialog (NameSiteDialog), since without
-// one an owner had no way to reach community info for their OWN site at
-// all — a stranger could always reach it directly (see the test above),
-// but the owner's h1 click always opened the bind-a-site flow instead.
-// Removed again after this sprint's own simplification pass: the
-// site-edit view no longer surfaces "Contributors & endorsements" at all,
-// so the owner has gone back to relying on some OTHER viewer's endorsement
-// of their site, or (if they want to see it themselves) viewing their own
-// public flight the way a stranger would. No e2e coverage for that
-// specific owner-reachability path remains, by design.
+test("an independent pilot endorses a public site and the endorsement persists for its owner", async ({ page, newContext }) => {
+  const { suffix, flightUrl, siteName } = await createPublicFlight(page);
+  // The owner can leave the flight while the other pilot uses it. Release the
+  // idle replay's WebGL resources; keep the signed-in context for verification.
+  await page.goto("/logbook");
+  const cContext = await newContext();
+  const cPage = await cContext.newPage();
+  await signUp(cPage, `comm_c_${suffix}@test.local`, `commC${suffix}`.slice(0, 18), "Community C");
+  await cPage.goto(flightUrl);
+  await expect(cPage.getByRole("heading", { level: 1 })).toHaveText(siteName);
+  await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const dialog = cPage.getByRole("dialog", { name: "Site details" });
+  await expect(dialog.getByText("0 endorsements")).toBeVisible();
+  await dialog.getByRole("button", { name: "Endorse", exact: true }).click();
+  await expect(dialog.getByText("1 endorsement", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await cPage.reload();
+  await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
+  await expect(cPage.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await cContext.close();
+  await page.goto(flightUrl);
+  await page.getByRole("heading", { level: 1 }).getByRole("button").click();
+  await page.getByRole("button", { name: "Community & history", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Site details" }).getByText("1 endorsement", { exact: true })).toBeVisible();
+});

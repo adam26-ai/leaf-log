@@ -1,11 +1,4 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
-import sharp from "sharp";
-
-// Terrarium encodes zero metres as RGB(128, 0, 0). Keep terrain enabled while
-// removing network-dependent terrain shape and tile timing from UI assertions.
-const flatTerrainTile = sharp({ create: {
-  width: 256, height: 256, channels: 3, background: { r: 128, g: 0, b: 0 },
-} }).png().toBuffer();
 
 /** Typing only searches; explicitly add the name to the unsaved flight. */
 export async function addEntrySite(page: Page, name: string, label = "Flying site") {
@@ -66,13 +59,6 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
 /** Opening the real picker waits for the client event handler; setting the
  * hidden input directly can fire before React hydrates and lose the upload. */
 export async function uploadFlight(page: Page, files: Parameters<FileChooser["setFiles"]>[0]) {
-  // Exercise real map rendering without external basemap downloads competing
-  // with the software WebGL renderer used in CI.
-  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**", async route => {
-    await route.fulfill({ contentType: "image/png", body: await flatTerrainTile });
-  });
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
@@ -224,7 +224,6 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
 
 test("manual location search moves the map before choosing exact coordinates, including on mobile", async ({ page }) => {
   await signUp(page);
-  await page.route("https://tiles.openfreemap.org/styles/liberty", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   let searches = 0;
   await page.route("https://api.maptiler.com/geocoding/**", route => {
     searches++;

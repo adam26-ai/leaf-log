@@ -1,5 +1,5 @@
 import { uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -36,7 +36,7 @@ async function signUp(page: Page, email: string, handle: string, displayName: st
 
 test("friends feed exposes friends-only flights and kudos to accepted friends", async ({
   page,
-  browser,
+  newContext,
 }) => {
   const suffix = `${Date.now()}`;
   const aHandle = `sociala${suffix}`.slice(0, 18);
@@ -46,7 +46,7 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
 
   await signUp(page, `social_a_${suffix}@test.local`, aHandle, aName);
 
-  const bContext = await browser.newContext();
+  const bContext = await newContext();
   const bPage = await bContext.newPage();
   await signUp(bPage, `social_b_${suffix}@test.local`, bHandle, bName);
 
@@ -84,7 +84,7 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   await expect(kudoed).toHaveAttribute("aria-pressed", "true");
   await expect(kudoed).toContainText("1");
 
-  const anon = await browser.newContext();
+  const anon = await newContext();
   const anonPage = await anon.newPage();
   const res = await anonPage.goto(flightUrl);
   expect(res?.status()).toBe(404);

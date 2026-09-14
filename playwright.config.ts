@@ -45,7 +45,10 @@ export default defineConfig({
   use: {
     baseURL,
     channel,
-    launchOptions: { args: ["--enable-unsafe-swiftshader"] },
+    // Force the CI renderer locally too; allowing SwiftShader alone still lets
+    // a developer's GPU conceal software-rendering failures.
+    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
+    serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
