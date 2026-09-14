@@ -65,14 +65,12 @@ export function FlightHeader({
   actions: ReactNode;
   trophies?: FlightTrophy[];
 }) {
-  const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
-  // A named landing only earns its own display when it's somewhere other
-  // than takeoff (e.g. not a top-landing back at launch) — otherwise it's
-  // just noise repeating the title.
-  const showLanding = hasLandingFix && (
+  const primaryEndpoint = !flight.takeoffSiteName && flight.landingSiteName ? "landing" : "takeoff";
+  const primaryLat = flight[`${primaryEndpoint}Lat`];
+  const primaryLon = flight[`${primaryEndpoint}Lon`];
+  const showLanding = primaryEndpoint === "takeoff" && Boolean(flight.landingSiteName) && (
     flight.landingSiteId !== flight.takeoffSiteId ||
-    flight.landingSiteName !== flight.takeoffSiteName ||
-    flight.landingSiteAssignment === "needs_review"
+    flight.landingSiteName !== flight.takeoffSiteName
   );
   // SPRINT-008: a client component can't read process.env directly — the
   // gate's value is computed here (server-side) and threaded down as a
@@ -106,17 +104,18 @@ export function FlightHeader({
         <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-2">
           <FlightTypeBadges flags={flightFlags(flight)} />
           <SiteNameControl
+            key={`${flight.id}:${primaryEndpoint}`}
             as="h1"
             flightId={flight.id}
-            endpoint="takeoff"
-            flightPoint={flight.takeoffLat != null && flight.takeoffLon != null ? { lat: flight.takeoffLat, lon: flight.takeoffLon } : null}
-            initialSiteName={flight.takeoffSiteName}
-            initialZoneName={flight.takeoffZoneName}
-            siteId={flight.takeoffSiteId}
-            zoneId={flight.takeoffZoneId}
+            endpoint={primaryEndpoint}
+            flightPoint={primaryLat != null && primaryLon != null ? { lat: primaryLat, lon: primaryLon } : null}
+            initialSiteName={flight[`${primaryEndpoint}SiteName`]}
+            initialZoneName={flight[`${primaryEndpoint}ZoneName`]}
+            siteId={flight[`${primaryEndpoint}SiteId`]}
+            zoneId={flight[`${primaryEndpoint}ZoneId`]}
             isOwner={isOwner}
             zonesEnabled={zonesOn}
-            needsReview={flight.takeoffSiteAssignment === "needs_review"}
+            needsReview={flight[`${primaryEndpoint}SiteAssignment`] === "needs_review"}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
           <ReplayTrophies flightId={flight.id} trophies={trophies} routes={replayXcRoutes(flight.xcScore).map(route => route.shape)} />

@@ -1,5 +1,12 @@
 import { expect, it } from "vitest";
 import { matchesLogbookFilters, readLogbookFilters, siteKey } from "./logbook-filters";
+
+it("discards retired location and landing filters", () => {
+  const filters = readLogbookFilters(JSON.stringify({ landingSites: ["old"], siteLocation: "missing", sites: ["site"] }));
+  expect(filters.sites).toEqual(["site"]);
+  expect(filters).not.toHaveProperty("landingSites");
+  expect(filters).not.toHaveProperty("siteLocation");
+});
 it("combines filters and distinguishes none from disabled, including unknown sites", () => {
   const flight = { id: "a", takeoffSiteId: null, takeoffSiteName: null, glider: "Wing" };
   expect(siteKey(flight)).toBe("unknown");

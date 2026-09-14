@@ -87,7 +87,7 @@ export function EntryFields({ value, onChange, options, issues = [], expanded = 
         <div />
         {input("maxClimb", "Best climb", "number", { min: 0 })}
         {input("maxSink", "Max sink", "number")}
-        {site("landing", "Landing site")}
+        {site("landing", "Landing site (optional)")}
 
       </div>
     </details>

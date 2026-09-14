@@ -33,12 +33,15 @@ export async function previewSiteMigration(ownerId: string) {
     unchanged: plan.resolutions.filter(row => !row.siteId && !row.groupKey).length };
 }
 
-export async function applySiteMigration(ownerId: string, expectedSignature: string) {
+export async function applySiteMigration(ownerId: string, expectedSignature: string, onProgress?: (message: string) => void) {
   return prisma.$transaction(async tx => {
+    onProgress?.("Checking the preview and waiting for the logbook lock...");
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
     const { plan, candidates, flights, inputs, signature } = await migrationPlan(tx, ownerId);
     if (signature !== expectedSignature) throw new Error("The historical site preview changed. Preview again before applying it.");
+    onProgress?.(`Preparing ${plan.groups.length} site groups for ${plan.resolutions.length} endpoints. Changes are not committed yet.`);
     const committed = await commitEntrySites(tx, ownerId, plan, candidates, `unified-sites-v1:${ownerId}`, "legacy");
+    onProgress?.("Sites prepared. Linking flight endpoints...");
     let converted = 0;
     for (const row of plan.resolutions) {
       const id = row.siteId ?? (row.groupKey ? committed.groupIds.get(row.groupKey) : null);
@@ -53,7 +56,11 @@ export async function applySiteMigration(ownerId: string, expectedSignature: str
       });
       if (!updated.count) throw new Error("A flight changed during conversion. No changes for this pilot were saved.");
       converted++;
+      if (converted % 25 === 0) onProgress?.(`${converted} endpoints linked so far. Changes are not committed yet.`);
     }
+    onProgress?.(`Committing ${converted} converted endpoints...`);
     return { converted, createdSites: committed.changes.filter(change => change.created).length };
-  }, { maxWait: 10000, timeout: 120000 });
+  // Historical conversions over a remote database can require hundreds of
+  // round trips. Keep the all-or-nothing transaction, with time for maintenance.
+  }, { maxWait: 10000, timeout: 600000 });
 }

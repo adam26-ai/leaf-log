@@ -1,0 +1,75 @@
+# Testing and CI reliability
+
+## Audit: September 13, 2026 (Pacific time)
+
+The 25 most recent workflow runs contained 8 failures, all in Playwright; the
+typecheck/lint/unit/integration/build job passed in every one of those failed runs.
+The failures are concentrated in browser coverage, not a generally broken CI
+service. Main passed throughout this sample, after follow-up fixes on PR branches.
+
+| Run | Evidence |
+| --- | --- |
+| [PR 70](https://github.com/adam26-ai/leaf-log/actions/runs/34804030540) | 11 browser failures. Eight stop in the shared site-creation helper because it expects a visibility select, now replaced with pressed buttons. Another visibility assertion and two old site-row text assertions fail independently. Later interactions in those tests also needed updating. |
+| [PR 69 initial run](https://github.com/adam26-ai/leaf-log/actions/runs/34784155599) | Nine failures after the site workflow changed: old naming actions and the old “Unknown site” label. The follow-up run passed. |
+| [Site visibility](https://github.com/adam26-ai/leaf-log/actions/runs/34768474023) | Site dialog never becomes ready. A follow-up switched the test server from development mode to an isolated production build and passed. Keep that fix. |
+| [Flight site experience](https://github.com/adam26-ai/leaf-log/actions/runs/34702592251) | Three waits for the site naming form expire. |
+| [Import polish, first](https://github.com/adam26-ai/leaf-log/actions/runs/34643116114), [second](https://github.com/adam26-ai/leaf-log/actions/runs/34644870802) | Upload/navigation and stale UI assertions, then a boundary editor timeout. |
+| [Import, earlier](https://github.com/adam26-ai/leaf-log/actions/runs/34460074102), [later](https://github.com/adam26-ai/leaf-log/actions/runs/34525249508) | Site dialog readiness/reopening failures. |
+
+The current failures are deterministic test/UI drift, not justification for
+retries or longer global timeouts. Logs alone cannot prove the precise cause of
+every historical timeout. Development rebuilds, hydration and expensive WebGL
+rendering are relevant to that history; the isolated production server and
+hydration-aware controls already address part of it.
+
+After correcting the stale selectors, the full local run exposed a product
+regression: the flight header keyed its site control by the mutable site name,
+so a server refresh after a community rename remounted it and dismissed the
+dialog. The fix keeps the control mounted and reconciles refreshed names without
+discarding dialog state. Component regression tests and the complete community
+browser workflow cover this. A boundary drag check also mixed geographic distance
+with a fixed pixel threshold; it now drags by a known screen distance and waits
+for the marker to reach the pointer while asserting no extra vertex is inserted.
+
+## Required pre-PR check
+
+1. Use `.node-version`, install with `pnpm install --frozen-lockfile`, start local
+   PostgreSQL, and configure `.env.local` (see README).
+2. Install Chromium with `pnpm exec playwright install chromium` (`--with-deps`
+   on Linux when system libraries are missing).
+   On Windows, stop the local development server before checking: Prisma client
+   generation cannot replace a native engine DLL while the server has it open.
+3. Run `pnpm check` after the final edits. This includes both CI jobs. Report the
+   result and any checks not run; unit tests alone are not a full pass.
+4. For shared UI changes, inspect the E2E helpers and all their callers. Use
+   focused browser runs while iterating, then run the complete suite before
+   submission. Mocked component tests do not validate the real browser workflow.
+
+CI and the local check command use Node 24.14.0, generate Prisma explicitly,
+reject `.only`, require the local database, and preserve failures. No retries
+are configured. Each suite migrates and drops its own random schema, and runs
+files serially because of the shared XC queue, magic-link file, and public sites.
+Do not enable workers/sharding until those shared resources are isolated per
+worker. Test setup, not a redundant migration of the public schema in CI, owns
+the migration check. Do not run two browser suites simultaneously on port 3100.
+
+## Browser assertions and diagnostics
+
+- Shared site creation and visibility interactions live in `test/e2e/helpers.ts`.
+  Assert both selected and unselected visibility states. For non-owners, attempt
+  the change and check that visibility stays unchanged with the explanation.
+- Locate site rows by site name within the Sites list, then assert the visibility
+  icon's accessible label and flight count separately. Avoid matching a whole
+  row's incidental text layout. Keep persistence and authorization assertions.
+- Wait for observable UI readiness; avoid sleeps and direct hidden-input uploads
+  before hydration. Keep production server isolation and software WebGL enabled.
+- CI retains HTML reports, JUnit results, and failure traces/screenshots for seven
+  days. Download the `playwright-report` artifact and open its report; the
+  `vitest-report` artifact contains unit/integration results. Check the first
+  failed assertion before changing timeouts. Job time limits stop hung runs.
+
+The runtime mismatch (local Node 24 versus CI Node 20), missing HTML reporter,
+and lack of a full pre-PR command were process gaps, not the direct cause of
+PR 70's stale selectors. These changes make local verification reproducible and
+failures easier to inspect. Required branch checks should stay enabled; weakening
+them would conceal regressions rather than prevent failed submissions.

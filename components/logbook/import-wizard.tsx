@@ -231,7 +231,7 @@ export function ImportWizard({ options }: { options: EntryOptions }) {
     </Card>}
     {step === 3 && <Card className="flex flex-col gap-5 p-5">
       {sitePreview.length > 0 && <details><summary className="cursor-pointer text-sm font-medium">Sites to create ({sitePreview.length})</summary>
-        <ul className="mt-2 space-y-1 text-sm text-gray-600">{sitePreview.map((site, index) => <li key={index}>{site.name} · {site.mapped ? "Mapped" : "Unmapped"} · {site.visibility} · {site.flights} flights</li>)}</ul>
+        <ul className="mt-2 space-y-1 text-sm text-gray-600">{sitePreview.map((site, index) => <li key={index}>{site.name}{site.mapped ? "" : " · Name only"} · {site.visibility} · {site.flights} flights</li>)}</ul>
         <p className="mt-2 text-xs text-gray-600">Edit a flight below to open the full site editor. Changes are saved only when you import.</p></details>}
       <h2 className="font-condensed text-xl font-bold">Review your flights</h2>
       <p className="text-sm text-gray-600">Edit a flight to fill in details or place its site on the map. Missing optional values are okay. Skip unwanted rows; possible overlaps need an explicit keep-or-discard choice.</p>

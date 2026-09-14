@@ -14,6 +14,7 @@ import { formatLocalTime } from "@/lib/flights/format";
 
 export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon" | "updatedAt"> & {
   kind: "takeoff" | "landing" | "both";
+  boundary: import("./geo").Boundary | null;
   hasBoundary: boolean;
   ownFlightCount: number;
   hasLocationEvidence?: boolean;
@@ -32,7 +33,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     where: { OR: [{ ownerId }, { visibility: "public", OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] }] },
     select: {
       id: true, name: true, kind: true, visibility: true, lat: true, lon: true,
-      updatedAt: true, boundaryMinLat: true,
+      updatedAt: true, boundaryMinLat: true, boundary: true,
       _count: { select: { takeoffFlights: { where: { ownerId, OR: [{ takeoffLat: { not: null } }, { takeoffLon: { not: null } }] } }, landingFlights: { where: { ownerId, OR: [{ landingLat: { not: null } }, { landingLon: { not: null } }] } } } },
     },
     orderBy: { name: "asc" },
@@ -59,6 +60,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     lat: row.lat,
     lon: row.lon,
     updatedAt: row.updatedAt,
+    boundary: isValidBoundaryShape(row.boundary) ? row.boundary : null,
     hasBoundary: row.boundaryMinLat !== null,
     hasLocationEvidence: row._count.takeoffFlights > 0 || row._count.landingFlights > 0,
     ownFlightCount: counts.get(row.id) ?? 0,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   nameSite,
@@ -84,8 +85,17 @@ export function SiteNameControl({
   className?: string;
   as?: "h1" | "span";
 }) {
+  const router = useRouter();
   const [siteName, setSiteName] = useState(initialSiteName);
   const [zoneName, setZoneName] = useState(initialZoneName);
+  const [serverNames, setServerNames] = useState({ site: initialSiteName, zone: initialZoneName });
+  // A refresh may update the names while a community dialog is open. Reconcile
+  // the labels without remounting this control and losing its dialog state.
+  if (serverNames.site !== initialSiteName || serverNames.zone !== initialZoneName) {
+    setServerNames({ site: initialSiteName, zone: initialZoneName });
+    setSiteName(initialSiteName);
+    setZoneName(initialZoneName);
+  }
   const [open, setOpen] = useState(false);
   const [communityOpen, setCommunityOpen] = useState(false);
   const hydrated = useHydrated();
@@ -164,17 +174,20 @@ export function SiteNameControl({
           zonesEnabled={zonesEnabled}
           onClose={() => setOpen(false)}
           onNamed={(result) => {
+            router.refresh();
             setSiteName(result.siteName);
             setZoneName(result.zoneName);
             setOpen(false);
           }}
           onCommunityRenamed={(newName, level) => (level === "site" ? setSiteName(newName) : setZoneName(newName))}
           onSiteUndone={() => {
+            router.refresh();
             setSiteName(null);
             setZoneName(null); // a zone can't outlive its site binding
             setOpen(false);
           }}
           onZoneUndone={() => {
+            router.refresh();
             setZoneName(null); // the site binding survives — falls back to it
             setOpen(false);
           }}
@@ -291,24 +304,12 @@ function NameSiteDialog({
     };
   }, [flightId, endpoint]);
 
-  function chooseSiteReuse(id: string, name: string, visibility: SiteVisibility) {
-    setError(null);
-    setSiteChoice({ mode: "reuse", id });
-    setSiteChoiceLabel(name);
-    setSiteChoiceVisibility(visibility);
-    // Clear any leftover text in the "new site" field — otherwise it would
-    // silently win over this explicit reuse pick the moment Save is
-    // clicked, since chooseSiteCreate branches on the input being non-empty.
-    setSiteNameInput("");
-    // "Use this site" only SELECTS it — it never submits on its own. The
-    // pilot still has to click "Save" to persist it, the same as picking a
-    // zone always required before this sprint (reuseZone never auto-saved
-    // either). Zones-enabled keeps its own separate step to advance to.
-    if (zonesEnabled) setStep("zone");
+  function chooseSiteReuse(id: string) {
+    submit({ mode: "reuse", id });
   }
 
   function chooseSiteCreate() {
-    if (!siteNameInput.trim() && siteChoice) { submit(siteChoice); return; }
+    if (!siteNameInput.trim()) return;
     setStep("site-create");
   }
 
@@ -353,9 +354,13 @@ function NameSiteDialog({
   function submit(site: SiteChoice, zone?: ZoneChoice) {
     setError(null);
     startTransition(async () => {
-      const result = await nameSite({ flightId, endpoint, site, zone });
-      if (result.ok) onNamed(result);
-      else setError(result.error);
+      try {
+        const result = await nameSite({ flightId, endpoint, site, zone });
+        if (result.ok) onNamed(result);
+        else setError(result.error);
+      } catch {
+        setError("Could not save the site. Please try again.");
+      }
     });
   }
 
@@ -489,7 +494,7 @@ function NameSiteDialog({
   }
 
   return (
-    <SiteDialog onClose={onClose}>
+    <SiteDialog onClose={() => { if (!pending) onClose(); }}>
         {step === "site-overview" && (
           <SiteOverviewStep
             siteTypeLabel={SITE_TYPE_LABEL[endpoint]}
@@ -797,7 +802,7 @@ function SiteStep({
             <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
-            <Button type="button" size="sm" onClick={onCreate} disabled={pending}>
+            <Button type="button" size="sm" onClick={onCreate} disabled={pending || !siteNameInput.trim()}>
               Create site
             </Button>
           </div>

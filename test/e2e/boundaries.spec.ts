@@ -604,13 +604,15 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   const startX = nwBox.x + nwBox.width / 2;
   const startY = nwBox.y + nwBox.height / 2;
 
-  const dragTarget: [number, number] = [nw[0] - metersToDegLon(60, center.lat), nw[1] + metersToDegLat(60)];
-  const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
+  // This checks marker dragging, not projection math. A fixed geographic
+  // distance can be less than ten pixels at the editor's fitted zoom.
+  const endX = startX + 40;
+  const endY = startY + 40;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await expectVertexCount(page, 4, 2000); // still 4 mid-press, no insert yet
-  await moveOnMap(page, dragEndPx, 10);
+  await page.mouse.move(endX, endY, { steps: 10 });
   await expectVertexCount(page, 4, 2000); // still 4 mid-drag
   await page.mouse.up();
 
@@ -620,7 +622,9 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
 
   // And the marker must have actually followed the drag to its new spot,
   // not stayed put — confirms this was a real move, not a silent no-op.
-  const movedBox = await nwMarker.boundingBox();
-  if (!movedBox) throw new Error("nw vertex marker lost its bounding box after drag");
-  expect(Math.hypot(movedBox.x - nwBox.x, movedBox.y - nwBox.y)).toBeGreaterThan(10);
+  await expect.poll(async () => {
+    const movedBox = await nwMarker.boundingBox();
+    if (!movedBox) return Infinity;
+    return Math.hypot(movedBox.x + movedBox.width / 2 - endX, movedBox.y + movedBox.height / 2 - endY);
+  }).toBeLessThan(5);
 });

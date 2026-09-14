@@ -13,7 +13,7 @@ export function SiteDialog({ children, onClose }: { children: ReactNode; onClose
   }, []);
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-3 sm:p-4" onClick={onClose}>
     <div ref={panel} role="dialog" aria-modal="true" aria-label="Site details" tabIndex={-1}
-      className="flex max-h-[90dvh] w-full max-w-2xl flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6 outline-none [&>*]:shrink-0"
+      className="flex max-h-[90dvh] w-full max-w-2xl flex-col gap-3 overflow-y-auto rounded-lg bg-paper p-4 outline-none [&>*]:shrink-0"
       onClick={event => event.stopPropagation()} onKeyDown={event => {
         if (event.key === "Escape") { event.stopPropagation(); onClose(); }
         if (event.key !== "Tab") return;
