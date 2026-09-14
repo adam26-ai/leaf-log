@@ -24,7 +24,7 @@ function server() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("group replay controller", () => {
-  it("keeps time bounds and cached tracks when selecting, hiding, and revealing pilots", async () => {
+  it("fits time bounds to visible pilots while retaining cached tracks", async () => {
     const { fetch } = server();
     const { result } = renderHook(() => useGroupReplay(primary, "self", 150_000));
     await waitFor(() => expect(result.current.visibleFlights).toHaveLength(2));
@@ -35,12 +35,13 @@ describe("group replay controller", () => {
     act(() => result.current.toggle(friend.owner.id));
     expect(result.current.selected?.id).toBe(primary.id);
     expect(result.current.visibleFlights).toHaveLength(1);
-    expect(result.current.bounds).toEqual(bounds);
+    expect(result.current.bounds).toEqual({ startMs: primary.takeoffMs, endMs: primary.landingMs });
     act(() => result.current.toggle(primary.owner.id));
     expect(result.current.visibleFlights).toHaveLength(1);
     act(() => result.current.select(friend.owner));
     expect(result.current.visibleFlights).toHaveLength(2);
     expect(result.current.selected?.id).toBe(friend.id);
+    expect(result.current.bounds).toEqual(bounds);
     expect(fetch.mock.calls.length).toBe(count);
   });
 

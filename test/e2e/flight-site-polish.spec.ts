@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
+import { expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -342,6 +342,7 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.reload();
     const map = page.locator(".flight-replay-map");
     await expect(map).toHaveAttribute("data-scored-route", "hidden");
+    await expectReplaySpaceShortcut(page);
     const metric = page.getByTitle(/credited distance/);
     for (const [shape, name] of [["open", "Open distance"], ["fai-triangle", "FAI triangle"], ["free-triangle", "Free triangle"], ["hidden", "Open distance"]]) {
       await metric.click();
@@ -351,6 +352,24 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.getByRole("button", { name: /Gold.*FAI triangle/ }).click();
     await expect(map).toHaveAttribute("data-scored-route", "fai-triangle");
     await expect(metric).toHaveAttribute("title", /FAI triangle/);
+    const trophy = page.getByRole("button", { name: /Gold.*FAI triangle/ });
+    await trophy.hover();
+    const tooltip = trophy.getByRole("tooltip");
+    await expect(tooltip).toBeVisible();
+    const trophyBox = (await trophy.boundingBox())!;
+    const tooltipBox = (await tooltip.boundingBox())!;
+    expect(tooltipBox.y).toBeGreaterThanOrEqual(trophyBox.y + trophyBox.height);
+    expect(tooltipBox.x).toBeGreaterThanOrEqual(trophyBox.x);
+    expect(await tooltip.evaluate(element => {
+      const previous = element.style.pointerEvents;
+      element.style.pointerEvents = "auto";
+      const box = element.getBoundingClientRect();
+      const unobscured = element.contains(document.elementFromPoint(box.x + box.width / 2, box.bottom - 5));
+      element.style.pointerEvents = previous;
+      return unobscured;
+    })).toBe(true);
+
+
     await expect(page.getByLabel("SIV", { exact: true })).toBeVisible();
     await page.screenshot({ path: "test-results/replay-trophies.png", fullPage: true });
     expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(1);

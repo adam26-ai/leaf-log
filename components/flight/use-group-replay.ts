@@ -140,7 +140,7 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
       setPayloads((old) => old[primaryId] ? { ...old, [primaryId]: { ...old[primaryId], photos } } : old);
     } catch { setPhotoFailures((old) => [...new Set([...old, primaryId])]); }
   }, [primaryId]);
-  const timelineFlights = candidates.map((f) => flights.find((loaded) => loaded.id === f.id) ?? f);
+  const timelineFlights = candidates.filter((f) => isVisible(f.owner.id)).map((f) => flights.find((loaded) => loaded.id === f.id) ?? f);
   const bounds = groupTimeBounds(timelineFlights);
   return { flights, visibleFlights, selected, pilots, candidates, isVisible, select, toggle, failures, photoFailures,
     primaryReplay: payloads[primaryId]?.replay ?? null, bounds, discover, discovering, discoveryError,

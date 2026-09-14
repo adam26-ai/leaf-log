@@ -496,14 +496,15 @@ export function FlightViz({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.code !== "Space" || event.repeat) return;
+      if (event.code !== "Space" || event.isComposing) return;
       const target = event.target as HTMLElement | null;
-      if (target?.isContentEditable || target?.closest("input, textarea, select, button, [role=slider]")) return;
+      if (target?.isContentEditable || target?.closest('textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"])')) return;
       event.preventDefault();
-      togglePlay();
+      event.stopPropagation();
+      if (!event.repeat) togglePlay();
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [togglePlay]);
 
   useEffect(() => {
@@ -756,7 +757,7 @@ export function FlightViz({
             disabled={!replay}
             onTogglePlay={togglePlay}
             onScrub={(t) => scrubTo(t + startS)}
-            takeoffs={group.candidates.map((candidate) => {
+            takeoffs={group.candidates.filter((candidate) => group.isVisible(candidate.owner.id)).map((candidate) => {
               const flight = group.flights.find((loaded) => loaded.id === candidate.id) ?? candidate;
               const clock = new Date(flight.takeoffMs + offsetMin * 60_000).toISOString().slice(11, 19);
               return {

@@ -84,7 +84,7 @@ export function FlightHeader({
   const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
   return (
-    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
       <div className="flex min-w-0 items-center justify-start gap-1">
         <FlightArrow flightId={previousFlightId} direction="previous" />
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-lg font-bold text-ink">
@@ -118,7 +118,6 @@ export function FlightHeader({
             needsReview={flight[`${primaryEndpoint}SiteAssignment`] === "needs_review"}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
-          <ReplayTrophies flightId={flight.id} trophies={trophies} routes={replayXcRoutes(flight.xcScore).map(route => route.shape)} />
           {showLanding && (
             <>
               <span className="text-lg text-gray-400" aria-hidden="true">
@@ -139,6 +138,7 @@ export function FlightHeader({
               />
             </>
           )}
+          <ReplayTrophies flightId={flight.id} trophies={trophies} routes={replayXcRoutes(flight.xcScore).map(route => route.shape)} />
         </div>
         <AccentBar width="3rem" className="h-[var(--replay-header-accent-height)] bg-[var(--replay-accent)]" />
       </div>

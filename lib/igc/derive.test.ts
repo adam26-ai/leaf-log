@@ -89,3 +89,13 @@ describe("deriveMetrics", () => {
     expect(m.maxSinkMs).toBe(-3.6);
   });
 });
+
+it.each([1, 2, 5])("counts sustained gentle climbs with %s-second recording intervals", (interval) => {
+  const fixes = Array.from({ length: 120 / interval + 1 }, (_, i) => ({
+    tSec: 36000 + i * interval, lat: 37.8 + i * interval * 0.0001,
+    lon: -122.5, baro: 500 + Math.floor(i * interval / 2),
+  }));
+  const metrics = deriveMetrics(parseIgc(makeIgc({ fixes })))!;
+  expect(metrics.altGainM).toBeGreaterThanOrEqual(55);
+  expect(metrics.altGainM).toBeLessThanOrEqual(60);
+});

@@ -32,6 +32,9 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     await db.flight.create({ data: { ownerId: profile.id, status: "failed", flightDate: new Date("2026-06-12"), data: { create: { rawIgc: raw } } } });
     await db.flight.create({ data: { ownerId: profile.id, recordingKind: "logbook", source: "manual_entry", status: "ready", flightDate: new Date("2000-01-01"), notes: "Manual flight" } });
     await page.reload();
+    await expect(page.getByRole("img", { name: "Manual logbook entry" })).toBeVisible();
+    await expect(page.getByText(/No track recorded|Reported XC/, { exact: true })).toHaveCount(0);
+
     await page.waitForFunction(id => sessionStorage.getItem(`leaf-logbook-filters:v1:${id}`) !== null, profile.id);
     await page.getByRole("button", { name: "Select Dates" }).click();
     await page.getByLabel("From", { exact: true }).fill("2099-01-01");

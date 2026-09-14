@@ -1,9 +1,9 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import type { FlightListItem } from "@/lib/flights/repo";
 import { FlightRow } from "./flight-row";
 
-vi.mock("@/components/flight/analysis-status", () => ({ AnalysisStatus: () => null }));
+
 
 afterEach(cleanup);
 
@@ -82,4 +82,11 @@ it("reserves the companion column for flights without a match", () => {
   expect(companionColumn).toHaveClass("w-11");
   expect(companionColumn).toBeEmptyDOMElement();
   expect(screen.getByTitle("Maximum altitude").parentElement).toBe(siteAltitudeGroup);
+});
+
+it.each(["manual_entry", "csv_import"])("identifies %s with an icon without an extra status row", (source) => {
+  const { container } = render(<FlightRow flight={{ ...flight, source, recordingKind: "logbook" }} compact />);
+  expect(screen.getByRole("img", { name: source === "manual_entry" ? "Manual logbook entry" : "Imported logbook entry" })).toBeInTheDocument();
+  expect(screen.queryByText(/No track recorded|Reported XC/)).not.toBeInTheDocument();
+  expect(container.firstElementChild?.children).toHaveLength(1);
 });
