@@ -67,6 +67,7 @@ export function FlightRow({
         : { label: "Private", className: "border-gray-400 bg-white text-gray-600" };
   const VisibilityIcon = flight.visibility === "public" ? Globe : flight.visibility === "friends" ? Users : Lock;
   const site = formatLocationLabel(flight.takeoffSiteName, flight.takeoffZoneName)
+    ?? formatLocationLabel(flight.landingSiteName, flight.landingZoneName)
     ?? (flight.takeoffSiteAssignment === "needs_review" ? "Choose site" : "Unknown site");
   if (compact) {
     const blueAlpha = Math.min(1, Math.max(0, highlightScore)) * 0.22;
@@ -75,7 +76,7 @@ export function FlightRow({
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const landing = formatLocationLabel(flight.landingSiteName, flight.landingZoneName)
       ?? (flight.landingSiteAssignment === "needs_review" ? "Choose site" : null);
-    const showLanding = landing && (flight.landingSiteAssignment === "needs_review" || flight.landingSiteId !== flight.takeoffSiteId
+    const showLanding = (flight.takeoffSiteName || !flight.landingSiteName) && landing && (flight.landingSiteAssignment === "needs_review" || flight.landingSiteId !== flight.takeoffSiteId
       || flight.landingZoneId !== flight.takeoffZoneId || landing !== site);
     return (
       <div className="relative">

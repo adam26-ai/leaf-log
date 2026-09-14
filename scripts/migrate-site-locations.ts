@@ -14,7 +14,7 @@ async function main() {
     const { previewSiteMigration, applySiteMigration } = await import("../lib/sites/migrate");
     if (apply) {
       if (!expected || !/^[a-f0-9]{64}$/.test(expected)) throw new Error("Preview first, then supply its signature with --expected before applying.");
-      console.log(await applySiteMigration(ownerId, expected));
+      console.log(await applySiteMigration(ownerId, expected, message => console.log(message)));
     } else console.log(await previewSiteMigration(ownerId));
   } finally { await prisma.$disconnect(); }
 }

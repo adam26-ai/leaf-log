@@ -184,6 +184,7 @@ export interface BoundaryEditorHandle {
 
 export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   anchor: { lat: number; lon: number };
+  compact?: boolean;
   anchorVisible?: boolean;
   initialBoundary: Boundary | null;
   editingMode?: "boundary" | "anchor";
@@ -220,6 +221,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
 }>(function BoundaryEditor(
   {
     anchor,
+    compact = false,
     anchorVisible = true,
     initialBoundary,
     editingMode = "boundary",
@@ -645,13 +647,13 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   const hasVertices = stateRef.current.vertices.length > 0;
 
   return (
-    <div className="flex shrink-0 flex-col gap-3">
+    <div className={`flex shrink-0 flex-col ${compact ? "gap-1.5" : "gap-3"}`}>
       <p className="text-xs text-gray-600">{editingMode === "anchor" ? "Drag the blue site pin or click the map to move it." : "Click to add boundary points. Drag points or edges to adjust the shape; click a point to remove it."}</p>
       <div className="relative">
         <div
           ref={containerRef}
           data-testid="boundary-editor-map"
-          className="h-[clamp(260px,45vh,520px)] w-full rounded-lg"
+          className={`${compact ? "h-[clamp(180px,32dvh,320px)]" : "h-[clamp(260px,45vh,520px)]"} w-full rounded-lg`}
         />
         {/* On-map control stack, right below MapLibre's own zoom buttons
          *  (top-right) — icons instead of the old below-map text row, which

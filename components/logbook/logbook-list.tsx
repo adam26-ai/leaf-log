@@ -4,7 +4,7 @@ import { Mountain, Trophy, ChevronDown, CalendarDays, Users } from "lucide-react
 import { WingIcon } from "@/components/icons/wing-icon";
 import type { FlightListItem } from "@/lib/flights/repo";
 import type { FlightTrophy } from "@/lib/flights/trophies";
-import { EMPTY_FILTERS, flightCalendarDate, matchesDateRange, readLogbookFilters, siteKey, wingKey, type LogbookFilters } from "@/lib/flights/logbook-filters";
+import { EMPTY_FILTERS, flightCalendarDate, matchesDateRange, readLogbookFilters, siteKeys, wingKey, type LogbookFilters } from "@/lib/flights/logbook-filters";
 import { listHighlights } from "@/lib/flights/list-highlights";
 import { formatDuration } from "@/lib/flights/format";
 import { siteLinkLabel } from "@/lib/sites/display";
@@ -46,28 +46,23 @@ function FilterChoices({ label, icon, options = [], selected = null, active = se
   </div>;
 }
 
-function endpointKey(f: FlightListItem, endpoint: 'takeoff' | 'landing') {
-  return f[`${endpoint}SiteId`] ?? (f[`${endpoint}SiteName`] ? 'name:' + f[`${endpoint}SiteName`] : f[`${endpoint}HasGps`] ? 'gps' : 'unknown');
-}
-function endpointStatus(f: FlightListItem, endpoint: 'takeoff' | 'landing') {
-  if (f[`${endpoint}SiteAssignment`] === 'needs_review') return 'review';
-  if (f[`${endpoint}SiteMapped`]) return 'mapped';
-  if (f[`${endpoint}SiteName`]) return f[`${endpoint}HasGps`] ? 'review' : 'unmapped';
-  return f[`${endpoint}HasGps`] ? 'gps' : 'missing';
-}
-function siteChoices(flights: FlightListItem[], endpoint: 'takeoff' | 'landing') {
+function siteChoices(flights: FlightListItem[]) {
   const counts = new Map<string, { name: string; kind: string; count: number }>();
   for (const flight of flights) {
-    const key = endpointKey(flight, endpoint);
-    const entry = counts.get(key) ?? { name: flight[`${endpoint}SiteName`] ?? (flight[`${endpoint}HasGps`] ? 'Site not identified · GPS available' : 'Site not recorded'), kind: siteLinkLabel(flight[`${endpoint}SiteId`], flight[`${endpoint}SiteName`], flight[`${endpoint}SiteMapped`], flight[`${endpoint}HasGps`]), count: 0 };
-    if (!flight[`${endpoint}SiteMapped`] && flight[`${endpoint}HasGps`] && flight[`${endpoint}SiteName`]) entry.kind = "Location needs review";
-    entry.count++; counts.set(key, entry);
+    for (const key of siteKeys(flight)) {
+      const endpoint = key === (flight.takeoffSiteId ?? `name:${flight.takeoffSiteName}`) ? "takeoff" : "landing";
+      const entry = counts.get(key) ?? {
+        name: key === "unknown" ? "Site not recorded" : flight[`${endpoint}SiteName`] ?? "Site",
+        kind: key === "unknown" ? "" : siteLinkLabel(flight[`${endpoint}SiteId`], flight[`${endpoint}SiteName`], flight[`${endpoint}SiteMapped`], flight[`${endpoint}HasGps`], flight[`${endpoint}SiteAssignment`] === "needs_review"),
+        count: 0,
+      };
+      entry.count++; counts.set(key, entry);
+    }
   }
-  return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})${key === 'gps' || key === 'unknown' ? '' : ` · ${entry.kind}`}` }));
+  return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})${entry.kind ? ` · ${entry.kind}` : ''}` }));
 }
 export function LogbookList({ flights, trophies, ownerId }: { flights: FlightListItem[]; trophies: Record<string, FlightTrophy[]>; ownerId?: string }) {
-  const sites = useMemo(() => siteChoices(flights, 'takeoff'), [flights]);
-  const landingSites = useMemo(() => siteChoices(flights, 'landing'), [flights]);
+  const sites = useMemo(() => siteChoices(flights), [flights]);
   const wings = useMemo(() => {
     const counts = new Map<string, number>();
     flights.forEach(f => counts.set(wingKey(f), (counts.get(wingKey(f)) ?? 0) + (f.durationS ?? 0)));
@@ -76,7 +71,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   const storageKey = ownerId ? `leaf-logbook-filters:v1:${ownerId}` : null;
   const [filters, setFilters] = useState<LogbookFilters>(EMPTY_FILTERS);
   const [restoredKey, setRestoredKey] = useState<string | null>(null);
-  const [openChoices, setOpenChoices] = useState<"sites" | "landingSites" | "wings" | "friends" | "dates" | null>(null);
+  const [openChoices, setOpenChoices] = useState<"sites" | "wings" | "friends" | "dates" | null>(null);
   const [friends, setFriends] = useState<{ key: string; label: string; flightIds: string[] }[] | null>(null);
   const [friendError, setFriendError] = useState(false);
   const [retryFriends, setRetryFriends] = useState(0);
@@ -107,9 +102,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   const friendFlightIds = new Set(friends?.filter(friend => filters.friends?.includes(friend.key)).flatMap(friend => friend.flightIds));
   const sharedFlightIds = new Set(friends?.flatMap(friend => friend.flightIds));
   const visible = flights.filter(f =>
-    (filters.sites === null || filters.sites.includes(endpointKey(f, "takeoff"))) &&
-    (!filters.landingSites || filters.landingSites.includes(endpointKey(f, "landing"))) &&
-    (!filters.siteLocation || [endpointStatus(f, "takeoff"), endpointStatus(f, "landing")].includes(filters.siteLocation)) &&
+    (filters.sites === null || siteKeys(f).some(key => filters.sites!.includes(key))) &&
     (filters.wings === null || filters.wings.includes(wingKey(f))) &&
     (filters.friends === null || friendFlightIds.has(f.id)) &&
     (!filters.trophiesOnly || Boolean(trophies[f.id]?.length)) &&
@@ -118,13 +111,11 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   const { highlightScore, distanceScore } = listHighlights(flights);
   return <>
     <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
-      <StatsBar stats={{ totalSeconds: ready.reduce((s,f) => s + (f.durationS ?? 0), 0), flightCount: ready.length, unknownDurationCount: ready.filter(f => f.durationS == null).length, siteCount: new Set(ready.map(siteKey).filter(key => key !== "unknown")).size }} />
+      <StatsBar stats={{ totalSeconds: ready.reduce((s,f) => s + (f.durationS ?? 0), 0), flightCount: ready.length, unknownDurationCount: ready.filter(f => f.durationS == null).length, siteCount: new Set(ready.flatMap(siteKeys).filter(key => key !== "unknown")).size }} />
       <div className="relative max-w-full pt-6">
         {Object.values(filters).some(value => value !== null && value !== "" && value !== false) && <button type="button" onClick={() => setFilters(EMPTY_FILTERS)} className="absolute right-0 top-0 text-xs text-gray-600 underline">Clear filters</button>}
         <div className="relative flex flex-wrap items-center gap-2" aria-label="Logbook filters">
-        <FilterChoices icon={<Mountain className="h-4 w-4" />} open={openChoices === "sites"} onOpenChange={open => setOpenChoices(open ? "sites" : null)} label="Takeoff sites" options={sites} selected={filters.sites} onChange={sites => update({ sites })} />
-        <FilterChoices icon={<Mountain className="h-4 w-4" />} open={openChoices === "landingSites"} onOpenChange={open => setOpenChoices(open ? "landingSites" : null)} label="Landing sites" options={landingSites} selected={filters.landingSites ?? null} onChange={landingSites => update({ landingSites })} />
-        <label className="text-xs text-gray-600">Site location <select aria-label="Site location status" value={filters.siteLocation ?? ""} onChange={e => update({ siteLocation: e.target.value || null })} className="h-9 rounded-md border border-gray-300 bg-white px-2"><option value="">All locations</option><option value="mapped">Mapped</option><option value="unmapped">Name only</option><option value="review">Location needs review</option><option value="gps">GPS available, no site</option><option value="missing">Site not recorded</option></select></label>
+        <FilterChoices icon={<Mountain className="h-4 w-4" />} open={openChoices === "sites"} onOpenChange={open => setOpenChoices(open ? "sites" : null)} label="Sites" options={sites} selected={filters.sites} onChange={sites => update({ sites })} />
         <FilterChoices icon={<WingIcon aria-hidden="true" className="h-5 w-5" />} open={openChoices === "wings"} onOpenChange={open => setOpenChoices(open ? "wings" : null)} label="Wings" options={wings} selected={filters.wings} onChange={wings => update({ wings })} />
         <FilterChoices icon={<Users className="h-4 w-4" />} open={openChoices === "friends"} onOpenChange={open => setOpenChoices(open ? "friends" : null)} label="Friends" options={friends ?? []} selected={filters.friends} allIncludesEveryFlight={false} onChange={friends => update({ friends })}>
           <p className="mt-2 text-xs text-gray-500">Flights with overlapping airtime and nearby routes.</p>

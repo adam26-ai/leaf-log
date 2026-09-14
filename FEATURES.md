@@ -2,6 +2,10 @@
 
 Track potential feature ideas for future sprints.
 
+## Advanced Logbook Editing
+- [ ] Add a spreadsheet-style edit view with all flight columns visible, per-column filters, and row-selection checkboxes. Support bulk changes such as assigning a site to several flights at once. Keep detailed location-status filtering in this advanced view so the everyday logbook stays simple.
+
+
 ## Logbook-Level Batch Photo Upload + Auto-Associate to Flights
 - **Area:** Logbook / photo ingestion / placement
 - **Description:** A photo-upload entry point at the **logbook (flights list)** level, not just

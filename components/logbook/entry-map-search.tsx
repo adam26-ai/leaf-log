@@ -5,7 +5,7 @@ import { hasSitePoint, type SitePoint } from "@/lib/sites/model";
 import type { EntrySite } from "@/lib/logbook/options";
 import { searchPlaces, type MapPlace } from "@/lib/logbook/place-search";
 
-export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLocate: (place: MapPlace) => void }) {
+export function EntryMapSearch({ sites, onLocate, compact = false }: { compact?: boolean; sites: EntrySite[]; onLocate: (place: MapPlace) => void }) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<MapPlace[]>([]);
@@ -59,8 +59,8 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
     setMessage(`Map moved to ${place.name}.`);
   }
 
-  return <div className="space-y-2 border-b border-gray-200 p-3">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700">Find a place</label>
+  return <div className={compact ? "space-y-1" : "space-y-2 border-b border-gray-200 p-3"}>
+    <label htmlFor={id} className={compact ? "sr-only" : "block text-sm font-medium text-gray-700"}>Find a place</label>
     <div className="flex gap-2">
       <input id={id} type="search" value={query} maxLength={200} placeholder="City, landmark, or flying site" autoComplete="off"
         onChange={event => { reset(); setQuery(event.target.value); }}
@@ -74,7 +74,7 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
       <button type="button" disabled={pending || query.trim().length < 2} onClick={() => void search()}
         className="shrink-0 rounded-md bg-brand-blue px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{pending ? "Searching…" : "Search"}</button>
     </div>
-    <p className="text-xs text-gray-500">Find a nearby place, then click the map to set the exact location.</p>
+    {!compact && <p className="text-xs text-gray-500">Find a nearby place, then click the map to set the exact location.</p>}
     {siteMatches.length > 0 && <div>
       <p className="py-1 text-xs font-medium text-gray-500">Flying sites</p>
       <ul className="divide-y divide-gray-100">
