@@ -61,6 +61,10 @@ export async function uploadFlight(page: Page, files: Parameters<FileChooser["se
 /** Space must control replay even when a map control retains focus.
  * Use accessible control names so metric icon size and layout stay independent. */
 export async function expectReplaySpaceShortcut(page: Page) {
+  // Test the shortcut at normal speed so a slow renderer cannot finish the
+  // flight between the Play assertion and the key intended to pause it.
+  await page.getByRole("button", { name: /^Playback speed:/ }).click();
+  await page.getByRole("option", { name: "1×", exact: true }).click();
   const refresh = page.getByRole("button", { name: "Refresh friends" });
   await refresh.focus();
   await page.keyboard.press("Space");

@@ -328,7 +328,10 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     const entry = await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "csv_import", flightDate: new Date("2024-07-12"), glider: "Test Wing", durationS: 400, notes: "Original notes", flightFlags: ["siv", "competition"] } });
     await page.goto("/upload");
-    await uploadFlight(page, { name: "found.igc", mimeType: "text/plain", buffer: Buffer.from(makeRealisticFlight().igc) });
+    const recordedIgc = makeIgc({ glider: "Test Wing", fixes: Array.from({ length: 12 }, (_, index) => ({
+      tSec: 36000 + index * 10, lat: 37.6685 + index * 0.001, lon: -122.4936, baro: 500 + index * 10,
+    })) });
+    await uploadFlight(page, { name: "found.igc", mimeType: "text/plain", buffer: Buffer.from(recordedIgc) });
     await expect(page.getByText("Overlapping flight found")).toBeVisible();
     await page.getByRole("button", { name: "Compare", exact: true }).click();
     await expect(page.getByRole("rowheader", { name: "Recorder ID" })).toBeVisible();
@@ -343,7 +346,6 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.reload();
     const map = page.locator(".flight-replay-map");
     await expect(map).toHaveAttribute("data-scored-route", "hidden");
-    await expectReplaySpaceShortcut(page);
     const metric = page.getByTitle(/credited distance/);
     for (const [shape, name] of [["open", "Open distance"], ["fai-triangle", "FAI triangle"], ["free-triangle", "Free triangle"], ["hidden", "Open distance"]]) {
       await metric.click();
@@ -375,6 +377,7 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.screenshot({ path: "test-results/replay-trophies.png", fullPage: true });
     expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(1);
     expect((await db.flight.findUniqueOrThrow({ where: { id: entry.id } })).notes).toBe("Original notes");
+    await expectReplaySpaceShortcut(page);
   } finally { await db.$disconnect(); }
 });
 
