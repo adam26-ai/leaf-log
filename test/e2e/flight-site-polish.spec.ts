@@ -181,10 +181,12 @@ test("site naming waits for delayed details before enabling the form", async ({ 
     await expect(dialog.getByText("Loading site details...")).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
     const chooser = await opening;
-    expect(delayedRequests).toBeGreaterThan(0);
-    await page.unroute(`**/flights/${flight.id}`);
     await chooser.name.fill("Delayed lookup hill");
     await chooser.dialog.getByRole("button", { name: "Create site", exact: true }).click();
+    await expect(chooser.dialog.getByLabel("Name", { exact: true })).toHaveValue("Delayed lookup hill");
+    // Creating uses the draft loaded with the chooser, not another queued read.
+    expect(delayedRequests).toBe(1);
+    await page.unroute(`**/flights/${flight.id}`);
     await chooser.dialog.getByRole("button", { name: "Save site", exact: true }).click();
     await expect(page.locator("h1")).toHaveText("Delayed lookup hill");
     expect((await db.flight.findUniqueOrThrow({ where: { id: flight.id }, include: { takeoffSite: true } })).takeoffSite?.name).toBe("Delayed lookup hill");

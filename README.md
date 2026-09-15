@@ -102,6 +102,7 @@ system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 
 ```bash
 pnpm check       # required before submitting: typecheck, lint, tests, build AND browsers
+pnpm check:linux # reproduce CI in Linux with Docker, pinned runtimes and an isolated database
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint

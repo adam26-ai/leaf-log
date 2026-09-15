@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/use-hydrated";
 import { siteLinkLabel } from "@/lib/sites/display";
 import { hasSitePoint } from "@/lib/sites/model";
-import { PersistedSiteEditor } from "./persisted-site-editor";
+import { PersistedSiteEditor, type SiteEditorData } from "./persisted-site-editor";
 import { clearFlightSiteAction } from "@/app/settings/sites/editor-actions";
 
 /**
@@ -262,6 +262,7 @@ function NameSiteDialog({
 }) {
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
   const [boundInfo, setBoundInfo] = useState<BoundLocationInfo | null>(null);
+  const [createEditor, setCreateEditor] = useState<SiteEditorData>();
   // A bound-flight opens on a read-only overview first (SPRINT-008: bug
   // report — typing a new name while a site was pre-selected could still
   // silently create a site from stale text). An unknown site has nothing
@@ -287,11 +288,12 @@ function NameSiteDialog({
 
   useEffect(() => {
     let cancelled = false;
-    getSiteDialogData(flightId, endpoint).then(({ info, suggestions }) => {
+    getSiteDialogData(flightId, endpoint).then(({ info, suggestions, createEditor }) => {
       if (cancelled) return;
       setSuggestions(suggestions ?? []);
       if (suggestions === null) setError("Could not load nearby sites. Close and reopen to retry.");
       setBoundInfo(info);
+      setCreateEditor(createEditor);
       // Already-bound site: pre-fill the choice so the zone step can bind
       // to it without re-resolving the site.
       if (info.site) {
@@ -513,6 +515,7 @@ function NameSiteDialog({
           />
         )}
         {(step === "site-edit" || step === "site-create") && <PersistedSiteEditor
+          key={step} initialData={step === "site-create" ? createEditor : undefined}
           context={{ flightId, endpoint, create: step === "site-create" }} initialName={step === "site-create" ? siteNameInput : undefined}
           onCancel={() => setStep(currentSiteName ? "site-overview" : "site")}
           onSaved={site => { onCommunityRenamed(site.name, "site"); onClose(); }} /> }

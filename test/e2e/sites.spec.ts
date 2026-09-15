@@ -1,5 +1,5 @@
 import { createSiteFromFlight, setSiteVisibility, uploadFlight } from "./helpers";
-import { test, expect } from "./fixtures";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 
@@ -59,9 +59,7 @@ function remoteFlightIgc(runOffset: number, seed: number): Buffer {
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
 }
 
-test("unknown site -> name it public -> a distinct second flight nearby auto-associates", async ({
-  page,
-}) => {
+async function signUp(page: Page) {
   const suffix = `${Date.now()}`;
   const email = `sites_e2e_${suffix}@test.local`;
   const handle = `se2e${suffix}`.slice(0, 18);
@@ -81,6 +79,11 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
+  return suffix;
+}
+
+test("a standalone site saves its pin and persists public and private visibility", async ({ page }) => {
+  const suffix = await signUp(page);
   // A site can be created independently, without borrowing an IGC.
   await page.goto("/settings/sites");
   await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
@@ -103,6 +106,10 @@ test("unknown site -> name it public -> a distinct second flight nearby auto-ass
     await expect(siteRow.getByLabel(visibility === 'public' ? 'Public' : 'Private', { exact: true })).toBeVisible();
   }
 
+});
+
+test("unknown site -> name it public -> a distinct second flight nearby auto-associates", async ({ page }) => {
+  const suffix = await signUp(page);
   // 2. Upload a flight far from every curated site -> "Unknown site".
   await page.goto("/upload");
   await uploadFlight(page, { name: "remote1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(Number(suffix), 1) });

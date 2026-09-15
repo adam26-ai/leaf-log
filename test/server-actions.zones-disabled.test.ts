@@ -224,6 +224,7 @@ describe("SPRINT-008 PR3: zone-parallel server actions reject when disabled", ()
     const nameBefore = zone.name;
 
     expect(await communityAction.getCommunityInfoForRow("zone", zone.id)).toBeNull();
+    expect(await communityAction.getCommunityDialogData("zone", zone.id)).toEqual({ boundary: null, info: null });
 
     const renameResult = await communityAction.renamePublicRow("zone", zone.id, "Should Never Apply");
     expect(renameResult.ok).toBe(false);

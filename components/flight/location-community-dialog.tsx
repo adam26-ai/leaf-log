@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import {
   getCommunityInfoForRow,
+  getCommunityDialogData,
   renamePublicRow,
   toggleEndorsement,
   type CommunityActionResult,
@@ -99,10 +100,9 @@ export function LocationCommunityDialog({
 
   useEffect(() => {
     let cancelled = false;
-    getBoundaryForPublicRow(level, id).then(result => { if (!cancelled) setBoundaryState(result); }).catch(() => { if (!cancelled) setError("Could not load the site map."); });
-    getCommunityInfoForRow(level, id).then((result) => {
-      if (!cancelled) setInfo(result);
-    });
+    getCommunityDialogData(level, id).then(({ boundary, info }) => {
+      if (!cancelled) { setBoundaryState(boundary); setInfo(info); }
+    }).catch(() => { if (!cancelled) { setInfo(null); setError("Could not load site details. Close and reopen to retry."); } });
     return () => {
       cancelled = true;
     };
@@ -131,13 +131,12 @@ export function LocationCommunityDialog({
 
   async function handleEndorse() {
     setPending(true);
-    const result = await toggleEndorsement(level, id);
-    setPending(false);
-    if (!result.ok) setError(result.error);
-    else {
-      setError(null);
-      getCommunityInfoForRow(level, id).then(setInfo);
-    }
+    try {
+      const result = await toggleEndorsement(level, id);
+      if (!result.ok) setError(result.error);
+      else { setError(null); setInfo(result.info); }
+    } catch { setError("Could not update the endorsement. Please try again."); }
+    finally { setPending(false); }
   }
 
   async function openBoundaryEditor() {
@@ -187,6 +186,7 @@ export function LocationCommunityDialog({
         {boundaryState && <SiteAreaMap key={JSON.stringify(boundaryState.boundary)} anchor={boundaryState.anchor} boundary={boundaryState.boundary} radiusM={level === "site" ? radiusForKind(endpoint) : zoneRadiusForKind(endpoint)} flightPoint={flightPoint} />}
         {info === undefined && <p className="text-sm text-gray-500">Loading…</p>}
         {info === null && <p className="text-sm text-gray-500">Not available.</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
         {info && (
           <>
@@ -248,7 +248,6 @@ export function LocationCommunityDialog({
               </p>
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div>
               <button

@@ -25,9 +25,10 @@ process.env.NEXTAUTH_URL = baseURL;
 process.env.RESEND_API_KEY = "";
 process.env.LEAF_E2E = "1";
 
-// Use bundled Chromium in CI; on Windows, Edge is a convenient installed fallback.
+// Use the real Chromium browser's headless mode, not the separate headless
+// shell. This also matches Edge's headless implementation on Windows.
 const channel = process.env.PLAYWRIGHT_CHANNEL ||
-  (!existsSync(chromium.executablePath()) && process.platform === "win32" ? "msedge" : undefined);
+  (!existsSync(chromium.executablePath()) && process.platform === "win32" ? "msedge" : "chromium");
 
 export default defineConfig({
   testDir: "./test/e2e",
@@ -47,7 +48,7 @@ export default defineConfig({
     channel,
     // Force the CI renderer locally too; allowing SwiftShader alone still lets
     // a developer's GPU conceal software-rendering failures.
-    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] },
+    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"] },
     serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

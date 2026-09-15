@@ -10,6 +10,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
   PR. It runs both CI jobs using `.node-version`; `pnpm test` alone excludes browser
   coverage. If a prerequisite prevents completion, explicitly report the missing
   checks rather than claiming a full pass.
+- On Windows/macOS, use `pnpm check:linux` for the full check above when changing
+  browser tests or CI. It runs `pnpm check` in Linux with disposable Docker
+  services and the renderer's CPU budget; a Windows browser pass alone has
+  missed CI failures.
 - For shared UI changes, update `test/e2e/helpers.ts` and inspect all callers as
   well as component tests. Preserve behavior, persistence, and authorization
   assertions when changing locators.

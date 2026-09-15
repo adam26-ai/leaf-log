@@ -43,7 +43,7 @@ export async function openSiteChooser(page: Page) {
   return { dialog, name };
 }
 
-/** Creating a site opens the full editor; new sites start private. */
+/** Creating uses the chooser's loaded draft immediately; new sites start private. */
 export async function createSiteFromFlight(page: Page, siteName: string, visibility: "private" | "public" = "private") {
   const { dialog, name } = await openSiteChooser(page);
   await name.fill(siteName);

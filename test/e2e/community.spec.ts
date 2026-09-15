@@ -1,7 +1,9 @@
-import { createSiteFromFlight, expectSiteVisibility, uploadFlight } from "./helpers";
+import { expectSiteVisibility } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
+import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { foldName } from "@/lib/sites/name";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -49,29 +51,42 @@ function remoteFlightIgc(lat: number, lon: number, seed: number): Buffer {
 
 async function createPublicFlight(page: Page) {
   const suffix = String(Date.now());
-  const aHandle = `commA${suffix}`.slice(0, 18);
+  const aHandle = `comma${suffix}`.slice(0, 18);
   const lat = 33.0 + (Number(suffix) % 5000) * 0.001;
   const lon = -147;
   await signUp(page, `comm_a_${suffix}@test.local`, aHandle, "Community A");
-  // Set up each scenario through the real owner workflow.
-  await page.goto("/upload");
-  await uploadFlight(page, {
+  // Arrange an existing public flight. Use real authenticated ingestion, then
+  // seed only the site's initial relationship in this suite's isolated schema.
+  // Upload/picker/site creation have dedicated browser workflows; these tests
+  // exercise community permissions and persistence with actual server actions.
+  const response = await page.request.post("/api/upload", { multipart: { files: {
     name: "comm-a.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(lat, lon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  const flightUrl = page.url();
-
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
   const siteName = `E2E Community Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName, "public");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
-
-  await page.goto(`${flightUrl}/edit`);
-  await page.getByRole("button", { name: "Public", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.goto(flightUrl);
-
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle: aHandle } });
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    expect(flight.ownerId).toBe(owner.id);
+    const site = await db.site.create({ data: {
+      name: siteName, normalizedName: foldName(siteName), kind: "takeoff",
+      lat, lon, pinSource: "flight_gps", ownerId: owner.id, visibility: "public",
+    } });
+    await db.flight.update({ where: { id: flightId }, data: {
+      visibility: "public", takeoffSiteId: site.id, takeoffSiteName: siteName,
+      takeoffSiteAssignment: "user_selected",
+    } });
+  } finally {
+    await db.$disconnect();
+  }
+  const flightUrl = new URL(`/flights/${flightId}`, page.url()).href;
   return { suffix, flightUrl, siteName };
 }
 
@@ -108,14 +123,12 @@ test("a non-owner renames a public site while visibility remains owner-only", as
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 5_000 });
   await bPage.getByRole("button", { name: "Close", exact: true }).click();
 
-  // Still true after a reload, and for pilot A too — whose own cached
-  // flight-header name follows the same live site row.
+  // Still true after a reload, and in the owner's independent session.
   await bPage.reload();
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-  await page.reload();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-
   await bContext.close();
+  await page.goto(flightUrl);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
 });
 
 test("an independent pilot endorses a public site and the endorsement persists for its owner", async ({ page, newContext }) => {
