@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { siteVisibleWhere } from "@/lib/sites/repo";
 import { locationCachePatch, resolveLocationCache } from "@/lib/sites/associate";
-import { flightSiteRevision, saveSiteDraft } from "@/lib/sites/editor";
+import { flightSiteRevision, saveSiteDraft, SiteEditorExpectedError } from "@/lib/sites/editor";
 import { hasSitePoint, newSiteDraft, siteDraftSchema, type SiteEditorValue } from "@/lib/sites/model";
 import { isValidBoundaryShape } from "@/lib/sites/geo";
 import { lockFlightRow } from "@/lib/sites/locks";
@@ -16,9 +16,13 @@ const contextSchema = z.object({ siteId: z.string().max(100).optional(), flightI
 export type SiteEditorContext = z.infer<typeof contextSchema>;
 async function requireOwner() {
   const id = await getCurrentUserId();
-  if (!id) throw new Error("Sign in to edit sites.");
+  if (!id) throw new SiteEditorExpectedError("Sign in to edit sites.");
   return id;
 }
+
+export type SiteEditorSaveResult =
+  | { ok: true; value: { id: string; name: string; updatedAt: string } }
+  | { ok: false; error: string };
 export async function getSiteEditorAction(value: SiteEditorContext) {
   const ownerId = await requireOwner();
   const context = contextSchema.parse(value);
@@ -38,30 +42,38 @@ export async function getSiteEditorAction(value: SiteEditorContext) {
   return { initial, pinSource: site?.pinSource ?? (flightPoint ? flight?.[`${endpoint}LocationSource`] ?? "legacy" : "manual"), flightPoint, usageCount, canChangeVisibility: !site || site.ownerId === ownerId, expectedFlightRevision: flight ? flightSiteRevision(flight, endpoint) : undefined };
 }
 
-export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDraftSchema>; context?: SiteEditorContext; expectedFlightRevision?: string }) {
-  const ownerId = await requireOwner();
-  const input = z.object({ draft: siteDraftSchema, context: contextSchema.optional(), expectedFlightRevision: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().parse(value);
-  const endpoint = input.context?.endpoint ?? "takeoff";
-  const result = await prisma.$transaction(async tx => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
-    if (input.draft.id) await tx.$queryRaw`SELECT "id" FROM "Site" WHERE "id" = ${input.draft.id} FOR UPDATE`;
-    const flightId = input.context?.flightId;
-    if (flightId) await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "id" = ${flightId} AND "ownerId" = ${ownerId} FOR UPDATE`;
-    const flight = flightId ? await tx.flight.findFirst({ where: { id: flightId, ownerId } }) : null;
-    if (flightId && (!flight || !input.context?.endpoint || flightSiteRevision(flight, endpoint) !== input.expectedFlightRevision)) throw new Error("This flight's location changed. Reopen the editor before saving.");
-    const site = await saveSiteDraft(tx, ownerId, input.draft);
-    if (flight) {
-      const sameSite = flight[`${endpoint}SiteId`] === site.id;
-      await tx.flight.update({ where: { id: flight.id }, data: {
-        ...(!sameSite ? locationCachePatch(site, null, endpoint) : {}),
-        [`${endpoint}SiteAssignment`]: "user_selected",
-      } });
-    }
-    return { id: site.id, name: site.name, updatedAt: site.updatedAt.toISOString() };
-  }, { maxWait: 10000, timeout: 30000 });
-  revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed");
-  revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
-  return result;
+export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDraftSchema>; context?: SiteEditorContext; expectedFlightRevision?: string }): Promise<SiteEditorSaveResult> {
+  try {
+    const ownerId = await requireOwner();
+    const parsed = z.object({ draft: siteDraftSchema, context: contextSchema.optional(), expectedFlightRevision: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict().safeParse(value);
+    if (!parsed.success) return { ok: false, error: "Check the site details before saving." };
+    const input = parsed.data;
+    const endpoint = input.context?.endpoint ?? "takeoff";
+    const result = await prisma.$transaction(async tx => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+      if (input.draft.id) await tx.$queryRaw`SELECT "id" FROM "Site" WHERE "id" = ${input.draft.id} FOR UPDATE`;
+      const flightId = input.context?.flightId;
+      if (flightId) await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "id" = ${flightId} AND "ownerId" = ${ownerId} FOR UPDATE`;
+      const flight = flightId ? await tx.flight.findFirst({ where: { id: flightId, ownerId } }) : null;
+      if (flightId && (!flight || !input.context?.endpoint || flightSiteRevision(flight, endpoint) !== input.expectedFlightRevision)) throw new SiteEditorExpectedError("This flight's location changed. Reopen the editor before saving.");
+      const site = await saveSiteDraft(tx, ownerId, input.draft);
+      if (flight) {
+        const sameSite = flight[`${endpoint}SiteId`] === site.id;
+        await tx.flight.update({ where: { id: flight.id }, data: {
+          ...(!sameSite ? locationCachePatch(site, null, endpoint) : {}),
+          [`${endpoint}SiteAssignment`]: "user_selected",
+        } });
+      }
+      return { id: site.id, name: site.name, updatedAt: site.updatedAt.toISOString() };
+    }, { maxWait: 10000, timeout: 30000 });
+    revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed");
+    revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
+    return { ok: true, value: result };
+  } catch (error) {
+    if (error instanceof SiteEditorExpectedError) return { ok: false, error: error.message };
+    console.error("Site editor save failed", error);
+    return { ok: false, error: "Could not save the site. Please try again." };
+  }
 }
 
 export async function clearFlightSiteAction(value: { flightId: string; endpoint: "takeoff" | "landing"; siteId: string | null; name: string | null }) {

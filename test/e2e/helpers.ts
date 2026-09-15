@@ -49,6 +49,12 @@ export async function setSiteVisibility(editor: Locator, visibility: "private" |
   await expectSiteVisibility(editor, visibility);
 }
 
+export async function setSiteKind(editor: Locator, kind: "takeoff" | "landing" | "both") {
+  const choice = kind === "both" ? "Takeoff and landing" : kind === "takeoff" ? "Takeoff" : "Landing";
+  await editor.getByRole("combobox", { name: "Used for", exact: true }).selectOption({ label: choice });
+  await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue(kind);
+}
+
 /** Site details load on the server before naming is safe. CI also renders a
  * WebGL replay here, so allow the form to become ready without a fixed sleep. */
 export async function openSiteChooser(page: Page) {

@@ -11,6 +11,9 @@ import { writeAuditEntry } from "./audit";
 
 export type SiteWriteDb = Pick<typeof prisma, "site" | "flight" | "zone" | "profile" | "locationAuditEntry" | "$queryRaw" | "$executeRaw">;
 
+/** Expected editor failures may be returned by a Server Action without exposing database errors. */
+export class SiteEditorExpectedError extends Error {}
+
 /** Scoring and unrelated flight edits must not invalidate a site draft. */
 export function flightSiteRevision(flight: Flight, endpoint: "takeoff" | "landing") {
   return createHash("sha256").update(JSON.stringify([
@@ -26,15 +29,15 @@ export function flightSiteRevision(flight: Flight, endpoint: "takeoff" | "landin
 export function validateSiteDraft(value: unknown) {
   const draft = siteDraftSchema.parse(value);
   const name = validateSiteName(draft.name);
-  if (!name.ok) throw new Error(`Choose a valid site name (${name.error.replaceAll("_", " ")}).`);
-  if ((draft.lat === null) !== (draft.lon === null)) throw new Error("Enter both latitude and longitude, or leave both blank.");
-  if (draft.visibility === "public" && !hasSitePoint(draft)) throw new Error("Add a map pin before sharing this site.");
+  if (!name.ok) throw new SiteEditorExpectedError(`Choose a valid site name (${name.error.replaceAll("_", " ")}).`);
+  if ((draft.lat === null) !== (draft.lon === null)) throw new SiteEditorExpectedError("Enter both latitude and longitude, or leave both blank.");
+  if (draft.visibility === "public" && !hasSitePoint(draft)) throw new SiteEditorExpectedError("Add a map pin before sharing this site.");
   const rawBoundary = draft.boundary ?? null;
   let boundary = null;
   if (rawBoundary !== null) {
-    if (!hasSitePoint(draft)) throw new Error("Place the site pin inside its boundary before saving.");
+    if (!hasSitePoint(draft)) throw new SiteEditorExpectedError("Place the site pin inside its boundary before saving.");
     const validated = validateBoundary(rawBoundary, "site", draft);
-    if (!validated.ok) throw new Error(`Check the boundary (${validated.error.replaceAll("_", " ")}).`);
+    if (!validated.ok) throw new SiteEditorExpectedError(`Check the boundary (${validated.error.replaceAll("_", " ")}).`);
     boundary = validated.boundary;
   }
   return { ...draft, ...name, boundary };
@@ -46,7 +49,7 @@ export async function assertSiteCanBecomePrivate(tx: SiteWriteDb, id: string, ow
     tx.zone.count({ where: { siteId: id, ownerId: { not: ownerId } } }),
     tx.locationAuditEntry.count({ where: { siteId: id, actorId: { not: ownerId } } }),
   ]);
-  if (flights || zones || contributions) throw new Error("Other pilots use or have contributed to this public site. It must remain public.");
+  if (flights || zones || contributions) throw new SiteEditorExpectedError("Other pilots use or have contributed to this public site. It must remain public.");
 }
 
 /** Caller owns the transaction. A full edit either succeeds as a whole or rolls back. */
@@ -59,25 +62,25 @@ export async function saveSiteDraft(tx: SiteWriteDb, ownerId: string, value: Sit
   if (draft.id) await tx.$queryRaw`SELECT "id" FROM "Site" WHERE "id" = ${draft.id} FOR UPDATE`;
   const existing = draft.id ? await tx.site.findUnique({ where: { id: draft.id } }) : null;
   if (draft.id) {
-    if (!existing || !await canCommunityEditSite(tx, existing, ownerId)) throw new Error("Site not found or unavailable to edit.");
-    if (existing.updatedAt.toISOString() !== draft.expectedUpdatedAt) throw new Error("This site changed. Reload its details before saving; your draft has not been saved.");
-    if (existing.ownerId !== ownerId && existing.visibility !== draft.visibility) throw new Error("Only the site owner can change its visibility.");
+    if (!existing || !await canCommunityEditSite(tx, existing, ownerId)) throw new SiteEditorExpectedError("Site not found or unavailable to edit.");
+    if (existing.updatedAt.toISOString() !== draft.expectedUpdatedAt) throw new SiteEditorExpectedError("This site changed. Reload its details before saving; your draft has not been saved.");
+    if (existing.ownerId !== ownerId && existing.visibility !== draft.visibility) throw new SiteEditorExpectedError("Only the site owner can change its visibility.");
     if (existing.visibility === "public" && draft.visibility === "private") await assertSiteCanBecomePrivate(tx, existing.id, ownerId);
   }
-  if (options.automatic && draft.visibility !== "private") throw new Error("Automatic site creation must remain private.");
+  if (options.automatic && draft.visibility !== "private") throw new SiteEditorExpectedError("Automatic site creation must remain private.");
   const start = new Date(); start.setUTCHours(0, 0, 0, 0);
   if (!existing && draft.visibility === "public" && await tx.site.count({ where: { ownerId, visibility: "public", createdAt: { gte: start } } }) >= DAILY_CREATE_CAP) {
-    throw new Error("Daily public site creation limit reached. Save privately and share it later.");
+    throw new SiteEditorExpectedError("Daily public site creation limit reached. Save privately and share it later.");
   }
   if (existing?.visibility === "public" && await tx.locationAuditEntry.count({ where: { actorId: ownerId, createdAt: { gte: start }, action: { not: "create" } } }) >= DAILY_COMMUNITY_EDIT_CAP) {
-    throw new Error("Daily community edit limit reached. Please try again tomorrow.");
+    throw new SiteEditorExpectedError("Daily community edit limit reached. Please try again tomorrow.");
   }
-  if (hasSitePoint(draft)) {
-    const sameName = await tx.site.findMany({ where: { normalizedName: draft.normalizedName, archivedAt: null, ...siteVisibleWhere(ownerId), ...(draft.id ? { id: { not: draft.id } } : {}) } });
+  if (!existing && hasSitePoint(draft)) {
+    const sameName = await tx.site.findMany({ where: { normalizedName: draft.normalizedName, archivedAt: null, ...siteVisibleWhere(ownerId) } });
     // Reuse suggestions are advisory outside the strict identity distance. Two
     // nearby launches with the same generic name are not necessarily duplicates.
     const duplicate = sameName.find(site => (site.kind === draft.kind || site.kind === "both" || draft.kind === "both") && hasSitePoint(site) && haversineM(site.lat, site.lon, draft.lat, draft.lon) <= (draft.kind === "landing" ? 300 : 150));
-    if (duplicate) throw new Error(`“${duplicate.name}” already has a nearby map pin. Choose that site, or review the location before creating another.`);
+    if (duplicate) throw new SiteEditorExpectedError(`“${duplicate.name}” already has a nearby map pin. Choose that site, or review the location before creating another.`);
   }
   const pinChanged = !existing || existing.lat !== draft.lat || existing.lon !== draft.lon;
   const cols = boundaryColumns(draft.boundary, ownerId);
