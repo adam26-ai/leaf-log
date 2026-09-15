@@ -389,53 +389,45 @@ Completed ideas (see git history / PRs for detail):
   flying at the same time and place as one of your flights, and surface their flight as an option
   to overlay on the 3D replay — so you can turn their track on alongside your own and see how the
   flight went together.
-- **Priority:** Medium
-- **Notes:** Detection needs both a temporal and spatial overlap check between the viewer's flight
-  and a friend's flight — not just "same takeoff site," since a shared site alone doesn't mean they
-  flew together (could be hours apart). A reasonable heuristic: the two flights' time windows
-  overlap AND their tracks pass within some distance threshold (e.g. a few hundred meters, reusing
-  `haversineM` from `lib/geo/distance.ts`) during that overlap. Only ever surface a friend's flight
-  if it's visible to the viewer under the normal privacy rules (`getFlightForViewer` /
-  friends-visibility) — never leak a friend's private flight just because it happens to overlap.
-  UI-wise this could be a new entry in the 3D replay's right-side icon rail (alongside the recently
-  added Camera/Basemap/Shadow controls in `components/flight/flight-viz.tsx`), listing detected
-  co-flying friends by name with a toggle per friend; overlaying a track can likely reuse the same
-  `PathLayer`/`IconLayer` machinery `flight-replay-3d.tsx` already uses for the viewer's own glider
-  and path, just keyed to a second flight's replay data.
+- **Priority:** Medium — **shipped, 2026-09-08 (PR #63).**
+- **Notes:** Group replay discovers eligible friends' and the viewer's own nearby flights using
+  flight-time proximity (overlap or a gap of at most 60 minutes) and route proximity (within 5 km),
+  rather than a shared takeoff site. Each companion is authorized for the actual viewer; access to
+  the primary flight never grants access to another pilot's friends-only or private flight.
+  Companions appear alongside the primary track on one shared timeline, with per-pilot visibility,
+  selection, and takeoff controls. See [`docs/friends-replay-plan.md`](docs/friends-replay-plan.md)
+  for the matching, privacy, and replay details.
 
 ## Custom Glider Marker Color
 - **Area:** Profile settings / 3D replay marker
-- **Description:** Let a pilot choose the color of their own glider marker badge in the 3D replay,
-  instead of the current fixed green for everyone.
-- **Priority:** Medium
-- **Notes:** Today the badge/connector-dot color is a single hardcoded constant, `LEAF_GREEN` in
-  `components/flight/flight-replay-3d.tsx` (used for the connector dot and the badge fill). Making
-  it a per-profile setting means adding a color field to `Profile`, a picker on `/settings`, and
-  threading it into `FlightReplay3D` as a prop instead of the constant. This pairs naturally with
-  the "Auto-Detect Co-Flying Friends and Overlay Their Track" idea above — distinct marker colors
-  per pilot would make two overlaid tracks much easier to tell apart at a glance.
+- **Description:** Former proposal to let pilots choose their glider marker color in profile
+  settings.
+- **Priority:** Medium — **deprecated.**
+- **Notes:** Replay identity colors now follow the flight's role: the opened (primary) flight
+  uses Leaf Hero Green, while friends and other companion flights use blue. These colors stay
+  stable when the selected pilot changes. A per-profile color picker would weaken that consistent
+  primary-versus-companion distinction, so it is no longer planned.
 
 ## Flight Path Data-Coloring Modes
 - **Area:** 3D replay — flight path rendering
-- **Description:** Flight path should be a strong solid color by default, and then the user should
-  have the ability to "paint" the flight path with different data indications — for example speed,
-  sink/climb rate, and potentially others.
-- **Priority:** Medium
-- **Notes:** The plumbing for this mostly already exists — the path is currently ALWAYS colored by
-  vario via `varioColor()` in `components/flight/flight-replay-3d.tsx`, applied per-segment through
-  the `PathLayer`'s `getColor: (s) => s.color`. This feature is really about (1) making a plain
-  strong single color the default instead of the always-on vario coloring, (2) adding a "solid"
-  color mode alongside a "climb/sink" mode (the existing `varioColor` logic) and a new "speed" mode
-  (color segments by ground speed, e.g. a min/max gradient across the flight), and (3) exposing a
-  mode picker — a natural fit for the 3D replay's new right-side icon rail (alongside the
-  Camera/Basemap/Shadow controls just added to `components/flight/flight-viz.tsx`). Other candidate
-  data dimensions once the mode-switching plumbing exists: altitude, and (if the "Custom Glider
-  Marker Color" or "Auto-Detect Co-Flying Friends" ideas above ship) per-pilot identity coloring.
+- **Description:** Former proposal for selectable solid, climb/sink, speed, or other flight-path
+  coloring modes.
+- **Priority:** Medium — **deprecated.**
+- **Notes:** The selected flight's path already uses climb/sink (vario) coloring by default, which
+  makes the flight's lift and descent readable without a mode picker. Keep that default; a solid
+  path or additional speed/altitude coloring modes are not planned for now. Primary/companion
+  identity colors belong to pilot markers and accents, separate from the path's vario colors.
 
 ## Revisit Terrain-Based Altitude Adjustment
 - **Area:** Flight altitude / profile / 3D replay
-- **Description:** Evaluate optional terrain calibration after the static median GPS-minus-baro correction. Currently no terrain offset or pilot-height clamp is applied.
-- **Notes:** Consider a bounded correction (up to 30 m) only with reliable terrain coverage and sustained evidence. Low ground speed alone cannot establish that a paraglider is on the ground. Any future correction must be shared by the profile, 3D geometry, and readouts, documented separately, and excluded from GPS altitude records.
+- **Description:** The GPS-to-baro calibration is implemented: a per-flight median of valid paired
+  GPS-minus-baro altitude samples adjusts barometric playback altitude to the GPS reference.
+  Revisit a separate terrain-based adjustment only if the calibrated replay still needs one.
+- **Notes:** The static median offset shipped on 2026-09-10 (PR #65); it is applied to barometric
+  playback and fallback altitude, not to GPS altitude records. No terrain offset or pilot-height
+  clamp is currently applied. Any future terrain correction needs reliable terrain coverage and
+  sustained evidence (low ground speed alone does not establish that a paraglider is on the
+  ground), and must be shared by the profile, 3D geometry, and readouts.
 
 ## Verify Leaf Firmware GPS Altitude Reference
 - **Area:** Leaf firmware / IGC import
