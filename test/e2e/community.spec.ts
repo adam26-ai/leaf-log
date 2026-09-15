@@ -150,14 +150,14 @@ test("an independent pilot endorses a public site and the endorsement persists f
   await expect(dialog.getByText("1 endorsement", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Endorsed/ })).toBeVisible();
   await cPage.reload();
-  await waitForMapReady(cPage.locator(".flight-replay-map"));
+  // Persistence checks use site details, not the replay renderer. Its terrain
+  // can take tens of seconds to become idle after each navigation in CI.
   await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
-  await expect(cPage.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await expect(cPage.getByRole("dialog", { name: "Site details" }).getByRole("button", { name: /Endorsed/ })).toBeVisible();
   await cContext.close();
   await page.goto(flightUrl);
-  await waitForMapReady(page.locator(".flight-replay-map"));
   await page.getByRole("heading", { level: 1 }).getByRole("button").click();
-  await waitForMapReady(page.getByRole("dialog", { name: "Site details" }).getByTestId("site-area-map"));
-  await page.getByRole("button", { name: "Community & history", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Site details" }).getByText("1 endorsement", { exact: true })).toBeVisible();
+  const ownerDialog = page.getByRole("dialog", { name: "Site details" });
+  await ownerDialog.getByRole("button", { name: "Community & history", exact: true }).click();
+  await expect(ownerDialog.getByText("1 endorsement", { exact: true })).toBeVisible();
 });
