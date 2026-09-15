@@ -39,7 +39,17 @@ public site relationship in the isolated database. Rename, visibility denial,
 endorsement and persistence checks all use the real UI and server actions.
 Upload and site-creation UI are covered by the dedicated browser workflows.
 Inactive pilot pages stay on the logbook instead of rendering extra replays.
-Endorsements are checked after reload and by the owner.
+Endorsements are checked after reload and by the owner in separate scenarios.
+The owner view waits for the replay and existing site map to finish their first
+render before opening community details; its endorsement is arranged from a
+different profile in the isolated database. The dialog paints the community
+summary before mounting its area map, so WebGL startup cannot hold up the first
+count display. The mutation/reload scenario still uses a second signed-in pilot
+and the real endorsement action.
+The logged-out happy-path check also waits for the replay's first rendered frame
+before clicking the sign-in link. A Linux trace showed the link was visible and
+its route returned HTTP 200, yet clicking during map startup left the flight
+page in place beyond the assertion window.
 Standalone site creation/visibility and flight auto-association are separate
 scenarios as well, rather than sharing one deadline for unrelated workflows.
 Boundary scenarios also arrange an existing uploaded flight and site before

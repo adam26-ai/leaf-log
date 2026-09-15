@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectSignedOutHeader } from "./helpers";
+import { expectSignedOutHeader, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -73,6 +73,9 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   expect(res?.status()).toBe(200);
   await expect(anonPage.getByText("Airtime")).toBeVisible();
   await expectSignedOutHeader(anonPage);
+  // The server-rendered header can be visible while the replay's WebGL map is
+  // still starting. Let its first frame finish before testing link navigation.
+  await waitForMapReady(anonPage.locator(".flight-replay-map"));
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();

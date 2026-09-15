@@ -71,6 +71,7 @@ async function createPublicFlight(page: Page) {
   const flightId: string = results[0].flightId;
   const siteName = `E2E Community Ridge ${suffix}`;
   const db = new PrismaClient();
+  let siteId: string;
   try {
     const owner = await db.profile.findUniqueOrThrow({ where: { handle: aHandle } });
     const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
@@ -79,6 +80,7 @@ async function createPublicFlight(page: Page) {
       name: siteName, normalizedName: foldName(siteName), kind: "takeoff",
       lat, lon, pinSource: "flight_gps", ownerId: owner.id, visibility: "public",
     } });
+    siteId = site.id;
     await db.flight.update({ where: { id: flightId }, data: {
       visibility: "public", takeoffSiteId: site.id, takeoffSiteName: siteName,
       takeoffSiteAssignment: "user_selected",
@@ -87,7 +89,7 @@ async function createPublicFlight(page: Page) {
     await db.$disconnect();
   }
   const flightUrl = new URL(`/flights/${flightId}`, page.url()).href;
-  return { suffix, flightUrl, siteName };
+  return { suffix, flightUrl, siteName, siteId };
 }
 
 test("a non-owner renames a public site while visibility remains owner-only", async ({ page, newContext }) => {
@@ -131,7 +133,7 @@ test("a non-owner renames a public site while visibility remains owner-only", as
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
 });
 
-test("an independent pilot endorses a public site and the endorsement persists for its owner", async ({ page, newContext }) => {
+test("an independent pilot endorses a public site and remains endorsed after reload", async ({ page, newContext }) => {
   const { suffix, flightUrl, siteName } = await createPublicFlight(page);
   // The owner can leave the flight while the other pilot uses it. Release the
   // idle replay's WebGL resources; keep the signed-in context for verification.
@@ -153,11 +155,33 @@ test("an independent pilot endorses a public site and the endorsement persists f
   // Persistence checks use site details, not the replay renderer. Its terrain
   // can take tens of seconds to become idle after each navigation in CI.
   await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
-  await expect(cPage.getByRole("dialog", { name: "Site details" }).getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  const reloadedDialog = cPage.getByRole("dialog", { name: "Site details" });
+  await expect(reloadedDialog.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await expect(reloadedDialog.getByText("1 endorsement", { exact: true })).toBeVisible();
   await cContext.close();
+});
+
+test("a site owner sees another pilot's persisted endorsement", async ({ page }) => {
+  const { suffix, flightUrl, siteId, siteName } = await createPublicFlight(page);
+  // The mutation and reload are exercised above. Arrange an existing vote from
+  // a different profile so this owner-view check has its own rendering budget.
+  const db = new PrismaClient();
+  try {
+    const voter = await db.user.create({ data: {
+      email: `comm_voter_${suffix}@test.local`,
+      profile: { create: { handle: `commV${suffix}`.slice(0, 18), displayName: "Community Voter" } },
+    } });
+    await db.siteEndorsement.create({ data: { siteId, profileId: voter.id } });
+  } finally {
+    await db.$disconnect();
+  }
   await page.goto(flightUrl);
+  await waitForMapReady(page.locator(".flight-replay-map"));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName);
   await page.getByRole("heading", { level: 1 }).getByRole("button").click();
   const ownerDialog = page.getByRole("dialog", { name: "Site details" });
+  await waitForMapReady(ownerDialog.getByTestId("site-area-map"));
   await ownerDialog.getByRole("button", { name: "Community & history", exact: true }).click();
   await expect(ownerDialog.getByText("1 endorsement", { exact: true })).toBeVisible();
+  await expect(ownerDialog.getByRole("button", { name: "Endorse", exact: true })).toBeVisible();
 });

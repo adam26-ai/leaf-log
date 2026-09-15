@@ -100,11 +100,23 @@ export function LocationCommunityDialog({
 
   useEffect(() => {
     let cancelled = false;
+    let firstFrame: number | undefined;
+    let secondFrame: number | undefined;
     getCommunityDialogData(level, id).then(({ boundary, info }) => {
-      if (!cancelled) { setBoundaryState(boundary); setInfo(info); }
+      if (cancelled) return;
+      setInfo(info);
+      // Give the summary a painted frame before mounting another WebGL map.
+      // Constructing the map in the same update can hold up the dialog content.
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          if (!cancelled) setBoundaryState(boundary);
+        });
+      });
     }).catch(() => { if (!cancelled) { setInfo(null); setError("Could not load site details. Close and reopen to retry."); } });
     return () => {
       cancelled = true;
+      if (firstFrame !== undefined) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
     };
   }, [level, id]);
 
