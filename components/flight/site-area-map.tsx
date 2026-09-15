@@ -77,12 +77,15 @@ export function SiteAreaMap({
 
   useEffect(() => {
     if (!ref.current) return;
+    const container = ref.current;
+    container.dataset.renderReady = "false";
     const map = new maplibregl.Map({
       container: ref.current,
       style: styleFor("monochrome"),
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    map.on("idle", () => { container.dataset.renderReady = "true"; });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 
     new maplibregl.Marker({ color: "#0099ff" }).setLngLat([anchor.lon, anchor.lat]).addTo(map).getElement().setAttribute("aria-label", "Site pin (blue)");
@@ -117,8 +120,8 @@ export function SiteAreaMap({
   }, []);
 
   return <div className="flex shrink-0 flex-col gap-2">
-    <div className="relative"><div ref={ref} className="h-[clamp(240px,45vh,420px)] w-full rounded-md" data-testid="site-area-map" />
-      <div className="absolute left-2 top-2"><SiteMapControls value={basemap} onChange={next => { setBasemap(next); mapRef.current?.setStyle(styleFor(next)); }} /></div>
+    <div className="relative"><div ref={ref} className="h-[clamp(240px,45vh,420px)] w-full rounded-md" data-testid="site-area-map" data-render-ready="false" />
+      <div className="absolute left-2 top-2"><SiteMapControls value={basemap} onChange={next => { setBasemap(next); if (ref.current) ref.current.dataset.renderReady = "false"; mapRef.current?.setStyle(styleFor(next)); }} /></div>
     </div><SiteMapLegend flightPoint={Boolean(flightPoint)} />
   </div>;
 }

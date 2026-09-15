@@ -64,6 +64,14 @@ trace showed the endorsement response finishing in 51 ms while the browser
 failed to display it within five seconds; both community scenarios passed in
 full Chromium with the same software WebGL and tracing. See
 [Playwright's browser modes](https://playwright.dev/docs/browsers#chromium-new-headless-mode).
+The next hosted [run](https://github.com/adam26-ai/leaf-log/actions/runs/34914960772)
+passed 30 scenarios but exposed a remaining readiness race in endorsement:
+the action response completed in 37 ms while map startup delayed its display.
+The endorsement workflow now waits for actual replay and site-map rendering
+before interacting. `waitForMapReady` uses the maps' `data-render-ready` signal,
+set by MapLibre's idle event after terrain/overlay initialization, within the
+existing test deadline. A hydrated heading or a visible map control does not
+mean WebGL has rendered its first frame. This adds no sleep, retry, or timeout.
 The community dialog also loads its map and summary in one server request and
 returns the updated summary with an endorsement mutation. Next.js queues client
 Server Actions, so separate reads created a waterfall around expensive map

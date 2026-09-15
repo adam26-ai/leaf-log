@@ -1,5 +1,12 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Map labels and controls hydrate before shaders, terrain and the first frame
+ * finish. Wait for the real renderer's idle signal within the existing test
+ * deadline before measuring a subsequent interaction's response. */
+export async function waitForMapReady(map: Locator) {
+  await map.and(map.page().locator('[data-render-ready="true"]')).waitFor();
+}
+
 /** Typing only searches; explicitly add the name to the unsaved flight. */
 export async function addEntrySite(page: Page, name: string, label = "Flying site") {
   const field = page.getByRole("group", { name: label, exact: true });

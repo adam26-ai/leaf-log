@@ -1510,6 +1510,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // Build the map once we have data.
   useEffect(() => {
     if (!containerRef.current || !hasData) return;
+    const container = containerRef.current;
+    container.dataset.renderReady = "false";
     terrainProfilesPublishedRef.current.clear();
     shadowSampleCountRef.current = -1;
     const map = new maplibregl.Map({
@@ -1541,7 +1543,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     // paging between cached flights. Retry once the map finishes those updates;
     // syncShadow is idempotent and also restores missing XC layers.
     map.on("idle", () => {
-      if (mapRef.current === map) syncShadow();
+      if (mapRef.current === map) {
+        syncShadow();
+        if (overlayRef.current && map.loaded()) container.dataset.renderReady = "true";
+      }
     });
 
     map.on("load", () => {
@@ -1870,6 +1875,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       <div className="relative">
         <div
           ref={containerRef}
+          data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
