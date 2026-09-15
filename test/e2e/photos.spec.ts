@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { uploadFlight, waitForMapReady } from "./helpers";
 import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -53,6 +53,9 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await (await photosChooser).setFiles([JPEG, HEIC, JPEG, JPEG, JPEG]);
   await expect(page.getByText(/added 2 photos\. 3 were already on this flight/i)).toBeVisible({ timeout: 30_000 });
   await page.goto(flightUrl);
+  // The gallery can appear while the replay's WebGL map is still starting.
+  // Wait for its first frame before measuring thumbnail decoding.
+  await waitForMapReady(page.locator(".flight-replay-map"));
 
   // Two thumbnails appear in the gallery, both served (decoded) successfully.
   const thumbs = page.locator('img[src*="/photos/"]');
