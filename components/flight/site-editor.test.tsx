@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SiteEditor } from "./site-editor";
 vi.mock("./boundary-editor", () => ({ BoundaryEditor: () => null }));
@@ -24,4 +24,13 @@ it("explains a visibility restriction only when the pilot tries changing it", ()
   fireEvent.click(screen.getByRole("button", { name: "Private" }));
   expect(screen.getByRole("status")).toHaveTextContent("Only the site owner can change visibility.");
   expect(screen.getByRole("button", { name: "Public" })).toHaveAttribute("aria-pressed", "true");
+});
+it("keeps the draft visible and shows a returned save conflict", async () => {
+  const onSave = vi.fn().mockRejectedValue(new Error("This site changed. Reload its details before saving; your draft has not been saved."));
+  render(<SiteEditor initial={{ ...initial, kind: "takeoff" }} onSave={onSave} onCancel={vi.fn()} />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Used for" }), { target: { value: "both" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save site" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This site changed"));
+  expect(screen.getByRole("combobox", { name: "Used for" })).toHaveValue("both");
+  expect(screen.getByRole("button", { name: "Save site" })).toBeEnabled();
 });

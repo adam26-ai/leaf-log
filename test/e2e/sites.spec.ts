@@ -1,4 +1,4 @@
-import { createSiteFromFlight, setSiteVisibility, uploadFlight } from "./helpers";
+import { createSiteFromFlight, setSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -106,6 +106,63 @@ test("a standalone site saves its pin and persists public and private visibility
     await expect(siteRow.getByLabel(visibility === 'public' ? 'Public' : 'Private', { exact: true })).toBeVisible();
   }
 
+});
+
+test("a site with a nearby namesake can change to takeoff and landing", async ({ page }) => {
+  const suffix = await signUp(page);
+  await page.goto("/settings/sites");
+  const name = `Namesake Ridge ${suffix}`;
+  const editor = page.getByRole("dialog", { name: "Site details" });
+
+  await page.getByRole("button", { name: "Create a site", exact: true }).click();
+  await editor.getByLabel("Name", { exact: true }).fill(name);
+  await editor.getByLabel("Pin latitude").fill("35");
+  await editor.getByLabel("Pin longitude").fill("15");
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Create a site", exact: true }).click();
+  await editor.getByLabel("Name", { exact: true }).fill(name);
+  await setSiteKind(editor, "landing");
+  await editor.getByLabel("Pin latitude").fill("35.0001");
+  await editor.getByLabel("Pin longitude").fill("15");
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  const rows = page.getByRole("region", { name: "Sites list" }).getByRole("button", { name: new RegExp(name) });
+  await expect(rows).toHaveCount(2);
+
+  await rows.first().click();
+  await page.getByRole("button", { name: "Edit site", exact: true }).click();
+  const firstKind = await editor.getByRole("combobox", { name: "Used for", exact: true }).inputValue();
+  if (firstKind !== "takeoff") {
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await rows.nth(1).click();
+    await page.getByRole("button", { name: "Edit site", exact: true }).click();
+  }
+  await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue("takeoff");
+  await setSiteKind(editor, "both");
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(editor).toHaveCount(0);
+  await page.reload();
+  await expect(rows).toHaveCount(2);
+  const persistedKinds = [];
+  for (let index = 0; index < 2; index++) {
+    await rows.nth(index).click();
+    await page.getByRole("button", { name: "Edit site", exact: true }).click();
+    persistedKinds.push(await editor.getByRole("combobox", { name: "Used for", exact: true }).inputValue());
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+  expect(persistedKinds.sort()).toEqual(["both", "landing"]);
+
+  await page.getByRole("button", { name: "Create a site", exact: true }).click();
+  await editor.getByLabel("Name", { exact: true }).fill(name);
+  await setSiteKind(editor, "both");
+  await editor.getByLabel("Pin latitude").fill("35");
+  await editor.getByLabel("Pin longitude").fill("15");
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(editor.getByRole("alert")).toContainText("already has a nearby map pin");
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveValue(name);
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
 test("unknown site -> name it public -> a distinct second flight nearby auto-associates", async ({ page }) => {
