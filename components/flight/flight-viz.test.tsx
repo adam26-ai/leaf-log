@@ -159,9 +159,10 @@ it("shows the selected flight's statistics and seeks that flight's metrics on th
     expect(group.select).toHaveBeenLastCalledWith(pilot, second.id);
     expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "460");
     group.selected = own;
-    rerender(<FlightViz {...props} />);
-    expect(screen.getByText("Own wing").closest("[data-statistics-flight]"))
-      .toHaveAttribute("data-statistics-pilot", "own");
+    rerender(<FlightViz {...props} viewerId={null} />);
+    const sharedPrimaryStatistics = screen.getByText("Own wing").closest("[data-statistics-flight]");
+    expect(sharedPrimaryStatistics).toHaveAttribute("data-statistics-pilot", "own");
+    expect(sharedPrimaryStatistics).not.toHaveStyle({ "--replay-icon": "var(--replay-group-companion)" });
   } finally { Object.assign(group, original); }
 });
 

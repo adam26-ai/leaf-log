@@ -2,6 +2,7 @@ import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
+import { expectSignedOutHeader } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -71,5 +72,43 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   const res = await anonPage.goto(flightUrl);
   expect(res?.status()).toBe(200);
   await expect(anonPage.getByText("Airtime")).toBeVisible();
+  await expectSignedOutHeader(anonPage);
+  await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();
+});
+
+test("unfinished signup can switch email and sign out", async ({ page }) => {
+  const suffix = Date.now();
+  const wrongEmail = `wrong_${suffix}@test.local`;
+  const rightEmail = `right_${suffix}@test.local`;
+
+  rmSync(LINK_FILE, { force: true });
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(wrongEmail);
+  await page.getByRole("button", { name: "Send magic link" }).click();
+  await page.goto(await getMagicLink());
+  await expect(page.getByText(wrongEmail)).toBeVisible();
+  await page.getByRole("button", { name: "Keep me signed in" }).click();
+  await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByText(wrongEmail)).toBeVisible();
+
+  await page.getByRole("button", { name: "Use a different email" }).click();
+  await expect(page).toHaveURL(/\/sign-in/);
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  rmSync(LINK_FILE, { force: true });
+  await page.getByPlaceholder("you@example.com").fill(rightEmail);
+  await page.getByRole("button", { name: "Send magic link" }).click();
+  await page.goto(await getMagicLink());
+  await page.getByRole("button", { name: "Just this time" }).click();
+  await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByText(rightEmail)).toBeVisible();
+  await expect(page.getByText(wrongEmail)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/sign-in/);
 });
