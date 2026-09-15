@@ -594,7 +594,7 @@ export function FlightViz({
   const statistics = displayedStatistics && (
     <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
       <KeyStatistics xcRoute={selectedXcRoute} onCycleXc={cycleXc} flight={displayedStatistics} canCalculateXc={statisticsOwnerId === viewerId}
-        friend={statisticsOwnerId !== viewerId}
+        friend={statisticsOwnerId !== primaryPilot.id}
         onRefresh={displayedStatistics.id !== flightId ? refreshCompanionStatistics : undefined} />
     </div>
   );

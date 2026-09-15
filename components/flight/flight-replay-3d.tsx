@@ -40,15 +40,9 @@ const LEAF_GREEN: [number, number, number] = [216, 255, 0];
 // suspension lines, and the pilot below it.
 const GLIDER_ICON_WIDTH_PX = 24;
 const GLIDER_ICON_SOURCE_WIDTH = 104;
-const GLIDER_ICON_SOURCE_HEIGHT = 76;
-const GLIDER_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="104" height="76" viewBox="0 0 52 38">' +
-  '<rect width="52" height="38" rx="7" fill="#141414"/>' +
-  '<path d="M6 16.5C9.2 4.8 18.2 3 26 3s16.8 1.8 20 13.5C36.5 11 15.5 11 6 16.5Z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>' +
-  '<path d="M16 6.3l-2 7.1M26 3v8M36 6.3l2 7.1" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round"/>' +
-  '<path d="m7.5 16 16.8 15m20.2-15-16.8 15M16 13.1l9 18m11-18-9 18" fill="none" stroke="#fff" stroke-width="1.25" stroke-linecap="round"/>' +
-  '<circle cx="26" cy="31.5" r="1.9" fill="#fff"/><path d="M26 33.5v2" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>' +
-  '</svg>';
+const GLIDER_ICON_SOURCE_HEIGHT = 104;
+// Same #4 artwork as WingIcon, embedded for the map icon atlas.
+const GLIDER_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"104\" height=\"104\" viewBox=\"0 0 24 24\"><rect width=\"24\" height=\"24\" rx=\"4\" fill=\"#141414\"/><g fill=\"none\" stroke=\"#fff\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><g transform=\"scale(0.025)\"><path stroke-width=\"60\" d=\"M101.6,418.4c-13.5,12.5-35.3,5.9-39.7-12-23.7-95.6,133.5-246.5,418.1-246.5s448.6,148.2,423.9,242.1c-5.5,20.7-31.5,27.8-46.8,12.8-169.3-166.8-556.5-180.4-755.5,3.6Z\"/><ellipse fill=\"#fff\" stroke=\"none\" cx=\"476.8\" cy=\"711.9\" rx=\"37.3\" ry=\"45.5\"/><g stroke-width=\"22\"><line x1=\"249\" y1=\"528.8\" x2=\"425.6\" y2=\"756.8\"/><line x1=\"378\" y1=\"480\" x2=\"425.6\" y2=\"756.8\"/><line x1=\"67\" y1=\"437.2\" x2=\"249\" y2=\"533\"/><line x1=\"249\" y1=\"528.8\" x2=\"208\" y2=\"362\"/><line x1=\"292\" y1=\"336\" x2=\"378\" y2=\"480\"/><line x1=\"378\" y1=\"480\" x2=\"413.2\" y2=\"308\"/></g><g stroke-width=\"22\"><line x1=\"528\" y1=\"757.4\" x2=\"704.6\" y2=\"529.4\"/><line x1=\"528\" y1=\"757.4\" x2=\"575.6\" y2=\"480.6\"/><line x1=\"704.6\" y1=\"533.6\" x2=\"886.6\" y2=\"437.8\"/><line x1=\"745.6\" y1=\"362.6\" x2=\"704.6\" y2=\"529.4\"/><line x1=\"575.6\" y1=\"480.6\" x2=\"661.6\" y2=\"336.6\"/><line x1=\"540.3\" y1=\"308.6\" x2=\"575.6\" y2=\"480.6\"/></g><ellipse fill=\"#fff\" stroke=\"none\" cx=\"476.8\" cy=\"815\" rx=\"75\" ry=\"55\"/></g></g></svg>";
 const GLIDER_ICON = `data:image/svg+xml,${encodeURIComponent(GLIDER_SVG)}`;
 
 // A short leader line between the flight path and the altitude label — a

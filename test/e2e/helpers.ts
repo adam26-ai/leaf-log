@@ -1,5 +1,12 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Public pages expose account entry in the top-right header. */
+export async function expectSignedOutHeader(page: Page) {
+  const header = page.getByRole("banner");
+  await expect(header.getByRole("img", { name: "Leaf Log" })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/sign-in");
+}
+
 /** Map labels and controls hydrate before shaders, terrain and the first frame
  * finish. Wait for the real renderer's idle signal within the existing test
  * deadline before measuring a subsequent interaction's response. */
@@ -27,8 +34,10 @@ export async function setNewFlightTypes(page: Page, names: string[]) {
   }
 }
 
-/** Assert the selected state as well as the available visibility choices. */
+/** Wait for site details to replace the loading state, then assert the
+ * selected visibility and both available choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
+  await expect(editor.getByLabel("Name", { exact: true })).toBeVisible({ timeout: 15_000 });
   const group = editor.getByRole("group", { name: "Visibility", exact: true });
   await expect(group.getByRole("button", { name: "Private", exact: true })).toHaveAttribute("aria-pressed", String(visibility === "private"));
   await expect(group.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", String(visibility === "public"));
