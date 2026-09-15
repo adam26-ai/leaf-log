@@ -61,5 +61,5 @@ it("keeps the dialog open and allows retry when saving fails", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Use this site" }));
   expect(await screen.findByText("Could not save the site. Please try again.")).toBeInTheDocument();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Use this site" })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Use this site" })).toBeEnabled());
 });

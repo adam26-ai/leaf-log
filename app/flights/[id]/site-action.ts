@@ -23,6 +23,7 @@ import { assignmentPatch } from "@/lib/sites/assignment";
 import { SITE_VISIBILITIES, type SiteVisibility } from "@/lib/sites/visibility";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
 import type { Boundary } from "@/lib/sites/geo";
+import { getSiteEditorAction } from "@/app/settings/sites/editor-actions";
 
 const ZONES_UNAVAILABLE = "Zones are not available.";
 
@@ -248,11 +249,12 @@ export async function getBoundLocationInfo(
 
 /** Load the dialog in one request; client-side Server Actions are queued. */
 export async function getSiteDialogData(flightId: string, endpoint: SiteEndpoint) {
-  const [info, suggestions] = await Promise.all([
+  const [info, suggestions, createEditor] = await Promise.all([
     getBoundLocationInfo(flightId, endpoint),
     suggestLocationsForFlight(flightId, endpoint).catch(() => null),
+    getSiteEditorAction({ flightId, endpoint, create: true }),
   ]);
-  return { info, suggestions };
+  return { info, suggestions, createEditor };
 }
 
 export type SiteUndoResult = { ok: true } | { ok: false; error: string };

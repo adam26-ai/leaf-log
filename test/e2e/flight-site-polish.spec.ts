@@ -1,18 +1,16 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight } from "./helpers";
+import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
 async function signUp(page: Page) {
   const handle = `polish${Date.now()}`.slice(0, 18);
   rmSync(DEV_MAGIC_LINK_FILE, { force: true });
-  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(`${handle}@test.local`);
   await page.getByRole("button", { name: /send magic link/i }).click();
@@ -183,10 +181,12 @@ test("site naming waits for delayed details before enabling the form", async ({ 
     await expect(dialog.getByText("Loading site details...")).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
     const chooser = await opening;
-    expect(delayedRequests).toBeGreaterThan(0);
-    await page.unroute(`**/flights/${flight.id}`);
     await chooser.name.fill("Delayed lookup hill");
     await chooser.dialog.getByRole("button", { name: "Create site", exact: true }).click();
+    await expect(chooser.dialog.getByLabel("Name", { exact: true })).toHaveValue("Delayed lookup hill");
+    // Creating uses the draft loaded with the chooser, not another queued read.
+    expect(delayedRequests).toBe(1);
+    await page.unroute(`**/flights/${flight.id}`);
     await chooser.dialog.getByRole("button", { name: "Save site", exact: true }).click();
     await expect(page.locator("h1")).toHaveText("Delayed lookup hill");
     expect((await db.flight.findUniqueOrThrow({ where: { id: flight.id }, include: { takeoffSite: true } })).takeoffSite?.name).toBe("Delayed lookup hill");
@@ -248,7 +248,7 @@ test("IGC upload and editing save multiple flight types without changing an exac
   const file = { name: "typed-flight.igc", mimeType: "text/plain", buffer: Buffer.from(makeRealisticFlight().igc) };
   try {
     await page.goto("/upload");
-    for (const name of ["Tandem", "SIV", "Competition", "Tow"]) await page.getByRole("checkbox", { name, exact: true }).first().check();
+    await setNewFlightTypes(page, ["Tandem", "SIV", "Competition", "Tow"]);
     await uploadFlight(page, file);
     await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
     const id = page.url().split("/").at(-1)!;
@@ -261,7 +261,7 @@ test("IGC upload and editing save multiple flight types without changing an exac
     await expect(page.getByRole("checkbox", { name: "Tandem", exact: true })).not.toBeChecked();
     await expect(page.getByRole("checkbox", { name: "SIV", exact: true })).toBeChecked();
     await page.goto("/upload");
-    await page.getByRole("checkbox", { name: "Tandem", exact: true }).first().check();
+    await setNewFlightTypes(page, ["Tandem"]);
     await uploadFlight(page, file);
     await expect(page.getByText("Already uploaded", { exact: false })).toBeVisible();
     expect(await db.flight.findUniqueOrThrow({ where: { id } })).toMatchObject({ flightFlags: ["siv", "competition"], occupancy: "solo", launchTypes: [] });

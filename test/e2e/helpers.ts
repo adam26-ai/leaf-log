@@ -1,11 +1,31 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
-import sharp from "sharp";
 
-// Terrarium encodes zero metres as RGB(128, 0, 0). Keep terrain enabled while
-// removing network-dependent terrain shape and tile timing from UI assertions.
-const flatTerrainTile = sharp({ create: {
-  width: 256, height: 256, channels: 3, background: { r: 128, g: 0, b: 0 },
-} }).png().toBuffer();
+/** Map labels and controls hydrate before shaders, terrain and the first frame
+ * finish. Wait for the real renderer's idle signal within the existing test
+ * deadline before measuring a subsequent interaction's response. */
+export async function waitForMapReady(map: Locator) {
+  await map.and(map.page().locator('[data-render-ready="true"]')).waitFor();
+}
+
+/** Typing only searches; explicitly add the name to the unsaved flight. */
+export async function addEntrySite(page: Page, name: string, label = "Flying site") {
+  const field = page.getByRole("group", { name: label, exact: true });
+  await field.getByRole("combobox", { name: `Search ${label.toLowerCase()}`, exact: true }).fill(name);
+  await expect(field.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
+  await field.getByRole("option", { name: `Add “${name}” as a new site`, exact: true }).click();
+  await expect(field.getByText(name, { exact: true })).toBeVisible();
+  await expect(field.getByText("Will be created when you save this flight.", { exact: true })).toBeVisible();
+  return field;
+}
+
+/** The single type control applies to both IGC uploads and manual entries. */
+export async function setNewFlightTypes(page: Page, names: string[]) {
+  const fields = page.getByRole("group", { name: "Flight type (select all that apply)", exact: true });
+  await expect(fields).toHaveCount(1);
+  for (const name of ["Tandem", "SIV", "Competition", "Tow"]) {
+    await fields.getByRole("checkbox", { name, exact: true }).setChecked(names.includes(name));
+  }
+}
 
 /** Assert the selected state as well as the available visibility choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
@@ -30,7 +50,7 @@ export async function openSiteChooser(page: Page) {
   return { dialog, name };
 }
 
-/** Creating a site opens the full editor; new sites start private. */
+/** Creating uses the chooser's loaded draft immediately; new sites start private. */
 export async function createSiteFromFlight(page: Page, siteName: string, visibility: "private" | "public" = "private") {
   const { dialog, name } = await openSiteChooser(page);
   await name.fill(siteName);
@@ -46,13 +66,6 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
 /** Opening the real picker waits for the client event handler; setting the
  * hidden input directly can fire before React hydrates and lose the upload. */
 export async function uploadFlight(page: Page, files: Parameters<FileChooser["setFiles"]>[0]) {
-  // Exercise real map rendering without external basemap downloads competing
-  // with the software WebGL renderer used in CI.
-  await page.route("**/tiles.openfreemap.org/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("**/api.maptiler.com/**", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
-  await page.route("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/**", async route => {
-    await route.fulfill({ contentType: "image/png", body: await flatTerrainTile });
-  });
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose file", exact: true }).click();
   await (await chooser).setFiles(files);

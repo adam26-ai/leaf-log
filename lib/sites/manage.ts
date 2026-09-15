@@ -1,5 +1,6 @@
 import { hasSitePoint } from "./model";
 import type { Site } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { haversineM } from "@/lib/geo/distance";
 import { validateSiteName } from "./name";
@@ -11,6 +12,7 @@ import { writeAuditEntry } from "./audit";
 import { DAILY_CREATE_CAP, siteVisibleWhere } from "./repo";
 import { flightCalendarDate } from "@/lib/flights/logbook-filters";
 import { formatLocalTime } from "@/lib/flights/format";
+import { lockSiteRows, lockSiteFlights } from "./locks";
 
 export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon" | "updatedAt"> & {
   kind: "takeoff" | "landing" | "both";
@@ -18,6 +20,7 @@ export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon
   hasBoundary: boolean;
   ownFlightCount: number;
   hasLocationEvidence?: boolean;
+  canDelete: boolean;
 };
 
 function validCoordinate(lat: number, lon: number): boolean {
@@ -32,7 +35,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
   const rows = await prisma.site.findMany({
     where: { OR: [{ ownerId }, { visibility: "public", OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] }] },
     select: {
-      id: true, name: true, kind: true, visibility: true, lat: true, lon: true,
+      id: true, name: true, kind: true, visibility: true, lat: true, lon: true, ownerId: true,
       updatedAt: true, boundaryMinLat: true, boundary: true,
       _count: { select: { takeoffFlights: { where: { ownerId, OR: [{ takeoffLat: { not: null } }, { takeoffLon: { not: null } }] } }, landingFlights: { where: { ownerId, OR: [{ landingLat: { not: null } }, { landingLon: { not: null } }] } } } },
     },
@@ -64,6 +67,7 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     hasBoundary: row.boundaryMinLat !== null,
     hasLocationEvidence: row._count.takeoffFlights > 0 || row._count.landingFlights > 0,
     ownFlightCount: counts.get(row.id) ?? 0,
+    canDelete: row.ownerId === ownerId,
   }));
 }
 
@@ -285,4 +289,62 @@ export async function assignFlightsToSite(ownerId: string, siteId: string, selec
     }
     return updated.size;
   });
+}
+
+export type ReplacementSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon">;
+export type SiteReplacementPreview = {
+  source: ReplacementSite; target: ReplacementSite;
+  flightCount: number; takeoffCount: number; landingCount: number; revision: string;
+};
+
+export async function listReplacementSites(ownerId: string, sourceId: string): Promise<ReplacementSite[]> {
+  const source = await prisma.site.findFirst({ where: { id: sourceId, ...siteVisibleWhere(ownerId) }, select: { id: true } });
+  if (!source) throw new Error("This site is no longer available.");
+  return prisma.site.findMany({
+    where: { id: { not: sourceId }, archivedAt: null, ...siteVisibleWhere(ownerId) },
+    select: { id: true, name: true, visibility: true, lat: true, lon: true }, orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+}
+
+async function replacementSnapshot(db: Pick<typeof prisma, "site" | "flight">, ownerId: string, sourceId: string, targetId: string) {
+  if (sourceId === targetId) throw new Error("Choose a different replacement site.");
+  const sites = await db.site.findMany({ where: { id: { in: [sourceId, targetId] }, archivedAt: null, ...siteVisibleWhere(ownerId) } });
+  const source = sites.find(site => site.id === sourceId), target = sites.find(site => site.id === targetId);
+  if (!source || !target) throw new Error("A selected site is no longer available. Choose again.");
+  const flights = await db.flight.findMany({
+    where: { ownerId, OR: [{ takeoffSiteId: sourceId }, { landingSiteId: sourceId }] },
+    select: { id: true, takeoffSiteId: true, landingSiteId: true }, orderBy: { id: "asc" },
+  });
+  const compact = (site: Site): ReplacementSite => ({ id: site.id, name: site.name, visibility: site.visibility, lat: site.lat, lon: site.lon });
+  const preview: SiteReplacementPreview = {
+    source: compact(source), target: compact(target), flightCount: flights.length,
+    takeoffCount: flights.filter(flight => flight.takeoffSiteId === sourceId).length,
+    landingCount: flights.filter(flight => flight.landingSiteId === sourceId).length,
+    revision: createHash("sha256").update(JSON.stringify([source.id, source.updatedAt, target.id, target.updatedAt, flights])).digest("hex"),
+  };
+  return { preview, flights, target };
+}
+
+export async function previewSiteReplacement(ownerId: string, sourceId: string, targetId: string) {
+  return (await replacementSnapshot(prisma, ownerId, sourceId, targetId)).preview;
+}
+
+export async function replaceLogbookSite(ownerId: string, sourceId: string, targetId: string, revision: string): Promise<number> {
+  return prisma.$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    await lockSiteRows(tx, [sourceId, targetId]);
+    await lockSiteFlights(tx, ownerId, sourceId);
+    const snapshot = await replacementSnapshot(tx, ownerId, sourceId, targetId);
+    if (snapshot.preview.revision !== revision) throw new Error("The sites or their flight references changed. Review the replacement again before confirming.");
+    if (!snapshot.flights.length) throw new Error("No flights in your logbook use this site anymore.");
+    for (const endpoint of ["takeoff", "landing"] as const) {
+      const ids = snapshot.flights.filter(flight => flight[`${endpoint}SiteId`] === sourceId).map(flight => flight.id);
+      if (!ids.length) continue;
+      await tx.flight.updateMany({
+        where: { ownerId, id: { in: ids }, [`${endpoint}SiteId`]: sourceId },
+        data: { ...locationCachePatch(snapshot.target, null, endpoint), ...assignmentPatch(endpoint, "user_selected") },
+      });
+    }
+    return snapshot.preview.flightCount;
+  }, { maxWait: 10000, timeout: 30000 });
 }

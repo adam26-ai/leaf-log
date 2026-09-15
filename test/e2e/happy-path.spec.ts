@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
@@ -17,7 +17,7 @@ async function getMagicLink(): Promise<string> {
   throw new Error("magic link file never appeared");
 }
 
-test("sign up → upload → view → share → logged-out view", async ({ page, context }) => {
+test("sign up → upload → view → share → logged-out view", async ({ page, newContext }) => {
   const suffix = `${Date.now()}`;
   const email = `e2e_${suffix}@test.local`;
   const handle = `e2e${suffix}`.slice(0, 18);
@@ -66,7 +66,7 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   // 7. A logged-out visitor can see the now-public flight.
-  const anon = await context.browser()!.newContext();
+  const anon = await newContext();
   const anonPage = await anon.newPage();
   const res = await anonPage.goto(flightUrl);
   expect(res?.status()).toBe(200);

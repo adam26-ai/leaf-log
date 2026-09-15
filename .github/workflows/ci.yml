@@ -21,7 +21,7 @@ env:
 jobs:
   gates:
     name: typecheck · lint · test · build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -55,7 +55,7 @@ jobs:
 
   e2e:
     name: e2e (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -78,6 +78,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Record browser runner environment
+        run: |
+          node -e "const os = require('node:os'); console.log({ node: process.version, playwright: require('@playwright/test/package.json').version, cpus: os.availableParallelism(), memoryGiB: Math.round(os.totalmem() / 2 ** 30), browser: 'chromium', webgl: 'swiftshader-webgl' })"
       # `pnpm e2e` builds and starts an isolated production server, without HMR.
       # The IGC fixture and local magic-link fallback need no external services.
       - run: pnpm check:e2e

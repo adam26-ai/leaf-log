@@ -8,6 +8,7 @@ import { siteCommunityInfo, zoneCommunityInfo, type LocationCommunityInfo } from
 import { toggleSiteEndorsement, toggleZoneEndorsement } from "@/lib/sites/endorsements";
 import type { BoundaryLevel } from "@/lib/sites/boundary";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
+import { getBoundaryForPublicRow } from "./boundary-action";
 
 export type CommunityActionResult = { ok: true } | { ok: false; error: string };
 
@@ -30,6 +31,16 @@ export async function getCommunityInfoForRow(level: BoundaryLevel, id: string): 
   if (level === "zone" && !zonesEnabled()) return null;
   const userId = await getCurrentUserId();
   return level === "site" ? siteCommunityInfo(id, userId) : zoneCommunityInfo(id, userId);
+}
+
+/** One read for the dialog: client-side Server Actions otherwise queue the
+ * map and community reads, letting map startup delay the remaining content. */
+export async function getCommunityDialogData(level: BoundaryLevel, id: string) {
+  const [boundary, info] = await Promise.all([
+    getBoundaryForPublicRow(level, id),
+    getCommunityInfoForRow(level, id),
+  ]);
+  return { boundary, info };
 }
 
 /**
@@ -56,7 +67,7 @@ export async function renamePublicRow(level: BoundaryLevel, id: string, rawName:
   }
 }
 
-export type ToggleEndorsementResult = CommunityActionResult | { ok: true; endorsed: boolean };
+export type ToggleEndorsementResult = { ok: false; error: string } | { ok: true; endorsed: boolean; info: LocationCommunityInfo | null };
 
 /** One-tap endorsement toggle, public rows only — endorsements.ts fails
  *  closed on a private (or effectively-private) target. */
@@ -67,8 +78,11 @@ export async function toggleEndorsement(level: BoundaryLevel, id: string): Promi
 
   try {
     const result = level === "site" ? await toggleSiteEndorsement(id, userId) : await toggleZoneEndorsement(id, userId);
-    revalidateCommunitySurfaces();
-    return { ok: true, endorsed: result.endorsed };
+    // Counts are read fresh by the dialog, not rendered in logbook/feed pages.
+    // Invalidating those routes unnecessarily streams a refreshed page tree
+    // alongside this action and can delay the response behind replay rendering.
+    const info = level === "site" ? await siteCommunityInfo(id, userId) : await zoneCommunityInfo(id, userId);
+    return { ok: true, endorsed: result.endorsed, info };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
   }

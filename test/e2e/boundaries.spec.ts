@@ -1,7 +1,9 @@
-import { createSiteFromFlight, uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { uploadFlight } from "./helpers";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { PrismaClient } from "@prisma/client";
+import { foldName } from "@/lib/sites/name";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -14,18 +16,6 @@ async function getMagicLink(): Promise<string> {
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error("magic link file never appeared");
-}
-
-/** A minimal, valid, source-and-tile-free MapLibre style — the basemap
- *  itself has no matching value for this test, and depending on a live
- *  third-party tile CDN (OpenFreeMap) would make a map-driving test a
- *  flake generator. `map.on('load')` fires against this exactly as it
- *  would against the real style. */
-const EMPTY_STYLE = { version: 8, sources: {}, layers: [] };
-
-async function stubBasemapTiles(page: Page) {
-  await page.route("**/tiles.openfreemap.org/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
-  await page.route("**/api.maptiler.com/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
 }
 
 /** The editor no longer displays a "N points" line (removed per the user's
@@ -68,6 +58,33 @@ function remoteFlightIgc(runOffset: number, lat: number, lon: number, seed: numb
     t += 1;
   }
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
+}
+
+/** Arrange an existing flight/site for focused geometry tests. The sites and
+ * zones suites cover the complete upload/create journey; repeating that setup
+ * in every gesture test adds unrelated replay startup and dialog transitions. */
+async function arrangeBoundFlight(page: Page, siteName: string, buffer: Buffer) {
+  const response = await page.request.post("/api/upload", { multipart: { files: {
+    name: "boundary-fixture.igc", mimeType: "text/plain", buffer,
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
+  const db = new PrismaClient();
+  try {
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    if (flight.takeoffLat === null || flight.takeoffLon === null) throw new Error("Boundary fixture has no takeoff position");
+    const site = await db.site.create({ data: {
+      name: siteName, normalizedName: foldName(siteName), kind: "takeoff", visibility: "private",
+      lat: flight.takeoffLat, lon: flight.takeoffLon, pinSource: "flight_gps", ownerId: flight.ownerId,
+    } });
+    await db.flight.update({ where: { id: flightId }, data: {
+      takeoffSiteId: site.id, takeoffSiteName: siteName, takeoffSiteAssignment: "user_selected",
+    } });
+  } finally { await db.$disconnect(); }
+  await page.goto(`/flights/${flightId}`);
 }
 
 /** Standard Web Mercator projection (tile size 512, doubling per zoom) —
@@ -137,7 +154,6 @@ test("draw a boundary from site management without binding the current flight, t
   const email = `boundaries_e2e_${suffix}@test.local`;
   const handle = `b6e${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   // Near the equator — keeps Web Mercator meters-per-pixel large (a fixed
   // real-world distance needs fewer on-screen pixels), so the boundary
@@ -159,19 +175,9 @@ test("draw a boundary from site management without binding the current flight, t
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // Flight #1: name a new public site at the anchor. SPRINT-008: zones are
-  // hidden, so this is a bare site — no zone to also name.
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
-
+  // Flight #1 supplies the existing site that will be edited from management.
   const siteName = `E2E Boundary Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Flight #2: a SEPARATE, unrelated, still-unmatched flight far away — its
@@ -249,7 +255,6 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   const email = `boundaries_e2e_excl_${suffix}@test.local`;
   const handle = `b6x${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 20.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -169.0;
@@ -267,18 +272,9 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // Name a site, then reach its boundary editor via the BOUND-FLIGHT
-  // shortcut this time, rather than standalone site management.
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6x-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
+  // Reach the existing site's editor through its bound flight.
   const siteName = `E2E Excluded Anchor Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Re-opening the dialog on an already-bound site lands on the read-only
@@ -331,7 +327,6 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   const email = `boundaries_e2e_reopen_${suffix}@test.local`;
   const handle = `b6ro${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 40.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -170.0;
@@ -349,16 +344,8 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6ro-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // First edit: no boundary exists yet. Open the full editor and select
@@ -422,7 +409,6 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   const email = `boundaries_e2e_midpoint_${suffix}@test.local`;
   const handle = `b6mp${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 30.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -172.0;
@@ -440,16 +426,8 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6mid-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Midpoint Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.locator("h1 button").click();
@@ -543,7 +521,6 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   const email = `boundaries_e2e_vertex_${suffix}@test.local`;
   const handle = `b6vx${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 25.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -173.0;
@@ -561,16 +538,8 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6vtx-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Vertex Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.locator("h1 button").click();

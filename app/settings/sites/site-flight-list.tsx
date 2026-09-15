@@ -20,7 +20,7 @@ export function SiteFlightSummary({ flight }: { flight: SiteFlightDetails }) {
   </div>;
 }
 
-export function SiteFlightList({ siteId, count, revision }: { siteId: string; count: number; revision: number }) {
+export function SiteFlightList({ siteId, count, revision, onReplace }: { siteId: string; count: number; revision: number; onReplace?: () => void }) {
   const panelId = useId();
   const headingId = useId();
   const [open, setOpen] = useState(true);
@@ -48,6 +48,10 @@ export function SiteFlightList({ siteId, count, revision }: { siteId: string; co
         </button>
       </h3>
       {open && <div id={panelId} className="border-t border-gray-200 p-5">
+        {onReplace && count > 0 && <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-gray-600">Use a different site on these flights.</p>
+          <Button type="button" variant="outline" size="sm" onClick={onReplace}>Replace site</Button>
+        </div>}
         {!result && <p className="text-sm text-gray-500" role="status">Loading flights…</p>}
         {result && !result.ok && <div className="text-sm"><p role="alert">{result.error}</p><Button type="button" variant="outline" className="mt-2" onClick={() => setRetry(value => value + 1)}>Retry</Button></div>}
         {result?.ok && <>
