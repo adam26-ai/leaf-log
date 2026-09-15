@@ -72,6 +72,13 @@ before interacting. `waitForMapReady` uses the maps' `data-render-ready` signal,
 set by MapLibre's idle event after terrain/overlay initialization, within the
 existing test deadline. A hydrated heading or a visible map control does not
 mean WebGL has rendered its first frame. This adds no sleep, retry, or timeout.
+The following hosted [run](https://github.com/adam26-ai/leaf-log/actions/runs/34916637807)
+passed community but exposed flight-type save feedback disappearing on refresh.
+The server tree keyed the editor by mutable flags, remounting it as soon as the
+saved flags arrived. It now keys by flight identity and reconciles changed
+server values without discarding success feedback or unrelated unsaved edits.
+The component regression renders and refreshes the actual server section tree
+so reintroducing a mutable key is caught before browser CI.
 The community dialog also loads its map and summary in one server request and
 returns the updated summary with an endorsement mutation. Next.js queues client
 Server Actions, so separate reads created a waterfall around expensive map

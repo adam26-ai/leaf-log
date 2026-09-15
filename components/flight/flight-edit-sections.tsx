@@ -50,7 +50,7 @@ export async function FlightEditSections({
           <SectionTitle icon={FilePenLine}>Wing</SectionTitle>
           <FlightWingEditor flightId={flight.id} glider={flight.glider ?? ""} gliders={options.gliders} />
         </Card>
-        <Card className={cardClass}><SectionTitle icon={FilePenLine}>Flight type</SectionTitle><FlightTypeEditor key={flightFlags(flight).join(",")} flightId={flight.id} initial={flightFlags(flight)} /></Card>
+        <Card className={cardClass}><SectionTitle icon={FilePenLine}>Flight type</SectionTitle><FlightTypeEditor key={flight.id} flightId={flight.id} initial={flightFlags(flight)} /></Card>
         {options.recording && <Card className={cardClass}><RecordingDetails details={options.recording} /></Card>}
         <Card className={cardClass}>
           <SectionTitle icon={Eye}>Visibility</SectionTitle>

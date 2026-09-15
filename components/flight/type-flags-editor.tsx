@@ -13,6 +13,16 @@ export function FlightTypeEditor({ flightId, initial }: { flightId: string; init
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const initialKey = initial.join(",");
+  const [previousInitial, setPreviousInitial] = useState(initialKey);
+  // Other editors can change these flags. Reconcile an authoritative refresh
+  // without remounting and losing this editor's save feedback. An unrelated
+  // refresh with the same flags must preserve the pilot's unsaved choices.
+  if (initialKey !== previousInitial) {
+    setPreviousInitial(initialKey);
+    setValue(initial);
+    setTandemTouched(false);
+  }
   return <div className="space-y-4">
     <FlightTypeFields value={value} onChange={(next, changed) => { setValue(next); if (changed === "tandem") setTandemTouched(true); setMessage(""); }} disabled={pending} />
     <div className="flex items-center gap-3"><Button type="button" disabled={pending} onClick={() => startTransition(async () => {
