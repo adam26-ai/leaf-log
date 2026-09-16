@@ -717,6 +717,7 @@ export function FlightViz({
             <div className="absolute bottom-2 left-3 z-10">
               <PlaybackStatus
                 time={time}
+                elapsedTime={Math.min(selectedReplay.durationS, selectedTime)}
                 speed={speed}
                 takeoffMs={takeoffMs}
                 offsetMin={offsetMin}

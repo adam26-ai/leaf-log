@@ -28,6 +28,7 @@ function sections(flags: FlightFlag[]) {
 it("keeps save feedback when the refreshed server tree contains the newly saved types", async () => {
   save.mockResolvedValue({ ok: true });
   const view = render(await sections(["tandem", "siv"]));
+  expect(screen.getByRole("group", { name: "Select all that apply" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save flight type" })).toBeDisabled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Tandem" }));
   expect(screen.getByRole("button", { name: "Save flight type" })).toBeEnabled();
