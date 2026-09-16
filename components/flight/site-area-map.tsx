@@ -119,7 +119,7 @@ export function SiteAreaMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div className="flex shrink-0 flex-col gap-2">
+  return <div className="flex min-w-0 shrink-0 flex-col gap-2">
     <div className="relative"><div ref={ref} className="h-[clamp(240px,45vh,420px)] w-full rounded-md" data-testid="site-area-map" data-render-ready="false" />
       <div className="absolute left-2 top-2"><SiteMapControls value={basemap} onChange={next => { setBasemap(next); if (ref.current) ref.current.dataset.renderReady = "false"; mapRef.current?.setStyle(styleFor(next)); }} /></div>
     </div><SiteMapLegend flightPoint={Boolean(flightPoint)} />

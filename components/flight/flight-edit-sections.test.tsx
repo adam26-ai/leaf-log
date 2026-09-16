@@ -28,19 +28,23 @@ function sections(flags: FlightFlag[]) {
 it("keeps save feedback when the refreshed server tree contains the newly saved types", async () => {
   save.mockResolvedValue({ ok: true });
   const view = render(await sections(["tandem", "siv"]));
+  expect(screen.getByRole("button", { name: "Save flight type" })).toBeDisabled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Tandem" }));
+  expect(screen.getByRole("button", { name: "Save flight type" })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: "Save flight type" }));
   expect(await screen.findByText("Saved.")).toBeVisible();
   expect(save).toHaveBeenCalledWith("flight", ["siv"], true);
   expect(refresh).toHaveBeenCalled();
   view.rerender(await sections(["siv"]));
   expect(screen.getByText("Saved.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Save flight type" })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: "Tandem" })).not.toBeChecked();
 });
 
 it("preserves drafts across unrelated refreshes and reconciles flags changed by another editor", async () => {
   const view = render(await sections(["siv"]));
   fireEvent.click(screen.getByRole("checkbox", { name: "Tow" }));
+  expect(screen.getByRole("button", { name: "Save flight type" })).toBeEnabled();
   view.rerender(await sections(["siv"]));
   expect(screen.getByRole("checkbox", { name: "Tow" })).toBeChecked();
   view.rerender(await sections(["siv", "tandem"]));

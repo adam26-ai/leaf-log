@@ -572,6 +572,8 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   if (!nwBox) throw new Error("nw vertex marker has no bounding box");
   const startX = nwBox.x + nwBox.width / 2;
   const startY = nwBox.y + nwBox.height / 2;
+  const mapAtPress = await mapLocator.boundingBox();
+  if (!mapAtPress) throw new Error("boundary map moved out of view before dragging");
 
   // This checks marker dragging, not projection math. A fixed geographic
   // distance can be less than ten pixels at the editor's fitted zoom.
@@ -589,11 +591,15 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   // it did not insert a 5th one next to it.
   await expectVertexCount(page, 4, 5000);
 
-  // And the marker must have actually followed the drag to its new spot,
-  // not stayed put — confirms this was a real move, not a silent no-op.
+  // Live validation can change the centered dialog's height during the drag.
+  // Compare in map coordinates so its screen shift does not masquerade as a
+  // missed drag, while still requiring the vertex to move the full 40px.
   await expect.poll(async () => {
     const movedBox = await nwMarker.boundingBox();
-    if (!movedBox) return Infinity;
-    return Math.hypot(movedBox.x + movedBox.width / 2 - endX, movedBox.y + movedBox.height / 2 - endY);
+    const mapNow = await mapLocator.boundingBox();
+    if (!movedBox || !mapNow) return Infinity;
+    const expectedX = endX + mapNow.x - mapAtPress.x;
+    const expectedY = endY + mapNow.y - mapAtPress.y;
+    return Math.hypot(movedBox.x + movedBox.width / 2 - expectedX, movedBox.y + movedBox.height / 2 - expectedY);
   }).toBeLessThan(5);
 });

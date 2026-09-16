@@ -572,7 +572,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const dt = Math.min(0.25, Math.max(0, (now - chaseClockRef.current) / 1000));
     chaseClockRef.current = now;
     const delta = angularDelta(chaseBearingRef.current, heading);
-    const next = normalizeBearing(chaseBearingRef.current + Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-dt)), dt * 24));
+    const next = normalizeBearing(chaseBearingRef.current + Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-3 * dt)), dt * 72));
     chaseBearingRef.current = next;
     return next;
   }

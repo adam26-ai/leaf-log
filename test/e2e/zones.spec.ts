@@ -1,7 +1,9 @@
-import { createSiteFromFlight, uploadFlight } from "./helpers";
-import { test, expect } from "./fixtures";
+import { createSiteFromFlight, uploadFlight, waitForMapReady } from "./helpers";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { PrismaClient } from "@prisma/client";
+import { foldName } from "@/lib/sites/name";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -62,6 +64,32 @@ function remoteFlightIgc(runOffset: number, offset: number, seed: number): Buffe
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
 }
 
+/** Creation is covered above; start the reopen scenario with a bound site so
+ * replay startup and a second creation flow do not consume its test deadline. */
+async function arrangeNamedFlight(page: Page, siteName: string, buffer: Buffer) {
+  const response = await page.request.post("/api/upload", { multipart: { files: {
+    name: "reopen-fixture.igc", mimeType: "text/plain", buffer,
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
+  const db = new PrismaClient();
+  try {
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    if (flight.takeoffLat === null || flight.takeoffLon === null) throw new Error("Zone fixture has no takeoff position");
+    const site = await db.site.create({ data: {
+      name: siteName, normalizedName: foldName(siteName), kind: "takeoff", visibility: "private",
+      lat: flight.takeoffLat, lon: flight.takeoffLon, pinSource: "flight_gps", ownerId: flight.ownerId,
+    } });
+    await db.flight.update({ where: { id: flightId }, data: {
+      takeoffSiteId: site.id, takeoffSiteName: siteName, takeoffSiteAssignment: "user_selected",
+    } });
+  } finally { await db.$disconnect(); }
+  await page.goto(`/flights/${flightId}`);
+}
+
 test("creating a site through the full editor never opens a zone step", async ({ page }) => {
   const runOffset = Date.now();
   const suffix = `${runOffset}nozone`;
@@ -98,8 +126,30 @@ test("creating a site through the full editor never opens a zone step", async ({
   await expect(page.getByRole("button", { name: /Skip.*just the site/i })).not.toBeVisible();
 
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+});
 
-  // A distinct second IGC nearby auto-associates to the site, same as ever.
+test("a new flight near a named site auto-associates without showing zones", async ({ page }) => {
+  const runOffset = Date.now();
+  const suffix = `${runOffset}match`;
+  const email = `zones_e2e_match_${suffix}@test.local`;
+  const handle = `zem${suffix}`.slice(0, 18);
+  rmSync(LINK_FILE, { force: true });
+
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(email);
+  await page.getByRole("button", { name: /send magic link/i }).click();
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
+  const link = await getMagicLink();
+  await page.goto(link);
+  await page.getByRole("button", { name: /keep me signed in/i }).click();
+  await expect(page).toHaveURL(/\/onboarding/, { timeout: 15_000 });
+  await page.locator('input[name="handle"]').fill(handle);
+  await page.locator('input[name="display_name"]').fill("Zones E2E Matching Pilot");
+  await page.getByRole("button", { name: /create my logbook/i }).click();
+  await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+
+  const siteName = `E2E Match Ridge ${suffix}`;
+  await arrangeNamedFlight(page, siteName, remoteFlightIgc(runOffset, 0, 1));
   await page.goto("/upload");
   await uploadFlight(page, { name: "nozone2.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 0, 2) });
   await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
@@ -129,13 +179,10 @@ test("re-opening and managing an already-named site never shows zones or spots",
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, { name: "reopen1.igc", mimeType: "text/plain", buffer: remoteFlightIgc(runOffset, 5, 1) });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await createSiteFromFlight(page, siteName);
+  await arrangeNamedFlight(page, siteName, remoteFlightIgc(runOffset, 5, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+  await waitForMapReady(page.locator(".flight-replay-map"));
 
   // Re-open on the already-site-bound flight — lands on the read-only
   // site-overview step (SPRINT-008), never a zone step.
