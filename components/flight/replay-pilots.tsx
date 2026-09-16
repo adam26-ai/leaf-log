@@ -51,8 +51,9 @@ export function ReplayPilots({
           aria-label={`Follow ${primary.displayName}`}
           aria-pressed={primarySelected}
           title={`${primary.displayName} · Primary flight`}
-          className="flex w-full min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)] sm:flex-row sm:items-center sm:gap-3"
+          className="flex w-full min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)]"
         >
+          <span className="flex min-w-0 w-full flex-col items-center gap-1 sm:flex-row sm:gap-3">
           <span
             className={`block shrink-0 rounded-full border-[3px] ${primarySelected ? "outline-2 outline-offset-1" : ""}`}
             style={{
@@ -69,12 +70,9 @@ export function ReplayPilots({
             <span className="line-clamp-3 block whitespace-normal break-words">
               {primary.displayName}
             </span>
-            {primary.id === viewerId && (
-              <span className="mt-1 block whitespace-nowrap text-center text-xs font-medium">
-                * You *
-              </span>
-            )}
           </span>
+          </span>
+          {primary.id === viewerId && <span className="block text-center text-xs font-medium">* You *</span>}
         </button>
       </section>
 
@@ -151,8 +149,9 @@ export function ReplayPilots({
                     aria-label={`Follow ${pilot.displayName}`}
                     aria-pressed={selected}
                     title={pilot.displayName}
-                    className="flex min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)] sm:flex-row sm:items-start sm:gap-2"
+                    className="flex min-w-0 flex-col items-center gap-1 rounded-md p-1 hover:bg-[var(--replay-group-card-hover)]"
                   >
+                    <span className="flex min-w-0 w-full flex-col items-center gap-1 sm:flex-row sm:gap-2">
                     <span
                       className={`block shrink-0 rounded-full border-[3px] ${selected ? "outline-2 outline-offset-1" : ""}`}
                       style={{
@@ -174,12 +173,9 @@ export function ReplayPilots({
                           {failed ? "Unavailable" : "Loading…"}
                         </span>
                       )}
-                      {pilot.id === viewerId && (
-                        <span className="mt-1 block whitespace-nowrap text-center text-xs font-medium">
-                          * You *
-                        </span>
-                      )}
                     </span>
+                    </span>
+                    {pilot.id === viewerId && <span className="block text-center text-xs font-medium">* You *</span>}
                   </button>
                 );
               })}
