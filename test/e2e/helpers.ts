@@ -55,9 +55,10 @@ export async function setSiteKind(editor: Locator, kind: "takeoff" | "landing" |
   await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue(kind);
 }
 
-/** Site details load on the server before naming is safe. CI also renders a
- * WebGL replay here, so allow the form to become ready without a fixed sleep. */
+/** Wait for the replay's first rendered frame before interacting with its site
+ * header; WebGL startup can otherwise stall a click while the test clock runs. */
 export async function openSiteChooser(page: Page) {
+  await waitForMapReady(page.locator(".flight-replay-map"));
   await page.getByRole("heading", { level: 1 }).getByRole("button").click();
   const dialog = page.getByRole("dialog", { name: "Site details" });
   const name = dialog.getByPlaceholder("e.g. Sonoma Ridge");
