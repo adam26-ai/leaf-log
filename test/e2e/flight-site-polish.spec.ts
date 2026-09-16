@@ -14,6 +14,9 @@ async function signUp(page: Page) {
   await page.goto("/sign-in");
   await page.getByPlaceholder("you@example.com").fill(`${handle}@test.local`);
   await page.getByRole("button", { name: /send magic link/i }).click();
+  // The dev link file is written alongside the database verification token.
+  // Wait for the action's response before following the link.
+  await expect(page.getByRole("heading", { name: /check your email/i })).toBeVisible();
   await expect.poll(() => existsSync(DEV_MAGIC_LINK_FILE) && readFileSync(DEV_MAGIC_LINK_FILE, "utf8").startsWith("http")).toBe(true);
   await page.goto(readFileSync(DEV_MAGIC_LINK_FILE, "utf8").trim());
   await page.getByRole("button", { name: /keep me signed in/i }).click();
