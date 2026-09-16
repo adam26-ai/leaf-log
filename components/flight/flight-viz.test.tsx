@@ -128,6 +128,30 @@ it("shows all selected friend's profiles, ghosts our flight, and uses timeline t
   } finally { Object.assign(group, original); }
 });
 
+it.each(["friend", "self"])("shows elapsed time for the selected %s flight on the shared timeline", ownerId => {
+  const original = { ...group };
+  const own = group.flights[0];
+  const owner = ownerId === "self" ? own.owner : { ...own.owner, id: "friend", handle: "friend", displayName: "Friend" };
+  const second = { ...own, id: "second", owner, takeoffMs: 140000, landingMs: 240000,
+    photos: [], replay: { ...own.replay, takeoffMs: 140000 } };
+  Object.assign(group, { flights: [own, second], visibleFlights: [own, second], candidates: [own, second],
+    pilots: ownerId === "self" ? [own.owner] : [own.owner, owner], selected: second,
+    bounds: { startMs: 100000, endMs: 240000 } });
+  const props = { flightId: own.id, primaryPilot: own.owner, viewerId: "self", takeoffMs: 100000, offsetMin: 0 };
+  try {
+    const { rerender } = render(<FlightViz {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show clock time" }));
+    fireEvent.click(document.querySelector('[data-takeoff-flight="second"]')!);
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Flight playback time" }), { key: "ArrowRight" });
+    expect(screen.getByTitle("Flight time from takeoff")).toHaveTextContent("0:01");
+    group.selected = own;
+    rerender(<FlightViz {...props} />);
+    expect(screen.getByTitle("Flight time from takeoff")).toHaveTextContent("0:41");
+    fireEvent.click(screen.getByRole("button", { name: "Show clock time" }));
+    expect(screen.getByTitle("Clock time")).toHaveTextContent("00:02:21");
+  } finally { Object.assign(group, original); }
+});
+
 it("shows the selected flight's statistics and seeks that flight's metrics on the shared timeline", () => {
   const original = { ...group };
   const own = group.flights[0];

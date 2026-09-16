@@ -25,7 +25,12 @@ export function FlightWingEditor({ flightId, glider, gliders }: {
   return (
     <form action={action} onSubmit={() => { submittedValue.current = value; }} className="flex flex-col gap-4">
       <p className="text-sm text-gray-600">Choose a wing from your logbook or enter its name. The original IGC file stays unchanged.</p>
-      <fieldset disabled={pending || !hydrated} className="grid min-w-0 gap-3">
+      <fieldset disabled={pending || !hydrated} className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor="flight-wing" className="text-sm font-medium">Wing name</label>
+            <input id="flight-wing" name="glider" className={inputClass} value={value}
+              maxLength={200} placeholder="Enter wing name" onChange={(event) => setValue(event.target.value)} />
+          </div>
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="previous-wing" className="text-sm font-medium">Previous wings</label>
             <select id="previous-wing" aria-label="Choose a previous wing" className={inputClass}
@@ -33,11 +38,6 @@ export function FlightWingEditor({ flightId, glider, gliders }: {
               <option value="">Choose from your logbook…</option>
               {gliders.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
-          </div>
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor="flight-wing" className="text-sm font-medium">Wing name</label>
-            <input id="flight-wing" name="glider" className={inputClass} value={value}
-              maxLength={200} placeholder="Enter wing name" onChange={(event) => setValue(event.target.value)} />
           </div>
       </fieldset>
       <div className="flex items-center gap-3">

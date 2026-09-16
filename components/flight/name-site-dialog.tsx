@@ -661,7 +661,7 @@ function SiteOverviewStep({
         {onCommunity && <button type="button" onClick={onCommunity} className="text-sm text-brand-blue-strong underline">Community &amp; history</button>}
       </div>}
       {loaded && <button type="button" onClick={onRemove} className="self-start text-sm text-gray-600 underline">Remove site from this flight</button>}
-      <div className="shrink-0 -mx-6 -mb-6 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-paper px-6 py-4">
+      <div className="-mx-4 -mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-gray-200 bg-paper px-4 py-3">
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Cancel
         </Button>

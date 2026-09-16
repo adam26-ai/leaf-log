@@ -27,7 +27,7 @@ export function FlightTypeEditor({ flightId, initial }: { flightId: string; init
   }
   const dirty = value.length !== savedValue.length || value.some((flag) => !savedValue.includes(flag));
   return <div className="space-y-4">
-    <FlightTypeFields value={value} onChange={(next, changed) => { setValue(next); if (changed === "tandem") setTandemTouched(true); setMessage(""); }} disabled={pending} />
+    <FlightTypeFields value={value} onChange={(next, changed) => { setValue(next); if (changed === "tandem") setTandemTouched(true); setMessage(""); }} disabled={pending} compactLegend />
     <div className="flex items-center gap-3"><Button type="button" variant={dirty ? "primary" : "outline"} disabled={pending || !dirty} onClick={() => startTransition(async () => {
       try {
         const result = await saveFlightFlags(flightId, value, tandemTouched);
