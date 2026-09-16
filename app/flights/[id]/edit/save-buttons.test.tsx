@@ -12,12 +12,12 @@ vi.mock("./actions", () => ({
 
 afterEach(cleanup);
 
-it("puts the editable wing name just above save and activates save only for a changed wing", () => {
+it("puts the editable wing name before previous wings and activates save only for a changed wing", () => {
   render(<FlightWingEditor flightId="flight" glider="Alpha" gliders={["Beta"]} />);
   const save = screen.getByRole("button", { name: "Save wing" });
   const name = screen.getByRole("textbox", { name: "Wing name" });
   const previous = screen.getByRole("combobox", { name: "Choose a previous wing" });
-  expect(previous.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(name.compareDocumentPosition(previous) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(save).toBeDisabled();
   fireEvent.change(previous, { target: { value: "Beta" } });
   expect(name).toHaveValue("Beta");
