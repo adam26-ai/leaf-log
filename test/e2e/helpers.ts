@@ -14,6 +14,14 @@ export async function waitForMapReady(map: Locator) {
   await map.and(map.page().locator('[data-render-ready="true"]')).waitFor();
 }
 
+/** Exercise the opt-in replay diagnostic without changing the flight/view. */
+export async function selectTrackDiagnosticRenderer(page: Page, label: "Colored" | "Outlined" | "Plain", renderer: "color" | "outlined" | "plain") {
+  const controls = page.getByRole("group", { name: "Track renderer diagnostic" });
+  await controls.getByRole("button", { name: label, exact: true }).click();
+  await expect(controls.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", renderer);
+}
+
 /** Typing only searches; explicitly add the name to the unsaved flight. */
 export async function addEntrySite(page: Page, name: string, label = "Flying site") {
   const field = page.getByRole("group", { name: label, exact: true });
