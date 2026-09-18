@@ -224,7 +224,7 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 }
 
 export type TrackDisplayMode = "elapsed" | "full";
-type TrackRenderer = "color" | "outlined" | "plain";
+type TrackDepthMode = "normal" | "ignore";
 
 /** Imperative one-shot camera actions a parent can trigger via ref, distinct
  *  from the continuous follow/chase driven by the cameraMode prop. */
@@ -328,9 +328,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const cameraModeRef = useRef(cameraMode);
   const showShadowRef = useRef(showShadow);
   const trackDisplayRef = useRef(trackDisplay);
-  const trackRendererRef = useRef<TrackRenderer>("color");
-  const [trackDiagnosticEnabled, setTrackDiagnosticEnabled] = useState(false);
-  const [trackRenderer, setTrackRenderer] = useState<TrackRenderer>("color");
+  // Null keeps the production multi-color renderer; either diagnostic mode
+  // uses the same stock PathLayer so only depth behavior differs.
+  const trackDepthModeRef = useRef<TrackDepthMode | null>(null);
+  const [trackDepthMode, setTrackDepthMode] = useState<TrackDepthMode | null>(null);
   const displayedTrackCacheRef = useRef(new WeakMap<TimedTrackDatum, {
     count: number;
     value: MultiColorPathDatum;
@@ -381,20 +382,18 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("trackDebug") !== "1") return;
-    const requested = params.get("trackRenderer");
-    const renderer: TrackRenderer = requested === "plain" || requested === "outlined" ? requested : "color";
-    trackRendererRef.current = renderer;
-    setTrackRenderer(renderer);
-    setTrackDiagnosticEnabled(true);
+    const mode: TrackDepthMode = params.get("trackDepth") === "ignore" ? "ignore" : "normal";
+    trackDepthModeRef.current = mode;
+    setTrackDepthMode(mode);
     renderLayers(timeRef.current);
     mapRef.current?.triggerRepaint();
     // This opt-in diagnostic is selected on page load, not on replay updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectTrackRenderer(renderer: TrackRenderer) {
-    trackRendererRef.current = renderer;
-    setTrackRenderer(renderer);
+  function selectTrackDepthMode(mode: TrackDepthMode) {
+    trackDepthModeRef.current = mode;
+    setTrackDepthMode(mode);
     renderLayers(timeRef.current);
     mapRef.current?.triggerRepaint();
   }
@@ -1039,27 +1038,29 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
 
     const companion = companionLayers(nowMs);
-    const renderer = trackRendererRef.current;
+    const depthMode = trackDepthModeRef.current;
     const primaryTrackProps = {
-      id: `track-${renderer}-${identities.flightId}-${trackDisplayRef.current}`,
+      id: `track-${depthMode ?? "color"}-${identities.flightId}-${trackDisplayRef.current}`,
       data: displayedTracks,
       getPath: (flight: MultiColorPathDatum) =>
         flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
       getWidth: 5.75,
       widthUnits: "pixels" as const,
       widthMinPixels: 5.75,
-      // Use identical geometry and depth settings in all three modes so the
-      // diagnostic isolates the path renderer rather than the camera/terrain.
+      // Diagnostic modes share geometry and a stock renderer. The "ignore"
+      // mode bypasses terrain depth rejection without writing over the depth
+      // buffer used by the rest of the map.
       billboard: true,
-      parameters: { depthWriteEnabled: true, depthCompare: "less-equal" as const },
+      parameters: {
+        depthWriteEnabled: depthMode !== "ignore",
+        depthCompare: depthMode === "ignore" ? "always" as const : "less-equal" as const,
+      },
       capRounded: true,
       jointRounded: true,
     };
-    const primaryTrackLayer = renderer === "plain"
+    const primaryTrackLayer = depthMode
       ? new PathLayer<MultiColorPathDatum>({ ...primaryTrackProps, getColor: LEAF_GREEN })
-      : renderer === "outlined"
-        ? new OutlinedPathLayer<MultiColorPathDatum>({ ...primaryTrackProps, getColor: LEAF_GREEN })
-        : new MultiColorPathLayer({
+      : new MultiColorPathLayer({
           ...primaryTrackProps,
           getColor: (flight) => flight.colors,
           updateTriggers: { getColor: d },
@@ -1896,21 +1897,21 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           ref={containerRef}
           data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
-          data-track-renderer={trackRenderer}
+          data-track-depth={trackDepthMode ?? "production"}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
-        {trackDiagnosticEnabled && (
-          <div role="group" aria-label="Track renderer diagnostic" className="absolute bottom-12 right-2 z-20 flex flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-paper/95 p-1 text-xs text-ink shadow-md">
-            <span className="px-1 font-semibold">Track test</span>
-            {(["color", "outlined", "plain"] as const).map((renderer) => (
+        {trackDepthMode && (
+          <div role="group" aria-label="Track depth diagnostic" className="absolute bottom-12 right-2 z-20 flex flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-paper/95 p-1 text-xs text-ink shadow-md">
+            <span className="px-1 font-semibold">Track depth</span>
+            {(["normal", "ignore"] as const).map((mode) => (
               <button
-                key={renderer}
+                key={mode}
                 type="button"
-                aria-pressed={trackRenderer === renderer}
-                onClick={() => selectTrackRenderer(renderer)}
-                className={`rounded px-2 py-1 font-medium ${trackRenderer === renderer ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
+                aria-pressed={trackDepthMode === mode}
+                onClick={() => selectTrackDepthMode(mode)}
+                className={`rounded px-2 py-1 font-medium ${trackDepthMode === mode ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
               >
-                {renderer === "color" ? "Colored" : renderer === "outlined" ? "Outlined" : "Plain"}
+                {mode === "normal" ? "Normal" : "Ignore depth"}
               </button>
             ))}
           </div>
