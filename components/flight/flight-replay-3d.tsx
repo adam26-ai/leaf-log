@@ -4,7 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, PathLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
@@ -224,6 +224,7 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 }
 
 export type TrackDisplayMode = "elapsed" | "full";
+type TrackRenderer = "color" | "outlined" | "plain";
 
 /** Imperative one-shot camera actions a parent can trigger via ref, distinct
  *  from the continuous follow/chase driven by the cameraMode prop. */
@@ -327,6 +328,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const cameraModeRef = useRef(cameraMode);
   const showShadowRef = useRef(showShadow);
   const trackDisplayRef = useRef(trackDisplay);
+  const trackRendererRef = useRef<TrackRenderer>("color");
+  const [trackDiagnosticEnabled, setTrackDiagnosticEnabled] = useState(false);
+  const [trackRenderer, setTrackRenderer] = useState<TrackRenderer>("color");
   const displayedTrackCacheRef = useRef(new WeakMap<TimedTrackDatum, {
     count: number;
     value: MultiColorPathDatum;
@@ -374,6 +378,26 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   });
 
   const hasData = data.samples.length >= 2;
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("trackDebug") !== "1") return;
+    const requested = params.get("trackRenderer");
+    const renderer: TrackRenderer = requested === "plain" || requested === "outlined" ? requested : "color";
+    trackRendererRef.current = renderer;
+    setTrackRenderer(renderer);
+    setTrackDiagnosticEnabled(true);
+    renderLayers(timeRef.current);
+    mapRef.current?.triggerRepaint();
+    // This opt-in diagnostic is selected on page load, not on replay updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectTrackRenderer(renderer: TrackRenderer) {
+    trackRendererRef.current = renderer;
+    setTrackRenderer(renderer);
+    renderLayers(timeRef.current);
+    mapRef.current?.triggerRepaint();
+  }
   // Hovered photo thumbnail preview (screen position from deck picking).
   const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string; flightId: string; name: string; primary: boolean } | null>(null);
 
@@ -1015,34 +1039,35 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
 
     const companion = companionLayers(nowMs);
+    const renderer = trackRendererRef.current;
+    const primaryTrackProps = {
+      id: `track-${renderer}-${identities.flightId}-${trackDisplayRef.current}`,
+      data: displayedTracks,
+      getPath: (flight: MultiColorPathDatum) =>
+        flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
+      getWidth: 5.75,
+      widthUnits: "pixels" as const,
+      widthMinPixels: 5.75,
+      // Use identical geometry and depth settings in all three modes so the
+      // diagnostic isolates the path renderer rather than the camera/terrain.
+      billboard: true,
+      parameters: { depthWriteEnabled: true, depthCompare: "less-equal" as const },
+      capRounded: true,
+      jointRounded: true,
+    };
+    const primaryTrackLayer = renderer === "plain"
+      ? new PathLayer<MultiColorPathDatum>({ ...primaryTrackProps, getColor: LEAF_GREEN })
+      : renderer === "outlined"
+        ? new OutlinedPathLayer<MultiColorPathDatum>({ ...primaryTrackProps, getColor: LEAF_GREEN })
+        : new MultiColorPathLayer({
+          ...primaryTrackProps,
+          getColor: (flight) => flight.colors,
+          updateTriggers: { getColor: d },
+        });
     overlay.setProps({
       layers: [
         ...companion.opaqueTracks,
-        // The outline is shaded inside this one ribbon so separate halo joins
-        // cannot expose black wedges at thermals and self-crossings.
-        new MultiColorPathLayer({
-          id: `track-outlined-${identities.flightId}-${trackDisplayRef.current}`,
-          data: displayedTracks,
-          getPath: (flight) =>
-            flight.path.map((p) => [p[0], p[1], zOf(p[2])]) as [
-              number,
-              number,
-              number,
-            ][],
-          getColor: (flight) => flight.colors,
-          getWidth: 5.75,
-          widthUnits: "pixels",
-          widthMinPixels: 5.75,
-          // Face the camera so the line keeps its width when the view is tilted
-          // (a flat ribbon goes edge-on and disappears at high pitch).
-          billboard: true,
-          parameters: { depthWriteEnabled: true, depthCompare: "less-equal" },
-          capRounded: true,
-          jointRounded: true,
-          updateTriggers: {
-            getColor: d,
-          },
-        }),
+        primaryTrackLayer,
         ...curtainLayers,
         // Blend translucent ribbons after opaque tracks and trails. They test
         // existing depth but must not block other tracks from showing through.
@@ -1871,8 +1896,25 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           ref={containerRef}
           data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
+          data-track-renderer={trackRenderer}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
+        {trackDiagnosticEnabled && (
+          <div role="group" aria-label="Track renderer diagnostic" className="absolute bottom-12 right-2 z-20 flex flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-paper/95 p-1 text-xs text-ink shadow-md">
+            <span className="px-1 font-semibold">Track test</span>
+            {(["color", "outlined", "plain"] as const).map((renderer) => (
+              <button
+                key={renderer}
+                type="button"
+                aria-pressed={trackRenderer === renderer}
+                onClick={() => selectTrackRenderer(renderer)}
+                className={`rounded px-2 py-1 font-medium ${trackRenderer === renderer ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
+              >
+                {renderer === "color" ? "Colored" : renderer === "outlined" ? "Outlined" : "Plain"}
+              </button>
+            ))}
+          </div>
+        )}
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
