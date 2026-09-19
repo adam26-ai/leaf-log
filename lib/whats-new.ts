@@ -12,6 +12,11 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    date: "2026-09-12",
+    title: "Ratings numbers corrected against the current USHPA SOP",
+    body: "We re-checked every P2/P3/P4 threshold against USHPA's current Pilot Proficiency System (SOP-12-02, March 2024) and fixed a few that had drifted from an older source: P2 now needs 35 flights (not 25) and a new 7-flying-day minimum, and precision landings are 5 for P2/P3 (was showing 3 for all three levels — P4's 3 was already correct). P4's \"distinct sites\" row now checks the real rule — 5+ flights at each of 5 sites, not just 5 sites visited. Also removed \"Assisted Windy Launch,\" which turned out to be a hang-gliding-only skill that never applied here.",
+  },
+  {
     date: "2026-09-11",
     title: "Ratings tracking is now opt-in",
     body: "Working toward a USHPA rating? Turn on \"Track USHPA ratings progress\" in Settings to bring back the Ratings tab, plus a Ratings tracking section on every flight's edit page for tagging Occupancy, Flight type, Launch type, Landing, and assigning an instructor. It's off by default so pilots who aren't tracking ratings see a simpler logbook.",

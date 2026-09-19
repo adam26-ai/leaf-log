@@ -30,7 +30,15 @@ export const RATING_CRITERIA: RatingCriterion[] = [
     label: "Logged flights",
     kind: "auto",
     getValue: (s) => s.flightCount,
-    required: 25,
+    required: 35,
+  },
+  {
+    id: "p2_flying_days_count",
+    level: "P2",
+    label: "Flying days",
+    kind: "auto",
+    getValue: (s) => s.flyingDayCount,
+    required: 7,
   },
   {
     id: "p2_ground_school_hours",
@@ -52,9 +60,9 @@ export const RATING_CRITERIA: RatingCriterion[] = [
   {
     id: "p2_precision_landings",
     level: "P2",
-    label: "Precision landings",
+    label: "Precision landings (5 within 25' of a target)",
     kind: "instructor",
-    required: 3,
+    required: 5,
     reason: "Needs an instructor's sign-off.",
   },
 
@@ -95,9 +103,9 @@ export const RATING_CRITERIA: RatingCriterion[] = [
   {
     id: "p3_precision_landings",
     level: "P3",
-    label: "Precision landings",
+    label: "Precision landings (5 within 10' of a target)",
     kind: "instructor",
-    required: 3,
+    required: 5,
     reason: "Needs an instructor's sign-off.",
   },
 
@@ -130,9 +138,9 @@ export const RATING_CRITERIA: RatingCriterion[] = [
   {
     id: "p4_site_count",
     level: "P4",
-    label: "Distinct sites",
+    label: "Sites with 5+ flights each",
     kind: "auto",
-    getValue: (s) => s.siteCount,
+    getValue: (s) => s.sitesWithFiveFlights,
     required: 5,
   },
   {
@@ -167,7 +175,7 @@ export const RATING_CRITERIA: RatingCriterion[] = [
   {
     id: "p4_inland_sites",
     level: "P4",
-    label: "Sites flown inland",
+    label: "Of those 5+-flight sites, 3 must be inland",
     kind: "future",
     required: 3,
     reason: "Needs a coastal/inland attribute on Site, which doesn't exist yet.",
@@ -183,7 +191,7 @@ export const RATING_CRITERIA: RatingCriterion[] = [
   {
     id: "p4_precision_landings",
     level: "P4",
-    label: "Precision landings",
+    label: "Precision landings (3 consecutive within 10')",
     kind: "instructor",
     required: 3,
     reason: "Needs an instructor's sign-off.",

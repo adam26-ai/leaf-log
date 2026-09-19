@@ -9,7 +9,7 @@ const stats: RatingStats = {
   totalAirtimeSeconds: 61 * 3600, // 61h
   soloAirtimeSeconds: 55 * 3600, // 55h
   soloAirtimeIsExact: true,
-  siteCount: 7,
+  sitesWithFiveFlights: 7,
   gliderCount: 3,
   skillTagCounts: Object.fromEntries(SKILL_TAG_KEYS.map((k) => [k, 0])) as Record<
     SkillTagKey,
@@ -21,6 +21,11 @@ describe("RATING_CRITERIA auto getValue", () => {
   it("p2_flight_count reads flightCount", () => {
     const c = RATING_CRITERIA.find((c) => c.id === "p2_flight_count")!;
     expect(c.getValue!(stats)).toBe(137);
+  });
+
+  it("p2_flying_days_count reads flyingDayCount", () => {
+    const c = RATING_CRITERIA.find((c) => c.id === "p2_flying_days_count")!;
+    expect(c.getValue!(stats)).toBe(42);
   });
 
   it("p3_flying_days_count reads flyingDayCount", () => {
@@ -53,7 +58,7 @@ describe("RATING_CRITERIA auto getValue", () => {
     expect(c.getValue!(stats)).toBe(61);
   });
 
-  it("p4_site_count reads siteCount", () => {
+  it("p4_site_count reads sitesWithFiveFlights", () => {
     const c = RATING_CRITERIA.find((c) => c.id === "p4_site_count")!;
     expect(c.getValue!(stats)).toBe(7);
   });

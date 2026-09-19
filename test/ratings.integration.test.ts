@@ -146,6 +146,41 @@ describe("ratingStatsFrom (DB-backed)", () => {
           flightDate: new Date("2026-06-03T00:00:00.000Z"),
           takeoffAt: new Date("2026-06-03T11:00:00.000Z"),
         },
+        // Three more flights at the same real site, on three new distinct
+        // days, bringing that site's total to 5 — enough to prove
+        // sitesWithFiveFlights (USHPA P4's real "5 flights AT EACH of 5
+        // sites" rule) against the deleted-site fallback key, which stays
+        // at just 1 flight and must NOT qualify.
+        {
+          ownerId,
+          visibility: "public",
+          status: "ready",
+          igcSha256: `fifth_flight_a_${suffix}`,
+          durationS: 600,
+          flightDate: new Date("2026-06-04T00:00:00.000Z"),
+          takeoffAt: new Date("2026-06-04T09:00:00.000Z"),
+          takeoffSiteId: site.id,
+        },
+        {
+          ownerId,
+          visibility: "public",
+          status: "ready",
+          igcSha256: `fifth_flight_b_${suffix}`,
+          durationS: 600,
+          flightDate: new Date("2026-06-05T00:00:00.000Z"),
+          takeoffAt: new Date("2026-06-05T09:00:00.000Z"),
+          takeoffSiteId: site.id,
+        },
+        {
+          ownerId,
+          visibility: "public",
+          status: "ready",
+          igcSha256: `fifth_flight_c_${suffix}`,
+          durationS: 600,
+          flightDate: new Date("2026-06-06T00:00:00.000Z"),
+          takeoffAt: new Date("2026-06-06T09:00:00.000Z"),
+          takeoffSiteId: site.id,
+        },
       ],
     });
   });
@@ -162,8 +197,8 @@ describe("ratingStatsFrom (DB-backed)", () => {
     const rows = await repo.listOwnFlights(ownerId);
     const stats = ratingStatsFrom(rows);
 
-    expect(stats.flightCount).toBe(6); // the "uploaded" flight is excluded
-    expect(stats.flyingDayCount).toBe(3); // 2026-06-01 (x2, deduped) + 2026-06-02 + 2026-06-03 (x2, deduped)
+    expect(stats.flightCount).toBe(9); // the "uploaded" flight is excluded
+    expect(stats.flyingDayCount).toBe(6); // 06-01 (x2, deduped), 06-02, 06-03 (x2, deduped), 06-04, 06-05, 06-06
   });
 
   it("dedupes glider names by trim + lowercase, skipping null/empty", async () => {
@@ -173,19 +208,23 @@ describe("ratingStatsFrom (DB-backed)", () => {
     expect(stats.gliderCount).toBe(2); // "Ozone Buzz Z2" / " ozone buzz z2 " collapse to one, plus "Advance Iota"
   });
 
-  it("counts a deleted site via its cached-name fallback key, same as statsFrom's siteKey", async () => {
+  it("counts sites clearing the real USHPA P4 bar (5+ flights AT that site), not just distinct sites visited", async () => {
     const rows = await repo.listOwnFlights(ownerId);
     const stats = ratingStatsFrom(rows);
 
-    expect(stats.siteCount).toBe(2); // the shared real site, plus the name-only fallback for the deleted one
+    // The real site has 5 flights total (2 original + 3 more added in the
+    // fixture) and qualifies; the deleted-site fallback key has only 1 and
+    // does not — proving this isn't just "distinct sites visited" (that
+    // would be 2).
+    expect(stats.sitesWithFiveFlights).toBe(1);
   });
 
   it("excludes tandem flights from solo airtime but keeps them in total airtime", async () => {
     const rows = await repo.listOwnFlights(ownerId);
     const stats = ratingStatsFrom(rows);
 
-    expect(stats.totalAirtimeSeconds).toBe(9500); // 3600 + 1800 + 900 + 500 + 2000 + 700
-    expect(stats.soloAirtimeSeconds).toBe(7500); // total minus the 2000s tandem flight
+    expect(stats.totalAirtimeSeconds).toBe(11300); // 3600 + 1800 + 900 + 500 + 2000 + 700 + 600*3
+    expect(stats.soloAirtimeSeconds).toBe(9300); // total minus the 2000s tandem flight
     expect(stats.soloAirtimeIsExact).toBe(true);
   });
 
@@ -200,7 +239,6 @@ describe("ratingStatsFrom (DB-backed)", () => {
       FSL: 0,
       TUR: 0,
       HA: 0,
-      AWCL: 0,
       ST: 1,
       RLF: 1,
     });
@@ -209,12 +247,12 @@ describe("ratingStatsFrom (DB-backed)", () => {
   it("returns the exact RatingStats object end to end", async () => {
     const rows = await repo.listOwnFlights(ownerId);
     expect(ratingStatsFrom(rows)).toEqual({
-      flightCount: 6,
-      flyingDayCount: 3,
-      totalAirtimeSeconds: 9500,
-      soloAirtimeSeconds: 7500,
+      flightCount: 9,
+      flyingDayCount: 6,
+      totalAirtimeSeconds: 11300,
+      soloAirtimeSeconds: 9300,
       soloAirtimeIsExact: true,
-      siteCount: 2,
+      sitesWithFiveFlights: 1,
       gliderCount: 2,
       skillTagCounts: {
         XC: 1,
@@ -223,7 +261,6 @@ describe("ratingStatsFrom (DB-backed)", () => {
         FSL: 0,
         TUR: 0,
         HA: 0,
-        AWCL: 0,
         ST: 1,
         RLF: 1,
       },
