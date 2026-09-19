@@ -647,6 +647,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const [trackDiagnosticMode, setTrackDiagnosticMode] = useState<TrackDiagnosticMode | null>(null);
   const trackLineFallbackRef = useRef(false);
   const [trackLineFallback, setTrackLineFallback] = useState(false);
+  const trackDepthLineFallbackRef = useRef(false);
+  const [trackDepthLineFallback, setTrackDepthLineFallback] = useState(false);
   const [trackDiagnosticSnapshot, setTrackDiagnosticSnapshot] = useState<TrackDiagnosticSnapshot | null>(null);
   const [trackDiagnosticContextEvents, setTrackDiagnosticContextEvents] = useState<string[]>([]);
   const [trackDiagnosticErrors, setTrackDiagnosticErrors] = useState<string[]>([]);
@@ -701,11 +703,14 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const hasData = data.samples.length >= 2;
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const lineFallback = params.get("trackLineFallback") === "1";
+    const depthLineFallback = params.get("trackLineFallbackDepth") === "1";
+    const lineFallback = !depthLineFallback && params.get("trackLineFallback") === "1";
     trackLineFallbackRef.current = lineFallback;
     setTrackLineFallback(lineFallback);
+    trackDepthLineFallbackRef.current = depthLineFallback;
+    setTrackDepthLineFallback(depthLineFallback);
     if (params.get("trackDebug") !== "1") {
-      if (lineFallback) {
+      if (lineFallback || depthLineFallback) {
         renderLayers(timeRef.current);
         mapRef.current?.triggerRepaint();
       }
@@ -1397,16 +1402,18 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const companion = companionLayers(nowMs);
     const diagnosticMode = trackDiagnosticModeRef.current;
     const lineFallback = trackLineFallbackRef.current && !diagnosticMode;
+    const depthLineFallback = trackDepthLineFallbackRef.current && !diagnosticMode;
+    const segmentedFallback = lineFallback || depthLineFallback;
     const path2Tracks = diagnosticMode === "path2"
       ? displayedTracks.map(twoPointDiagnosticTrack)
       : [];
     const path256Tracks = diagnosticMode === "path256"
       ? displayedTracks.map((track) => sampledDiagnosticTrack(track, 256))
       : [];
-    const lineSegments = diagnosticMode === "lines" || lineFallback
+    const lineSegments = diagnosticMode === "lines" || segmentedFallback
       ? diagnosticLineSegments(displayedTracks)
       : [];
-    const lineVertices = lineFallback
+    const lineVertices = segmentedFallback
       ? diagnosticLineVertices(displayedTracks)
       : [];
     const primaryTrackProps = {
@@ -1468,13 +1475,19 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           parameters: ignoredDepth,
         }),
       ];
-    } else if (lineFallback) {
+    } else if (segmentedFallback) {
+      const outerDepth = depthLineFallback
+        ? { depthWriteEnabled: true, depthCompare: "less-equal" as const }
+        : ignoredDepth;
+      const innerDepth = depthLineFallback
+        ? { depthWriteEnabled: false, depthCompare: "less-equal" as const }
+        : ignoredDepth;
       const outerStroke = {
         data: lineSegments,
         getSourcePosition: (segment: DiagnosticLineSegment) => linePosition(segment.source),
         getTargetPosition: (segment: DiagnosticLineSegment) => linePosition(segment.target),
         widthUnits: "pixels" as const,
-        parameters: ignoredDepth,
+        parameters: outerDepth,
       };
       const jointPositions = {
         data: lineVertices,
@@ -1482,36 +1495,39 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         radiusUnits: "pixels" as const,
         billboard: true,
         stroked: false,
-        parameters: ignoredDepth,
       };
+      const fallbackId = depthLineFallback ? "track-line-fallback-depth" : "track-line-fallback";
       primaryTrackLayers = [
         new LineLayer<DiagnosticLineSegment>({
           ...outerStroke,
-          id: `track-line-fallback-outline-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `${fallbackId}-outline-${identities.flightId}-${trackDisplayRef.current}`,
           getColor: TRACK_FALLBACK_OUTLINE,
           getWidth: TRACK_FALLBACK_OUTER_WIDTH_PX,
           widthMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX,
         }),
         new ScatterplotLayer<DiagnosticLineVertex>({
           ...jointPositions,
-          id: `track-line-fallback-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `${fallbackId}-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
           getFillColor: TRACK_FALLBACK_OUTLINE,
           getRadius: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
           radiusMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
+          parameters: outerDepth,
         }),
         new LineLayer<DiagnosticLineSegment>({
           ...outerStroke,
-          id: `track-line-fallback-color-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `${fallbackId}-color-${identities.flightId}-${trackDisplayRef.current}`,
           getColor: (segment) => segment.color,
           getWidth: TRACK_FALLBACK_INNER_WIDTH_PX,
           widthMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX,
+          parameters: innerDepth,
         }),
         new ScatterplotLayer<DiagnosticLineVertex>({
           ...jointPositions,
-          id: `track-line-fallback-color-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `${fallbackId}-color-joints-${identities.flightId}-${trackDisplayRef.current}`,
           getFillColor: (vertex) => vertex.color,
           getRadius: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
           radiusMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          parameters: innerDepth,
         }),
       ];
     } else {
@@ -2407,7 +2423,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           ref={containerRef}
           data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
-          data-track-renderer={trackDiagnosticMode ?? (trackLineFallback ? "line-fallback" : "production")}
+          data-track-renderer={trackDiagnosticMode ?? (
+            trackDepthLineFallback ? "line-fallback-depth" : trackLineFallback ? "line-fallback" : "production"
+          )}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
         {children}
