@@ -83,10 +83,10 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await selectTrackDiagnosticRenderer(anonPage, "256-point path", "path256");
   await selectTrackDiagnosticRenderer(anonPage, "Colored segments", "lines");
   await selectTrackDiagnosticRenderer(anonPage, "2-point path", "path2");
-  const fallbackResponse = await anonPage.goto(`${flightUrl}?trackLineFallback=1`);
-  expect(fallbackResponse?.status()).toBe(200);
+  const depthFallbackResponse = await anonPage.goto(`${flightUrl}?trackLineFallbackDepth=1`);
+  expect(depthFallbackResponse?.status()).toBe(200);
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
-  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "line-fallback");
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "line-fallback-depth");
   await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" })).toHaveCount(0);
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
