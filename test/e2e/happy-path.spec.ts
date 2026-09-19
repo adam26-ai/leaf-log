@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectSignedOutHeader, selectTrackDiagnosticDepth, waitForMapReady } from "./helpers";
+import { expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -76,10 +76,12 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   // The server-rendered header can be visible while the replay's WebGL map is
   // still starting. Let its first frame finish before testing link navigation.
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
-  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-depth", "normal");
-  await expect(anonPage.getByRole("group", { name: "Track depth diagnostic" }).getByRole("button")).toHaveCount(2);
-  await selectTrackDiagnosticDepth(anonPage, "Ignore depth", "ignore");
-  await selectTrackDiagnosticDepth(anonPage, "Normal", "normal");
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "points");
+  await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" }).getByRole("button")).toHaveCount(2);
+  await expect(anonPage.locator('[data-gpu-report="ready"]')).toBeAttached();
+  await expect(anonPage.getByText("Device report", { exact: true })).toBeVisible();
+  await selectTrackDiagnosticRenderer(anonPage, "Segments", "segments");
+  await selectTrackDiagnosticRenderer(anonPage, "Points", "points");
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();

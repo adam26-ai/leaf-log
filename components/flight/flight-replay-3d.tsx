@@ -1,10 +1,10 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, PathLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, LineLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
 import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
@@ -20,7 +20,7 @@ import { varioReplayColor } from "./replay-palette";
 import { replayPositionAt, replayStateAt, splitReplaySamples, flightForPilot } from "@/lib/flights/group-replay";
 import type { ReplayResponse } from "@/lib/igc/replay";
 import type { LoadedReplayFlight } from "./use-group-replay";
-import type { Layer } from "@deck.gl/core";
+import { VERSION as DECK_VERSION, type Layer } from "@deck.gl/core";
 import { GROUP_REPLAY_COLORS, GROUP_REPLAY_ALPHAS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
 import { OutlinedPathLayer } from "./outlined-path-layer";
@@ -224,7 +224,219 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 }
 
 export type TrackDisplayMode = "elapsed" | "full";
-type TrackDepthMode = "normal" | "ignore";
+type TrackDiagnosticMode = "points" | "segments";
+
+interface TrackDiagnosticSnapshot {
+  capturedAt: string;
+  userAgent: string;
+  userAgentData: Record<string, unknown> | null;
+  platform: string;
+  hardwareConcurrency: number | null;
+  deviceMemory: number | null;
+  screen: string;
+  canvas: string;
+  drawingBuffer: string;
+  contextAttributes: WebGLContextAttributes | null;
+  webglVersion: string;
+  shadingLanguageVersion: string;
+  vendor: string;
+  renderer: string;
+  unmaskedVendor: string;
+  unmaskedRenderer: string;
+  limits: Record<string, number | null>;
+  extensions: string[];
+  contextLost: boolean;
+  deckVersion: string;
+  lumaVersion: string;
+  lumaLogLevel: number | null;
+  mapLibreVersion: string;
+}
+
+interface TrackDiagnosticStats {
+  rawSamples: number;
+  paths: number;
+  generatedPoints: number;
+  invalidPoints: number;
+  longitudeRange: string;
+  latitudeRange: string;
+  altitudeRange: string;
+}
+
+type DebugRendererInfo = {
+  UNMASKED_VENDOR_WEBGL: number;
+  UNMASKED_RENDERER_WEBGL: number;
+};
+
+type NavigatorDiagnostics = Navigator & {
+  deviceMemory?: number;
+  userAgentData?: {
+    getHighEntropyValues?: (hints: string[]) => Promise<Record<string, unknown>>;
+  };
+};
+
+type LumaDiagnosticsGlobal = typeof globalThis & {
+  luma?: {
+    VERSION?: string;
+    log?: { level: number };
+  };
+};
+
+function readableGlValue(gl: WebGL2RenderingContext, parameter: number): string {
+  try {
+    const value = gl.getParameter(parameter);
+    return value == null ? "unavailable" : String(value);
+  } catch {
+    return "unavailable";
+  }
+}
+
+function readableGlNumber(gl: WebGL2RenderingContext, parameter: number): number | null {
+  try {
+    const value = gl.getParameter(parameter);
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function captureTrackDiagnosticSnapshot(
+  gl: WebGL2RenderingContext,
+  canvas: HTMLCanvasElement,
+): Promise<TrackDiagnosticSnapshot> {
+  let debugInfo: DebugRendererInfo | null = null;
+  try {
+    debugInfo = gl.getExtension("WEBGL_debug_renderer_info") as DebugRendererInfo | null;
+  } catch {
+    // A diagnostic must remain usable even when querying an extension fails.
+  }
+  const nav = navigator as NavigatorDiagnostics;
+  let userAgentData: Record<string, unknown> | null = null;
+  try {
+    userAgentData = await nav.userAgentData?.getHighEntropyValues?.([
+      "architecture",
+      "bitness",
+      "fullVersionList",
+      "model",
+      "platformVersion",
+    ]) ?? null;
+  } catch {
+    // Some browsers expose User-Agent Client Hints but deny high-entropy values.
+  }
+
+  return {
+    capturedAt: new Date().toISOString(),
+    userAgent: nav.userAgent,
+    userAgentData,
+    platform: nav.platform || "unavailable",
+    hardwareConcurrency: nav.hardwareConcurrency || null,
+    deviceMemory: nav.deviceMemory ?? null,
+    screen: `${window.screen.width}x${window.screen.height} @ ${window.devicePixelRatio}x`,
+    canvas: `${canvas.clientWidth}x${canvas.clientHeight} CSS / ${canvas.width}x${canvas.height} pixels`,
+    drawingBuffer: `${gl.drawingBufferWidth}x${gl.drawingBufferHeight}`,
+    contextAttributes: gl.getContextAttributes(),
+    webglVersion: readableGlValue(gl, gl.VERSION),
+    shadingLanguageVersion: readableGlValue(gl, gl.SHADING_LANGUAGE_VERSION),
+    vendor: readableGlValue(gl, gl.VENDOR),
+    renderer: readableGlValue(gl, gl.RENDERER),
+    unmaskedVendor: debugInfo ? readableGlValue(gl, debugInfo.UNMASKED_VENDOR_WEBGL) : "extension unavailable",
+    unmaskedRenderer: debugInfo ? readableGlValue(gl, debugInfo.UNMASKED_RENDERER_WEBGL) : "extension unavailable",
+    limits: {
+      maxTextureSize: readableGlNumber(gl, gl.MAX_TEXTURE_SIZE),
+      maxRenderbufferSize: readableGlNumber(gl, gl.MAX_RENDERBUFFER_SIZE),
+      maxVertexAttributes: readableGlNumber(gl, gl.MAX_VERTEX_ATTRIBS),
+      maxVertexUniformVectors: readableGlNumber(gl, gl.MAX_VERTEX_UNIFORM_VECTORS),
+      maxFragmentUniformVectors: readableGlNumber(gl, gl.MAX_FRAGMENT_UNIFORM_VECTORS),
+      maxVaryingVectors: readableGlNumber(gl, gl.MAX_VARYING_VECTORS),
+    },
+    extensions: (() => {
+      try {
+        return (gl.getSupportedExtensions() ?? []).sort();
+      } catch {
+        return [];
+      }
+    })(),
+    contextLost: gl.isContextLost(),
+    deckVersion: String(DECK_VERSION),
+    lumaVersion: (globalThis as LumaDiagnosticsGlobal).luma?.VERSION ?? "unavailable",
+    lumaLogLevel: (globalThis as LumaDiagnosticsGlobal).luma?.log?.level ?? null,
+    mapLibreVersion: (maplibregl as typeof maplibregl & { version?: string }).version ?? "unavailable",
+  };
+}
+
+function trackDiagnosticStats(data: ReplayData, tracks: TimedTrackDatum[]): TrackDiagnosticStats {
+  const points = tracks.flatMap((track) => track.path);
+  const finite = points.filter((point) => point.length >= 3 && point.every(Number.isFinite));
+  const range = (axis: number, digits: number) => {
+    if (finite.length === 0) return "unavailable";
+    let minimum = Number.POSITIVE_INFINITY;
+    let maximum = Number.NEGATIVE_INFINITY;
+    for (const point of finite) {
+      minimum = Math.min(minimum, point[axis]);
+      maximum = Math.max(maximum, point[axis]);
+    }
+    return `${minimum.toFixed(digits)} to ${maximum.toFixed(digits)}`;
+  };
+  return {
+    rawSamples: data.samples.length,
+    paths: tracks.length,
+    generatedPoints: points.length,
+    invalidPoints: points.length - finite.length,
+    longitudeRange: range(0, 6),
+    latitudeRange: range(1, 6),
+    altitudeRange: range(2, 1),
+  };
+}
+
+function formatTrackDiagnosticReport(
+  mode: TrackDiagnosticMode,
+  snapshot: TrackDiagnosticSnapshot | null,
+  stats: TrackDiagnosticStats,
+  contextEvents: string[],
+  rendererErrors: string[],
+): string {
+  const gpu = snapshot
+    ? [
+        `Captured: ${snapshot.capturedAt}`,
+        `User agent: ${snapshot.userAgent}`,
+        `UA details: ${snapshot.userAgentData ? JSON.stringify(snapshot.userAgentData) : "unavailable"}`,
+        `Platform: ${snapshot.platform}`,
+        `CPU cores: ${snapshot.hardwareConcurrency ?? "unavailable"}`,
+        `Device memory: ${snapshot.deviceMemory == null ? "unavailable" : `${snapshot.deviceMemory} GiB`}`,
+        `Screen: ${snapshot.screen}`,
+        `Canvas: ${snapshot.canvas}`,
+        `Drawing buffer: ${snapshot.drawingBuffer}`,
+        `Context attributes: ${JSON.stringify(snapshot.contextAttributes)}`,
+        `WebGL: ${snapshot.webglVersion}`,
+        `GLSL: ${snapshot.shadingLanguageVersion}`,
+        `Vendor: ${snapshot.vendor}`,
+        `Renderer: ${snapshot.renderer}`,
+        `Unmasked vendor: ${snapshot.unmaskedVendor}`,
+        `Unmasked renderer: ${snapshot.unmaskedRenderer}`,
+        `Context currently lost: ${snapshot.contextLost}`,
+        `Limits: ${JSON.stringify(snapshot.limits)}`,
+        `Extensions (${snapshot.extensions.length}): ${snapshot.extensions.join(", ") || "none"}`,
+        `deck.gl: ${snapshot.deckVersion}`,
+        `luma.gl: ${snapshot.lumaVersion}`,
+        `luma.gl log level: ${snapshot.lumaLogLevel ?? "unavailable"}`,
+        `MapLibre GL JS: ${snapshot.mapLibreVersion}`,
+      ]
+    : ["GPU report: waiting for the first WebGL frame"];
+
+  return [
+    "Leaf Log flight-track diagnostics",
+    `Mode: ${mode}`,
+    `URL: ${window.location.href}`,
+    `Raw samples: ${stats.rawSamples}`,
+    `Generated paths/points: ${stats.paths}/${stats.generatedPoints}`,
+    `Invalid generated points: ${stats.invalidPoints}`,
+    `Longitude range: ${stats.longitudeRange}`,
+    `Latitude range: ${stats.latitudeRange}`,
+    `Altitude range: ${stats.altitudeRange}`,
+    ...gpu,
+    `Context events: ${contextEvents.join(" | ") || "none"}`,
+    `Renderer errors: ${rendererErrors.join(" | ") || "none"}`,
+  ].join("\n");
+}
 
 /** Imperative one-shot camera actions a parent can trigger via ref, distinct
  *  from the continuous follow/chase driven by the cameraMode prop. */
@@ -238,6 +450,8 @@ export interface FlightReplay3DHandle {
 }
 
 interface FlightReplay3DProps {
+  /** Controls and status UI that must stay positioned against the map viewport. */
+  children?: ReactNode;
   xcRoute?: XcCandidate | null;
   flightId: string;
   primaryFlightId: string;
@@ -274,6 +488,7 @@ interface FlightReplay3DProps {
 export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DProps>(
   function FlightReplay3D(
     {
+      children,
       flightId,
       primaryFlightId,
       primaryOwnerId,
@@ -328,10 +543,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const cameraModeRef = useRef(cameraMode);
   const showShadowRef = useRef(showShadow);
   const trackDisplayRef = useRef(trackDisplay);
-  // Null keeps the production multi-color renderer; either diagnostic mode
-  // uses the same stock PathLayer so only depth behavior differs.
-  const trackDepthModeRef = useRef<TrackDepthMode | null>(null);
-  const [trackDepthMode, setTrackDepthMode] = useState<TrackDepthMode | null>(null);
+  // Null keeps the production multi-color renderer. The opt-in diagnostics
+  // replace only the primary track with simpler stock deck.gl primitives.
+  const trackDiagnosticModeRef = useRef<TrackDiagnosticMode | null>(null);
+  const [trackDiagnosticMode, setTrackDiagnosticMode] = useState<TrackDiagnosticMode | null>(null);
+  const [trackDiagnosticSnapshot, setTrackDiagnosticSnapshot] = useState<TrackDiagnosticSnapshot | null>(null);
+  const [trackDiagnosticContextEvents, setTrackDiagnosticContextEvents] = useState<string[]>([]);
+  const [trackDiagnosticErrors, setTrackDiagnosticErrors] = useState<string[]>([]);
+  const [trackDiagnosticCopied, setTrackDiagnosticCopied] = useState(false);
+  const trackDiagnosticSnapshotPendingRef = useRef(false);
   const displayedTrackCacheRef = useRef(new WeakMap<TimedTrackDatum, {
     count: number;
     value: MultiColorPathDatum;
@@ -382,20 +602,45 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("trackDebug") !== "1") return;
-    const mode: TrackDepthMode = params.get("trackDepth") === "ignore" ? "ignore" : "normal";
-    trackDepthModeRef.current = mode;
-    setTrackDepthMode(mode);
+    const mode: TrackDiagnosticMode = params.get("trackMode") === "segments" ? "segments" : "points";
+    trackDiagnosticModeRef.current = mode;
+    setTrackDiagnosticMode(mode);
+    const lumaLog = (globalThis as LumaDiagnosticsGlobal).luma?.log;
+    if (lumaLog) lumaLog.level = Math.max(lumaLog.level, 1);
     renderLayers(timeRef.current);
     mapRef.current?.triggerRepaint();
     // This opt-in diagnostic is selected on page load, not on replay updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function selectTrackDepthMode(mode: TrackDepthMode) {
-    trackDepthModeRef.current = mode;
-    setTrackDepthMode(mode);
+  function selectTrackDiagnosticMode(mode: TrackDiagnosticMode) {
+    trackDiagnosticModeRef.current = mode;
+    setTrackDiagnosticMode(mode);
+    setTrackDiagnosticCopied(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("trackMode", mode);
+    url.searchParams.delete("trackDepth");
+    window.history.replaceState(window.history.state, "", url);
     renderLayers(timeRef.current);
     mapRef.current?.triggerRepaint();
+  }
+
+  async function copyTrackDiagnostics(report: string) {
+    try {
+      await navigator.clipboard.writeText(report);
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = report;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      if (!copied) return;
+    }
+    setTrackDiagnosticCopied(true);
   }
   // Hovered photo thumbnail preview (screen position from deck picking).
   const [hoverPhoto, setHoverPhoto] = useState<{ x: number; y: number; id: string; flightId: string; name: string; primary: boolean } | null>(null);
@@ -1038,33 +1283,76 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
 
     const companion = companionLayers(nowMs);
-    const depthMode = trackDepthModeRef.current;
+    const diagnosticMode = trackDiagnosticModeRef.current;
     const primaryTrackProps = {
-      id: `track-${depthMode ?? "color"}-${identities.flightId}-${trackDisplayRef.current}`,
+      id: `track-color-${identities.flightId}-${trackDisplayRef.current}`,
       data: displayedTracks,
       getPath: (flight: MultiColorPathDatum) =>
         flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
       getWidth: 5.75,
       widthUnits: "pixels" as const,
       widthMinPixels: 5.75,
-      // Diagnostic modes share geometry and a stock renderer. The "ignore"
-      // mode bypasses terrain depth rejection without writing over the depth
-      // buffer used by the rest of the map.
       billboard: true,
-      parameters: {
-        depthWriteEnabled: depthMode !== "ignore",
-        depthCompare: depthMode === "ignore" ? "always" as const : "less-equal" as const,
-      },
+      parameters: { depthWriteEnabled: true, depthCompare: "less-equal" as const },
       capRounded: true,
       jointRounded: true,
     };
-    const primaryTrackLayer = depthMode
-      ? new PathLayer<MultiColorPathDatum>({ ...primaryTrackProps, getColor: LEAF_GREEN })
-      : new MultiColorPathLayer({
-          ...primaryTrackProps,
-          getColor: (flight) => flight.colors,
-          updateTriggers: { getColor: d },
-        });
+    const diagnosticPoints = diagnosticMode
+      ? displayedTracks.flatMap((track) =>
+          track.path.map((point) => [point[0], point[1], zOf(point[2])] as [number, number, number]),
+        )
+      : [];
+    type DiagnosticSegment = {
+      source: [number, number, number];
+      target: [number, number, number];
+    };
+    const diagnosticSegments: DiagnosticSegment[] = [];
+    if (diagnosticMode === "segments") {
+      for (const track of displayedTracks) {
+        for (let index = 1; index < track.path.length; index++) {
+          const source = track.path[index - 1];
+          const target = track.path[index];
+          diagnosticSegments.push({
+            source: [source[0], source[1], zOf(source[2])],
+            target: [target[0], target[1], zOf(target[2])],
+          });
+        }
+      }
+    }
+    const diagnosticParameters = { depthWriteEnabled: false, depthCompare: "always" as const };
+    const primaryTrackLayer: Layer = diagnosticMode === "points"
+      ? new ScatterplotLayer<[number, number, number]>({
+          id: `track-points-${identities.flightId}-${trackDisplayRef.current}`,
+          data: diagnosticPoints,
+          getPosition: (point) => point,
+          getRadius: 3,
+          radiusUnits: "pixels",
+          radiusMinPixels: 3,
+          filled: true,
+          stroked: true,
+          getFillColor: LEAF_GREEN,
+          getLineColor: [20, 20, 20],
+          lineWidthUnits: "pixels",
+          getLineWidth: 1,
+          parameters: diagnosticParameters,
+        })
+      : diagnosticMode === "segments"
+        ? new LineLayer<DiagnosticSegment>({
+            id: `track-segments-${identities.flightId}-${trackDisplayRef.current}`,
+            data: diagnosticSegments,
+            getSourcePosition: (segment) => segment.source,
+            getTargetPosition: (segment) => segment.target,
+            getColor: LEAF_GREEN,
+            getWidth: 4,
+            widthUnits: "pixels",
+            widthMinPixels: 4,
+            parameters: diagnosticParameters,
+          })
+        : new MultiColorPathLayer({
+            ...primaryTrackProps,
+            getColor: (flight) => flight.colors,
+            updateTriggers: { getColor: d },
+          });
     overlay.setProps({
       layers: [
         ...companion.opaqueTracks,
@@ -1531,9 +1819,16 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     if (!containerRef.current || !hasData) return;
     const container = containerRef.current;
+    let disposed = false;
     container.dataset.renderReady = "false";
     terrainProfilesPublishedRef.current.clear();
     shadowSampleCountRef.current = -1;
+    trackDiagnosticSnapshotPendingRef.current = false;
+    if (trackDiagnosticModeRef.current) {
+      setTrackDiagnosticSnapshot(null);
+      setTrackDiagnosticContextEvents([]);
+      setTrackDiagnosticErrors([]);
+    }
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleFor(basemapRef.current),
@@ -1549,6 +1844,18 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       touchPitch: false,
       attributionControl: { compact: true },
     });
+    const mapCanvas = map.getCanvas();
+    const recordContextEvent = (event: string) => {
+      if (!trackDiagnosticModeRef.current) return;
+      const entry = `${new Date().toISOString()} ${event}`;
+      setTrackDiagnosticContextEvents((current) => [...current.slice(-7), entry]);
+    };
+    const handleContextLost = () => recordContextEvent("webglcontextlost");
+    const handleContextRestored = () => recordContextEvent("webglcontextrestored");
+    if (trackDiagnosticModeRef.current) {
+      mapCanvas.addEventListener("webglcontextlost", handleContextLost);
+      mapCanvas.addEventListener("webglcontextrestored", handleContextRestored);
+    }
     const removeMouseNavigation = installMouseNavigation(map);
     const removeTouchNavigation = installTouchNavigation(map);
     mapRef.current = map;
@@ -1575,6 +1882,25 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const overlay = new MapboxOverlay({
         interleaved: true,
         layers: [],
+        onAfterRender: ({ gl }) => {
+          if (!trackDiagnosticModeRef.current || trackDiagnosticSnapshotPendingRef.current) return;
+          trackDiagnosticSnapshotPendingRef.current = true;
+          void captureTrackDiagnosticSnapshot(gl, overlay.getCanvas() ?? mapCanvas)
+            .then((snapshot) => {
+              if (!disposed) setTrackDiagnosticSnapshot(snapshot);
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error ? error.stack ?? error.message : String(error);
+              if (!disposed) setTrackDiagnosticErrors((current) => [...current.slice(-7), `GPU report: ${message}`]);
+            });
+        },
+        onError: (error, layer) => {
+          console.error(error);
+          if (!trackDiagnosticModeRef.current) return;
+          const source = layer?.id ? ` [${layer.id}]` : "";
+          const message = `${new Date().toISOString()}${source} ${error.stack ?? error.message}`;
+          setTrackDiagnosticErrors((current) => [...current.slice(-7), message]);
+        },
       });
       map.addControl(overlay);
       overlayRef.current = overlay;
@@ -1639,6 +1965,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     });
 
     return () => {
+      disposed = true;
       if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
       overlayRef.current = null;
       mapRef.current = null;
@@ -1649,6 +1976,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       removeTrackedZoomButtons();
       removeMouseNavigation();
       removeTouchNavigation();
+      mapCanvas.removeEventListener("webglcontextlost", handleContextLost);
+      mapCanvas.removeEventListener("webglcontextrestored", handleContextRestored);
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1890,6 +2219,17 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
   }
 
+  const diagnosticStats = trackDiagnosticMode ? trackDiagnosticStats(data, tracksFor(data)) : null;
+  const diagnosticReport = trackDiagnosticMode && diagnosticStats
+    ? formatTrackDiagnosticReport(
+        trackDiagnosticMode,
+        trackDiagnosticSnapshot,
+        diagnosticStats,
+        trackDiagnosticContextEvents,
+        trackDiagnosticErrors,
+      )
+    : "";
+
   return (
     <Card className="overflow-hidden">
       <div className="relative">
@@ -1897,25 +2237,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           ref={containerRef}
           data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
-          data-track-depth={trackDepthMode ?? "production"}
+          data-track-renderer={trackDiagnosticMode ?? "production"}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
-        {trackDepthMode && (
-          <div role="group" aria-label="Track depth diagnostic" className="absolute bottom-12 right-2 z-20 flex flex-wrap items-center gap-1 rounded-md border border-gray-300 bg-paper/95 p-1 text-xs text-ink shadow-md">
-            <span className="px-1 font-semibold">Track depth</span>
-            {(["normal", "ignore"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={trackDepthMode === mode}
-                onClick={() => selectTrackDepthMode(mode)}
-                className={`rounded px-2 py-1 font-medium ${trackDepthMode === mode ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
-              >
-                {mode === "normal" ? "Normal" : "Ignore depth"}
-              </button>
-            ))}
-          </div>
-        )}
+        {children}
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -1930,6 +2255,42 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           />
         )}
       </div>
+      {trackDiagnosticMode && (
+        <div
+          data-gpu-report={trackDiagnosticSnapshot ? "ready" : "pending"}
+          className="border-t border-gray-200 bg-paper p-2 text-xs text-ink"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div role="group" aria-label="Track renderer diagnostic" className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 font-semibold">Track renderer</span>
+              {(["points", "segments"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={trackDiagnosticMode === mode}
+                  onClick={() => selectTrackDiagnosticMode(mode)}
+                  className={`rounded px-2 py-1 font-medium ${trackDiagnosticMode === mode ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
+                >
+                  {mode === "points" ? "Points" : "Segments"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => void copyTrackDiagnostics(diagnosticReport)}
+              className="rounded bg-gray-100 px-2 py-1 font-medium text-ink"
+            >
+              {trackDiagnosticCopied ? "Copied" : "Copy diagnostics"}
+            </button>
+          </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer font-medium">Device report</summary>
+            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-100 p-2 text-[10px] leading-4">
+              {diagnosticReport}
+            </pre>
+          </details>
+        </div>
+      )}
     </Card>
   );
   },
