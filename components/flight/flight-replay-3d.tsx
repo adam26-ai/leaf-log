@@ -36,6 +36,9 @@ const CAMERA_SVG =
 const cameraIcon = (color: string) => `data:image/svg+xml,${encodeURIComponent(CAMERA_SVG.replace('stroke="#ffffff"', `stroke="${color}"`))}`;
 
 const LEAF_GREEN: [number, number, number] = [216, 255, 0];
+const TRACK_FALLBACK_OUTLINE: [number, number, number] = [8, 8, 8];
+const TRACK_FALLBACK_OUTER_WIDTH_PX = 6.25;
+const TRACK_FALLBACK_INNER_WIDTH_PX = 3.75;
 // White-on-black front view of a paraglider: a curved ram-air canopy,
 // suspension lines, and the pilot below it.
 const GLIDER_ICON_WIDTH_PX = 24;
@@ -237,6 +240,11 @@ interface DiagnosticLineSegment {
   color: PathColor;
 }
 
+interface DiagnosticLineVertex {
+  position: number[];
+  color: PathColor;
+}
+
 /** Pick the wider axis' extrema so the two-point canary crosses the map even
  * when a flight starts and finishes at nearly the same coordinates. */
 function twoPointDiagnosticTrack(track: MultiColorPathDatum): MultiColorPathDatum {
@@ -301,6 +309,13 @@ function diagnosticLineSegments(tracks: MultiColorPathDatum[]): DiagnosticLineSe
     }
   }
   return segments;
+}
+
+function diagnosticLineVertices(tracks: MultiColorPathDatum[]): DiagnosticLineVertex[] {
+  return tracks.flatMap((track) => track.path.map((position, index) => ({
+    position,
+    color: track.colors[index],
+  })));
 }
 
 interface TrackDiagnosticSnapshot {
@@ -630,6 +645,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // replace only the primary track with simpler stock deck.gl primitives.
   const trackDiagnosticModeRef = useRef<TrackDiagnosticMode | null>(null);
   const [trackDiagnosticMode, setTrackDiagnosticMode] = useState<TrackDiagnosticMode | null>(null);
+  const trackLineFallbackRef = useRef(false);
+  const [trackLineFallback, setTrackLineFallback] = useState(false);
   const [trackDiagnosticSnapshot, setTrackDiagnosticSnapshot] = useState<TrackDiagnosticSnapshot | null>(null);
   const [trackDiagnosticContextEvents, setTrackDiagnosticContextEvents] = useState<string[]>([]);
   const [trackDiagnosticErrors, setTrackDiagnosticErrors] = useState<string[]>([]);
@@ -684,7 +701,16 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const hasData = data.samples.length >= 2;
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("trackDebug") !== "1") return;
+    const lineFallback = params.get("trackLineFallback") === "1";
+    trackLineFallbackRef.current = lineFallback;
+    setTrackLineFallback(lineFallback);
+    if (params.get("trackDebug") !== "1") {
+      if (lineFallback) {
+        renderLayers(timeRef.current);
+        mapRef.current?.triggerRepaint();
+      }
+      return;
+    }
     const requestedMode = params.get("trackMode");
     const mode: TrackDiagnosticMode = requestedMode === "path256" || requestedMode === "lines"
       ? requestedMode
@@ -1370,14 +1396,18 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
     const companion = companionLayers(nowMs);
     const diagnosticMode = trackDiagnosticModeRef.current;
+    const lineFallback = trackLineFallbackRef.current && !diagnosticMode;
     const path2Tracks = diagnosticMode === "path2"
       ? displayedTracks.map(twoPointDiagnosticTrack)
       : [];
     const path256Tracks = diagnosticMode === "path256"
       ? displayedTracks.map((track) => sampledDiagnosticTrack(track, 256))
       : [];
-    const lineSegments = diagnosticMode === "lines"
+    const lineSegments = diagnosticMode === "lines" || lineFallback
       ? diagnosticLineSegments(displayedTracks)
+      : [];
+    const lineVertices = lineFallback
+      ? diagnosticLineVertices(displayedTracks)
       : [];
     const primaryTrackProps = {
       id: `track-color-${identities.flightId}-${trackDisplayRef.current}`,
@@ -1404,45 +1434,99 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       capRounded: true,
       jointRounded: true,
     };
-    const primaryTrackLayer: Layer = diagnosticMode === "path2"
-      ? new PathLayer<MultiColorPathDatum>({
+    const ignoredDepth = { depthWriteEnabled: false, depthCompare: "always" as const };
+    const linePosition = (point: number[]) =>
+      [point[0], point[1], zOf(point[2])] as [number, number, number];
+    let primaryTrackLayers: Layer[];
+    if (diagnosticMode === "path2") {
+      primaryTrackLayers = [
+        new PathLayer<MultiColorPathDatum>({
           ...diagnosticPathProps,
           id: `track-path2-${identities.flightId}-${trackDisplayRef.current}`,
           data: path2Tracks,
-        })
-      : diagnosticMode === "path256"
-        ? new PathLayer<MultiColorPathDatum>({
-            ...diagnosticPathProps,
-            id: `track-path256-${identities.flightId}-${trackDisplayRef.current}`,
-            data: path256Tracks,
-          })
-        : diagnosticMode === "lines"
-          ? new LineLayer<DiagnosticLineSegment>({
-              id: `track-lines-${identities.flightId}-${trackDisplayRef.current}`,
-              data: lineSegments,
-              getSourcePosition: (segment) => {
-                const point = segment.source;
-                return [point[0], point[1], zOf(point[2])] as [number, number, number];
-              },
-              getTargetPosition: (segment) => {
-                const point = segment.target;
-                return [point[0], point[1], zOf(point[2])] as [number, number, number];
-              },
-              getColor: (segment) => segment.color,
-              getWidth: 5.75,
-              widthUnits: "pixels",
-              widthMinPixels: 5.75,
-              parameters: { depthWriteEnabled: false, depthCompare: "always" },
-            })
-          : new MultiColorPathLayer({
-              ...primaryTrackProps,
-              getColor: (flight) => flight.colors,
-              updateTriggers: { getColor: d },
-            });
+        }),
+      ];
+    } else if (diagnosticMode === "path256") {
+      primaryTrackLayers = [
+        new PathLayer<MultiColorPathDatum>({
+          ...diagnosticPathProps,
+          id: `track-path256-${identities.flightId}-${trackDisplayRef.current}`,
+          data: path256Tracks,
+        }),
+      ];
+    } else if (diagnosticMode === "lines") {
+      primaryTrackLayers = [
+        new LineLayer<DiagnosticLineSegment>({
+          id: `track-lines-${identities.flightId}-${trackDisplayRef.current}`,
+          data: lineSegments,
+          getSourcePosition: (segment) => linePosition(segment.source),
+          getTargetPosition: (segment) => linePosition(segment.target),
+          getColor: (segment) => segment.color,
+          getWidth: 5.75,
+          widthUnits: "pixels",
+          widthMinPixels: 5.75,
+          parameters: ignoredDepth,
+        }),
+      ];
+    } else if (lineFallback) {
+      const outerStroke = {
+        data: lineSegments,
+        getSourcePosition: (segment: DiagnosticLineSegment) => linePosition(segment.source),
+        getTargetPosition: (segment: DiagnosticLineSegment) => linePosition(segment.target),
+        widthUnits: "pixels" as const,
+        parameters: ignoredDepth,
+      };
+      const jointPositions = {
+        data: lineVertices,
+        getPosition: (vertex: DiagnosticLineVertex) => linePosition(vertex.position),
+        radiusUnits: "pixels" as const,
+        billboard: true,
+        stroked: false,
+        parameters: ignoredDepth,
+      };
+      primaryTrackLayers = [
+        new LineLayer<DiagnosticLineSegment>({
+          ...outerStroke,
+          id: `track-line-fallback-outline-${identities.flightId}-${trackDisplayRef.current}`,
+          getColor: TRACK_FALLBACK_OUTLINE,
+          getWidth: TRACK_FALLBACK_OUTER_WIDTH_PX,
+          widthMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX,
+        }),
+        new ScatterplotLayer<DiagnosticLineVertex>({
+          ...jointPositions,
+          id: `track-line-fallback-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          getFillColor: TRACK_FALLBACK_OUTLINE,
+          getRadius: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
+          radiusMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
+        }),
+        new LineLayer<DiagnosticLineSegment>({
+          ...outerStroke,
+          id: `track-line-fallback-color-${identities.flightId}-${trackDisplayRef.current}`,
+          getColor: (segment) => segment.color,
+          getWidth: TRACK_FALLBACK_INNER_WIDTH_PX,
+          widthMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX,
+        }),
+        new ScatterplotLayer<DiagnosticLineVertex>({
+          ...jointPositions,
+          id: `track-line-fallback-color-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          getFillColor: (vertex) => vertex.color,
+          getRadius: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          radiusMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+        }),
+      ];
+    } else {
+      primaryTrackLayers = [
+        new MultiColorPathLayer({
+          ...primaryTrackProps,
+          getColor: (flight) => flight.colors,
+          updateTriggers: { getColor: d },
+        }),
+      ];
+    }
     overlay.setProps({
       layers: [
         ...companion.opaqueTracks,
-        primaryTrackLayer,
+        ...primaryTrackLayers,
         ...curtainLayers,
         // Blend translucent ribbons after opaque tracks and trails. They test
         // existing depth but must not block other tracks from showing through.
@@ -2323,7 +2407,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           ref={containerRef}
           data-render-ready="false"
           data-scored-route={xcRoute?.shape ?? "hidden"}
-          data-track-renderer={trackDiagnosticMode ?? "production"}
+          data-track-renderer={trackDiagnosticMode ?? (trackLineFallback ? "line-fallback" : "production")}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
         {children}
