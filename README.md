@@ -157,13 +157,21 @@ than silently choosing the nearest candidate.
 Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
 `prisma migrate deploy` as the pre-deploy step, `/api/health` health check).
 
-1. Create a Railway project; add a **Postgres** plugin (provides `DATABASE_URL`).
+1. Create a Railway project; add a **Postgres** service (provides `DATABASE_URL`).
 2. Add the web service from this repo.
-3. Set env vars: `DATABASE_URL` (from the Postgres plugin), `AUTH_SECRET`,
-   `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in production), `AUTH_EMAIL_FROM`,
-   `RESEND_API_KEY`, and optionally `NEXT_PUBLIC_MAPTILER_KEY`.
+3. Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the web service to use
+   Railway's private network. Do not point it at `DATABASE_PUBLIC_URL`. Set
+   `AUTH_SECRET`, `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in
+   production), `AUTH_EMAIL_FROM`, `RESEND_API_KEY`, and optionally
+   `NEXT_PUBLIC_MAPTILER_KEY`.
 4. Deploy — `prisma migrate deploy` runs automatically before each release. No
    site seeding step — sites are fully community-driven.
+
+The build (`prisma generate && next build`) does not use the database, so no
+`DATABASE_BUILD_URL` is needed. Railway's pre-deploy migration runs after the
+build with private-network access; the running app uses the same private
+`DATABASE_URL`. Keep a public database URL only for clients outside Railway,
+not as a web-service variable.
 
 ## Project structure
 
