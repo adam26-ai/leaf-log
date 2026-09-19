@@ -17,8 +17,8 @@ export async function waitForMapReady(map: Locator) {
 /** Exercise one isolated path mechanism without changing the flight/view. */
 export async function selectTrackDiagnosticRenderer(
   page: Page,
-  label: "Stock path" | "Outline shader" | "Vertex colors",
-  mode: "stock" | "outline" | "multicolor",
+  label: "2-point path" | "256-point path" | "Colored segments",
+  mode: "path2" | "path256" | "lines",
 ) {
   const controls = page.getByRole("group", { name: "Track renderer diagnostic" });
   await controls.getByRole("button", { name: label, exact: true }).click();

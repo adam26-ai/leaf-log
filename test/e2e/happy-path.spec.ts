@@ -76,13 +76,13 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   // The server-rendered header can be visible while the replay's WebGL map is
   // still starting. Let its first frame finish before testing link navigation.
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
-  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "stock");
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "path2");
   await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" }).getByRole("button")).toHaveCount(3);
   await expect(anonPage.locator('[data-gpu-report="ready"]')).toBeAttached();
   await expect(anonPage.getByText("Device report", { exact: true })).toBeVisible();
-  await selectTrackDiagnosticRenderer(anonPage, "Outline shader", "outline");
-  await selectTrackDiagnosticRenderer(anonPage, "Vertex colors", "multicolor");
-  await selectTrackDiagnosticRenderer(anonPage, "Stock path", "stock");
+  await selectTrackDiagnosticRenderer(anonPage, "256-point path", "path256");
+  await selectTrackDiagnosticRenderer(anonPage, "Colored segments", "lines");
+  await selectTrackDiagnosticRenderer(anonPage, "2-point path", "path2");
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();
