@@ -1,4 +1,5 @@
 import type { Attribute } from "@deck.gl/core";
+import { PathLayer } from "@deck.gl/layers";
 import { OutlinedPathLayer } from "./outlined-path-layer";
 
 export type PathColor = [number, number, number] | [number, number, number, number];
@@ -36,6 +37,27 @@ function calculateColors(
   attribute.value = value;
 }
 
+function vertexColorAttribute() {
+  return {
+    size: 4,
+    type: "unorm8" as const,
+    accessor: "getColor" as const,
+    update: calculateColors,
+  };
+}
+
+/** Diagnostic variant that keeps per-vertex colors but uses stock PathLayer shaders. */
+export class PlainMultiColorPathLayer extends PathLayer<MultiColorPathDatum> {
+  static override layerName = "PlainMultiColorPathLayer";
+
+  override initializeState() {
+    super.initializeState();
+    const attributeManager = this.getAttributeManager();
+    attributeManager?.remove(["instanceColors"]);
+    attributeManager?.addInstanced({ instanceColors: vertexColorAttribute() });
+  }
+}
+
 /**
  * One continuous PathLayer whose individual segments may have different
  * colors. This follows deck.gl's attribute-calculation extension so the
@@ -50,13 +72,6 @@ export class MultiColorPathLayer extends OutlinedPathLayer<MultiColorPathDatum> 
     // Replace PathLayer's object-level color accessor with one color per path
     // vertex. Removing it first also releases the original GPU buffer.
     attributeManager?.remove(["instanceColors"]);
-    attributeManager?.addInstanced({
-      instanceColors: {
-        size: 4,
-        type: "unorm8",
-        accessor: "getColor",
-        update: calculateColors,
-      },
-    });
+    attributeManager?.addInstanced({ instanceColors: vertexColorAttribute() });
   }
 }

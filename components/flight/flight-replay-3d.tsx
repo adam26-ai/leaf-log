@@ -4,10 +4,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Reac
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, LineLayer, SolidPolygonLayer, TextLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
-import { MultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
+import { MultiColorPathLayer, PlainMultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
 import { Card } from "@/components/ui/card";
 import { locateSample, type Sample } from "@/lib/igc/interpolate";
 import { altitudeAnchorY, cameraSpring, chaseCourse, trackingFrequency } from "@/lib/flights/replay-camera";
@@ -224,7 +224,12 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 }
 
 export type TrackDisplayMode = "elapsed" | "full";
-type TrackDiagnosticMode = "points" | "segments";
+type TrackDiagnosticMode = "stock" | "outline" | "multicolor";
+const TRACK_DIAGNOSTIC_MODES: ReadonlyArray<{ mode: TrackDiagnosticMode; label: string }> = [
+  { mode: "stock", label: "Stock path" },
+  { mode: "outline", label: "Outline shader" },
+  { mode: "multicolor", label: "Vertex colors" },
+];
 
 interface TrackDiagnosticSnapshot {
   capturedAt: string;
@@ -602,7 +607,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("trackDebug") !== "1") return;
-    const mode: TrackDiagnosticMode = params.get("trackMode") === "segments" ? "segments" : "points";
+    const requestedMode = params.get("trackMode");
+    const mode: TrackDiagnosticMode = requestedMode === "outline" || requestedMode === "multicolor"
+      ? requestedMode
+      : "stock";
     trackDiagnosticModeRef.current = mode;
     setTrackDiagnosticMode(mode);
     const lumaLog = (globalThis as LumaDiagnosticsGlobal).luma?.log;
@@ -1297,62 +1305,30 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       capRounded: true,
       jointRounded: true,
     };
-    const diagnosticPoints = diagnosticMode
-      ? displayedTracks.flatMap((track) =>
-          track.path.map((point) => [point[0], point[1], zOf(point[2])] as [number, number, number]),
-        )
-      : [];
-    type DiagnosticSegment = {
-      source: [number, number, number];
-      target: [number, number, number];
-    };
-    const diagnosticSegments: DiagnosticSegment[] = [];
-    if (diagnosticMode === "segments") {
-      for (const track of displayedTracks) {
-        for (let index = 1; index < track.path.length; index++) {
-          const source = track.path[index - 1];
-          const target = track.path[index];
-          diagnosticSegments.push({
-            source: [source[0], source[1], zOf(source[2])],
-            target: [target[0], target[1], zOf(target[2])],
-          });
-        }
-      }
-    }
-    const diagnosticParameters = { depthWriteEnabled: false, depthCompare: "always" as const };
-    const primaryTrackLayer: Layer = diagnosticMode === "points"
-      ? new ScatterplotLayer<[number, number, number]>({
-          id: `track-points-${identities.flightId}-${trackDisplayRef.current}`,
-          data: diagnosticPoints,
-          getPosition: (point) => point,
-          getRadius: 3,
-          radiusUnits: "pixels",
-          radiusMinPixels: 3,
-          filled: true,
-          stroked: true,
-          getFillColor: LEAF_GREEN,
-          getLineColor: [20, 20, 20],
-          lineWidthUnits: "pixels",
-          getLineWidth: 1,
-          parameters: diagnosticParameters,
+    const primaryTrackLayer: Layer = diagnosticMode === "stock"
+      ? new PathLayer<MultiColorPathDatum>({
+          ...primaryTrackProps,
+          id: `track-stock-${identities.flightId}-${trackDisplayRef.current}`,
+          getColor: LEAF_GREEN,
         })
-      : diagnosticMode === "segments"
-        ? new LineLayer<DiagnosticSegment>({
-            id: `track-segments-${identities.flightId}-${trackDisplayRef.current}`,
-            data: diagnosticSegments,
-            getSourcePosition: (segment) => segment.source,
-            getTargetPosition: (segment) => segment.target,
-            getColor: LEAF_GREEN,
-            getWidth: 4,
-            widthUnits: "pixels",
-            widthMinPixels: 4,
-            parameters: diagnosticParameters,
-          })
-        : new MultiColorPathLayer({
+      : diagnosticMode === "outline"
+        ? new OutlinedPathLayer<MultiColorPathDatum>({
             ...primaryTrackProps,
-            getColor: (flight) => flight.colors,
-            updateTriggers: { getColor: d },
-          });
+            id: `track-outline-${identities.flightId}-${trackDisplayRef.current}`,
+            getColor: LEAF_GREEN,
+          })
+        : diagnosticMode === "multicolor"
+          ? new PlainMultiColorPathLayer({
+              ...primaryTrackProps,
+              id: `track-multicolor-${identities.flightId}-${trackDisplayRef.current}`,
+              getColor: (flight) => flight.colors,
+              updateTriggers: { getColor: d },
+            })
+          : new MultiColorPathLayer({
+              ...primaryTrackProps,
+              getColor: (flight) => flight.colors,
+              updateTriggers: { getColor: d },
+            });
     overlay.setProps({
       layers: [
         ...companion.opaqueTracks,
@@ -2263,7 +2239,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div role="group" aria-label="Track renderer diagnostic" className="flex flex-wrap items-center gap-1">
               <span className="mr-1 font-semibold">Track renderer</span>
-              {(["points", "segments"] as const).map((mode) => (
+              {TRACK_DIAGNOSTIC_MODES.map(({ mode, label }) => (
                 <button
                   key={mode}
                   type="button"
@@ -2271,7 +2247,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
                   onClick={() => selectTrackDiagnosticMode(mode)}
                   className={`rounded px-2 py-1 font-medium ${trackDiagnosticMode === mode ? "bg-ink text-paper" : "bg-gray-100 text-ink"}`}
                 >
-                  {mode === "points" ? "Points" : "Segments"}
+                  {label}
                 </button>
               ))}
             </div>

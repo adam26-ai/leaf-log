@@ -14,12 +14,17 @@ export async function waitForMapReady(map: Locator) {
   await map.and(map.page().locator('[data-render-ready="true"]')).waitFor();
 }
 
-/** Exercise the opt-in primitive diagnostic without changing the flight/view. */
-export async function selectTrackDiagnosticRenderer(page: Page, label: "Points" | "Segments", mode: "points" | "segments") {
+/** Exercise one isolated path mechanism without changing the flight/view. */
+export async function selectTrackDiagnosticRenderer(
+  page: Page,
+  label: "Stock path" | "Outline shader" | "Vertex colors",
+  mode: "stock" | "outline" | "multicolor",
+) {
   const controls = page.getByRole("group", { name: "Track renderer diagnostic" });
   await controls.getByRole("button", { name: label, exact: true }).click();
   await expect(controls.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", mode);
+  await expect(page).toHaveURL(new RegExp(`[?&]trackMode=${mode}(?:&|$)`));
 }
 
 /** Typing only searches; explicitly add the name to the unsaved flight. */
