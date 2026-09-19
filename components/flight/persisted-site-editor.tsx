@@ -1,0 +1,32 @@
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getSiteEditorAction, saveSiteEditorAction, type SiteEditorContext } from "@/app/settings/sites/editor-actions";
+import { SiteEditor } from "./site-editor";
+import { Button } from "@/components/ui/button";
+
+export type SiteEditorData = Awaited<ReturnType<typeof getSiteEditorAction>>;
+
+export function PersistedSiteEditor({ context, initialName, initialData, onSaved, onCancel }: {
+  context: SiteEditorContext; initialName?: string; onSaved: (site: { id: string; name: string }) => void; onCancel: () => void;
+  initialData?: SiteEditorData;
+}) {
+  const router = useRouter();
+  const [data, setData] = useState<SiteEditorData | null>(initialData ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const { siteId, flightId, endpoint, create } = context;
+  useEffect(() => {
+    if (initialData) return;
+    let cancelled = false;
+    getSiteEditorAction({ siteId, flightId, endpoint, create }).then(result => { if (!cancelled) setData(result); })
+      .catch(error => { if (!cancelled) setError(error instanceof Error ? error.message : "Could not load site details."); });
+    return () => { cancelled = true; };
+  }, [siteId, flightId, endpoint, create, initialData]);
+  if (!data) return <><p role={error ? "alert" : "status"}>{error ?? "Loading site details…"}</p><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button></>;
+  return <SiteEditor initial={initialName === undefined ? data.initial : { ...data.initial, name: initialName }} pinSource={data.pinSource} flightPoint={data.flightPoint} canChangeVisibility={data.canChangeVisibility} usageCount={data.usageCount}
+    onCancel={onCancel} onSave={async draft => {
+      const result = await saveSiteEditorAction({ draft, context, expectedFlightRevision: data.expectedFlightRevision });
+      if (!result.ok) throw new Error(result.error);
+      router.refresh(); onSaved(result.value);
+    }} />;
+}

@@ -13,6 +13,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "check": "node scripts/check.mjs",
+    "check:gates": "node scripts/check.mjs gates",
+    "check:e2e": "node scripts/check.mjs e2e",
+    "check:linux": "node scripts/check-linux.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "prisma migrate dev",
@@ -76,6 +80,6 @@
     "vitest": "^4.1.9"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.14.0"
   }
 }

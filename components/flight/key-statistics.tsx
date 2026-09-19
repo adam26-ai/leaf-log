@@ -22,25 +22,23 @@ import { XcPendingRefresh } from "./xc-pending-refresh";
 import { XcStatistic } from "./xc-statistic";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { WingIcon } from "@/components/icons/wing-icon";
+import type { XcCandidate } from "@/lib/igc/xc-types";
 import { isLogbookEntry } from "@/lib/flights/recording";
 
 function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: LucideIcon; label: string; value: string; seek?: ReplayMetric; description?: string; onClick?: () => void }) {
   const content = (
     <>
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
-          <Icon className="h-3.5 w-3.5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
-        </span>
-        <span
-          className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink"
-          title={value}
-        >
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+        <Icon aria-hidden="true" className="h-5 w-5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink" title={value}>
           {value}
         </span>
+        <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500" title={label}>
+          {label}
+        </span>
       </div>
-      <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
     </>
   );
   return seek || onClick ? (
@@ -48,19 +46,21 @@ function Stat({ icon: Icon, label, value, seek, description, onClick }: { icon: 
       type="button"
       onClick={onClick ?? (() => seek && seekReplayToMetric(seek))}
       title={description ?? `Go to ${label.toLowerCase()}`}
-      className="flex min-w-0 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
+      className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
     >
       {content}
     </button>
-  ) : <div title={description} className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5">{content}</div>;
+  ) : <div title={description} className="flex min-w-0 items-center gap-2 px-2 py-1.5">{content}</div>;
 }
 
 /** Compact statistics strip: one row on desktop and a small grid on narrow screens. */
-export function KeyStatistics({ flight, canCalculateXc = false, friend = false, onRefresh }: {
+export function KeyStatistics({ flight, canCalculateXc = false, friend = false, onRefresh, xcRoute, onCycleXc }: {
   flight: FlightStatistics;
   canCalculateXc?: boolean;
   friend?: boolean;
   onRefresh?: () => void;
+  xcRoute?: XcCandidate;
+  onCycleXc?: () => void;
 }) {
   const { units } = useUnits();
   const statistics: [string, LucideIcon, string, ReplayMetric?][] = [
@@ -79,7 +79,7 @@ export function KeyStatistics({ flight, canCalculateXc = false, friend = false, 
         style={friend ? { "--replay-icon": "var(--replay-group-companion)" } as CSSProperties : undefined}>
         <XcPendingRefresh pending={analysisPending(flight.xcStatus)} onRefresh={onRefresh} />
         {statistics.map(([label, Icon, value, seek]) => (
-          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} owner={canCalculateXc} onRefresh={onRefresh} /> :
+          label === "XC distance" ? <XcStatistic key={flight.id} flight={flight} selectedRoute={xcRoute} onCycle={onCycleXc} owner={canCalculateXc} onRefresh={onRefresh} /> :
           <Stat key={label} label={label} icon={Icon} value={value} seek={isLogbookEntry(flight) ? undefined : seek} />
         ))}
     </div>

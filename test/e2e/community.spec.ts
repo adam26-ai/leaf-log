@@ -1,7 +1,9 @@
-import { uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { expectSiteVisibility, waitForMapReady } from "./helpers";
+import { test, expect, type Page } from "./fixtures";
+import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { foldName } from "@/lib/sites/name";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -47,46 +49,55 @@ function remoteFlightIgc(lat: number, lon: number, seed: number): Buffer {
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
 }
 
-test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from someone else's flight", async ({
-  page,
-  browser,
-}) => {
-  const suffix = `${Date.now()}`;
-  const aHandle = `commA${suffix}`.slice(0, 18);
-  const bHandle = `commB${suffix}`.slice(0, 18);
-  const cHandle = `commC${suffix}`.slice(0, 18);
+async function createPublicFlight(page: Page) {
+  const suffix = String(Date.now());
+  const aHandle = `comma${suffix}`.slice(0, 18);
   const lat = 33.0 + (Number(suffix) % 5000) * 0.001;
-  const lon = -180.0 + 33.0;
-
+  const lon = -147;
   await signUp(page, `comm_a_${suffix}@test.local`, aHandle, "Community A");
-
-  // Pilot A: upload, name the site PUBLIC, make the flight itself public.
-  await page.goto("/upload");
-  await uploadFlight(page, {
+  // Arrange an existing public flight. Use real authenticated ingestion, then
+  // seed only the site's initial relationship in this suite's isolated schema.
+  // Upload/picker/site creation have dedicated browser workflows; these tests
+  // exercise community permissions and persistence with actual server actions.
+  const response = await page.request.post("/api/upload", { multipart: { files: {
     name: "comm-a.igc",
     mimeType: "text/plain",
     buffer: remoteFlightIgc(lat, lon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  const flightUrl = page.url();
-
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
   const siteName = `E2E Community Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+  const db = new PrismaClient();
+  let siteId: string;
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle: aHandle } });
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    expect(flight.ownerId).toBe(owner.id);
+    const site = await db.site.create({ data: {
+      name: siteName, normalizedName: foldName(siteName), kind: "takeoff",
+      lat, lon, pinSource: "flight_gps", ownerId: owner.id, visibility: "public",
+    } });
+    siteId = site.id;
+    await db.flight.update({ where: { id: flightId }, data: {
+      visibility: "public", takeoffSiteId: site.id, takeoffSiteName: siteName,
+      takeoffSiteAssignment: "user_selected",
+    } });
+  } finally {
+    await db.$disconnect();
+  }
+  const flightUrl = new URL(`/flights/${flightId}`, page.url()).href;
+  return { suffix, flightUrl, siteName, siteId };
+}
 
-  await page.goto(`${flightUrl}/edit`);
-  await page.getByRole("button", { name: "Public", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.goto(flightUrl);
-
+test("a non-owner renames a public site while visibility remains owner-only", async ({ page, newContext }) => {
+  const { suffix, flightUrl, siteName } = await createPublicFlight(page);
+  const bHandle = `commB${suffix}`.slice(0, 18);
   // Pilot B: a completely separate context, viewing pilot A's public flight
   // — the label must be clickable even though this isn't B's own flight.
-  const bContext = await browser.newContext();
+  const bContext = await newContext();
   const bPage = await bContext.newPage();
   await signUp(bPage, `comm_b_${suffix}@test.local`, bHandle, "Community B");
   await bPage.goto(flightUrl);
@@ -97,49 +108,80 @@ test("SPRINT-007: a non-owner reaches, renames, and endorses a public site from 
   await expect(siteButton).toBeEnabled({ timeout: 10_000 });
   await siteButton.click();
   await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
-  await bPage.getByRole("button", { name: "Rename", exact: true }).click();
-  const nameInput = bPage.locator("input[maxlength='60']");
+  await bPage.getByRole("button", { name: "Edit site", exact: true }).click();
+  const editor = bPage.getByRole("dialog", { name: "Site details" });
+  await expectSiteVisibility(editor, "public");
+  await editor.getByRole("button", { name: "Private", exact: true }).click();
+  await expect(editor.getByRole("status").filter({ hasText: "Only the site owner can change visibility." })).toBeVisible();
+  await expectSiteVisibility(editor, "public");
+  const nameInput = editor.getByLabel("Name", { exact: true });
   await nameInput.fill(newName);
-  await bPage.getByRole("button", { name: "Save name" }).click();
+  await editor.getByRole("button", { name: "Save site", exact: true }).click();
   // The rename must be visible LIVE, with no reload — both the dialog's own
   // header and the underlying flight's h1 (via SiteNameControl's onRenamed
   // callback). A prior version of this dialog updated neither until reload.
-  await expect(bPage.getByRole("button", { name: "Save name" })).not.toBeVisible({ timeout: 5_000 });
+  await expect(editor.getByRole("button", { name: "Save site", exact: true })).toHaveCount(0);
   await expect(bPage.locator("h2").getByText(newName, { exact: true })).toBeVisible({ timeout: 5_000 });
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 5_000 });
   await bPage.getByRole("button", { name: "Close", exact: true }).click();
 
-  // Still true after a reload, and for pilot A too — whose own cached
-  // flight-header name follows the same live site row.
+  // Still true after a reload, and in the owner's independent session.
   await bPage.reload();
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-  await page.reload();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-
-  // Pilot C endorses it — a third, independent viewer.
-  const cContext = await browser.newContext();
-  const cPage = await cContext.newPage();
-  await signUp(cPage, `comm_c_${suffix}@test.local`, cHandle, "Community C");
-  await cPage.goto(flightUrl);
-  await expect(cPage.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
-  await cPage.locator("h1 button").click();
-  await expect(cPage.getByText("0 endorsements")).toBeVisible({ timeout: 5_000 });
-  await cPage.getByRole("button", { name: "Endorse", exact: true }).click();
-  await expect(cPage.getByText("1 endorsement", { exact: true })).toBeVisible({ timeout: 5_000 });
-  await expect(cPage.getByRole("button", { name: /Endorsed/ })).toBeVisible();
-
-  await cContext.close();
   await bContext.close();
+  await page.goto(flightUrl);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(newName, { timeout: 10_000 });
 });
 
-// SPRINT-007 used to add a "Contributors & endorsements" entry point to the
-// flight owner's own naming/editing dialog (NameSiteDialog), since without
-// one an owner had no way to reach community info for their OWN site at
-// all — a stranger could always reach it directly (see the test above),
-// but the owner's h1 click always opened the bind-a-site flow instead.
-// Removed again after this sprint's own simplification pass: the
-// site-edit view no longer surfaces "Contributors & endorsements" at all,
-// so the owner has gone back to relying on some OTHER viewer's endorsement
-// of their site, or (if they want to see it themselves) viewing their own
-// public flight the way a stranger would. No e2e coverage for that
-// specific owner-reachability path remains, by design.
+test("an independent pilot endorses a public site and remains endorsed after reload", async ({ page, newContext }) => {
+  const { suffix, flightUrl, siteName } = await createPublicFlight(page);
+  // The owner can leave the flight while the other pilot uses it. Release the
+  // idle replay's WebGL resources; keep the signed-in context for verification.
+  await page.goto("/logbook");
+  const cContext = await newContext();
+  const cPage = await cContext.newPage();
+  await signUp(cPage, `comm_c_${suffix}@test.local`, `commC${suffix}`.slice(0, 18), "Community C");
+  await cPage.goto(flightUrl);
+  await waitForMapReady(cPage.locator(".flight-replay-map"));
+  await expect(cPage.getByRole("heading", { level: 1 })).toHaveText(siteName);
+  await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const dialog = cPage.getByRole("dialog", { name: "Site details" });
+  await expect(dialog.getByText("0 endorsements")).toBeVisible();
+  await waitForMapReady(dialog.getByTestId("site-area-map"));
+  await dialog.getByRole("button", { name: "Endorse", exact: true }).click();
+  await expect(dialog.getByText("1 endorsement", { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await cPage.reload();
+  // Persistence checks use site details, not the replay renderer. Its terrain
+  // can take tens of seconds to become idle after each navigation in CI.
+  await cPage.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const reloadedDialog = cPage.getByRole("dialog", { name: "Site details" });
+  await expect(reloadedDialog.getByRole("button", { name: /Endorsed/ })).toBeVisible();
+  await expect(reloadedDialog.getByText("1 endorsement", { exact: true })).toBeVisible();
+  await cContext.close();
+});
+
+test("a site owner sees another pilot's persisted endorsement", async ({ page }) => {
+  const { suffix, flightUrl, siteId, siteName } = await createPublicFlight(page);
+  // The mutation and reload are exercised above. Arrange an existing vote from
+  // a different profile so this owner-view check has its own rendering budget.
+  const db = new PrismaClient();
+  try {
+    const voter = await db.user.create({ data: {
+      email: `comm_voter_${suffix}@test.local`,
+      profile: { create: { handle: `commV${suffix}`.slice(0, 18), displayName: "Community Voter" } },
+    } });
+    await db.siteEndorsement.create({ data: { siteId, profileId: voter.id } });
+  } finally {
+    await db.$disconnect();
+  }
+  await page.goto(flightUrl);
+  await waitForMapReady(page.locator(".flight-replay-map"));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName);
+  await page.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const ownerDialog = page.getByRole("dialog", { name: "Site details" });
+  await waitForMapReady(ownerDialog.getByTestId("site-area-map"));
+  await ownerDialog.getByRole("button", { name: "Community & history", exact: true }).click();
+  await expect(ownerDialog.getByText("1 endorsement", { exact: true })).toBeVisible();
+  await expect(ownerDialog.getByRole("button", { name: "Endorse", exact: true })).toBeVisible();
+});

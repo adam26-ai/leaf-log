@@ -6,6 +6,7 @@ import { getCurrentProfile } from "@/lib/profile";
 import { prisma } from "@/lib/prisma";
 import {
   getFlightForViewer,
+  trophiesForVisibleFlights,
   listOwnFlights,
   listProfileFlightsForViewer,
 } from "@/lib/flights/repo";
@@ -45,6 +46,7 @@ export default async function FlightPage({
   const flight = await getFlightForViewer(id, viewerId);
   if (!flight) notFound();
 
+  const trophies = (await trophiesForVisibleFlights([flight]))[flight.id] ?? [];
   const isOwner = viewerId === flight.ownerId;
   const warnings = Array.isArray(flight.parseWarnings)
     ? (flight.parseWarnings as string[])
@@ -85,9 +87,10 @@ export default async function FlightPage({
       <AppHeader profile={viewer} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-2 pt-3 sm:px-6">
-        <div className="relative left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+        <div className="relative z-40 left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <FlightHeader
             flight={flight}
+            trophies={trophies}
             isOwner={isOwner}
             previousFlightId={previousFlightId}
             nextFlightId={nextFlightId}
@@ -150,7 +153,7 @@ export default async function FlightPage({
             <div className="relative z-30 left-1/2 mt-2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
               <KeyStatistics flight={flight} canCalculateXc={isOwner} />
             </div>
-            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} lat={flight.takeoffLat} lon={flight.takeoffLon} siteName={flight.takeoffSiteName} notes={flight.notes} owner={isOwner} /></div>
+            <div className="mt-2"><EntryDetail flightId={flight.id} source={flight.source} locationSource={flight.takeoffLocationSource} lat={flight.takeoffLat} lon={flight.takeoffLon} siteLat={flight.takeoffSiteLat} siteLon={flight.takeoffSiteLon} siteName={flight.takeoffSiteName ?? flight.landingSiteName} notes={flight.notes} owner={isOwner} /></div>
           </> : (
           <FlightViz
             viewerId={viewerId}

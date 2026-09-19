@@ -1,13 +1,14 @@
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { LoadedReplayFlight } from "./use-group-replay";
 import type { FlightStatistics } from "@/lib/flights/statistics";
 import { toggleReplayXcRoute } from "@/lib/flights/replay-events";
 
 const { group } = vi.hoisted(() => {
   const pilot = { id: "self", handle: "self", displayName: "Self", avatarUpdatedAt: null };
-  const flight = { id: "flight", owner: pilot, takeoffMs: 100000, landingMs: 200000, xcScore: { version: 1, best: { shape: "open", distanceM: 10000, optimal: true }, candidates: [] },
+  const flight = { id: "flight", owner: pilot, takeoffMs: 100000, landingMs: 200000, xcScore: { version: 1, best: { shape: "open", distanceM: 10000, optimal: true, vertices: [{ lat: 0, lon: 0, timeMs: 0 }] }, candidates: [] },
     replay: { takeoffMs: 100000, durationS: 100, offsetMin: 0, altSource: "gps", bounds: [0,0,1,1], samples: [[0,0,100,0],[0.001,0,200,10],[0.01,0,100,100]], vario: [0,1,0] },
     photos: [{ id: "photo", flightId: "flight", originalFilename: "test-photo.jpg", tSec: 5, takenAt: new Date(105000).toISOString(), placementSource: "interpolated_time", lat: 0, lon: 0 }] };
   return { group: { flights: [flight], visibleFlights: [flight], selected: flight, primaryReplay: flight.replay, candidates: [flight], pilots: [pilot], bounds: { startMs: 100000, endMs: 200000 }, failures: [], photoFailures: [], isVisible: () => true, select: vi.fn(), toggle: vi.fn(), discover: vi.fn(), reloadPhotos: vi.fn() } };
@@ -15,7 +16,7 @@ const { group } = vi.hoisted(() => {
 vi.mock("./use-group-replay", () => ({ useGroupReplay: () => group }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueMissingFlightAnalysis: vi.fn() }));
-vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ trackDisplay, onPhotoOpen, xcRoute, pilotName }: { trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown; pilotName: string }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)} data-pilot={pilotName}><button onClick={() => onPhotoOpen("photo")}>Map photo</button></div> }));
+vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ children, trackDisplay, onPhotoOpen, xcRoute, pilotName }: { children?: ReactNode; trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown; pilotName: string }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)} data-pilot={pilotName}><button onClick={() => onPhotoOpen("photo")}>Map photo</button>{children}</div> }));
 vi.mock("./barograph", () => ({ BAROGRAPH_PLOT_LEFT_INSET: 40, BAROGRAPH_PLOT_RIGHT_INSET: 10, Barograph: ({ profiles }: { profiles: { id: string; state: string }[] }) => <div>{profiles.map((profile) => <span key={profile.id} data-testid={`profile-${profile.id}`} data-state={profile.state} />)}</div> }));
 import { FlightViz } from "./flight-viz";
 
@@ -35,6 +36,12 @@ it("offers the day calendar for a single own flight even when no companions are 
   fireEvent.click(screen.getByRole("button", { name: "Relive the day" }));
   expect(group.discover).toHaveBeenLastCalledWith(false, true);
   expect(slider).toHaveAttribute("aria-valuenow", "1");
+});
+it("keeps map overlays inside the replay surface", () => {
+  view();
+  const replay = within(screen.getByTestId("replay"));
+  expect(replay.getByTitle("Clock time")).toBeInTheDocument();
+  expect(replay.getByRole("button", { name: "Center on pilot" })).toBeInTheDocument();
 });
 it("labels the selected glider with its owner's profile, using the handle when the display name is blank", () => {
   view();
@@ -128,6 +135,30 @@ it("shows all selected friend's profiles, ghosts our flight, and uses timeline t
   } finally { Object.assign(group, original); }
 });
 
+it.each(["friend", "self"])("shows elapsed time for the selected %s flight on the shared timeline", ownerId => {
+  const original = { ...group };
+  const own = group.flights[0];
+  const owner = ownerId === "self" ? own.owner : { ...own.owner, id: "friend", handle: "friend", displayName: "Friend" };
+  const second = { ...own, id: "second", owner, takeoffMs: 140000, landingMs: 240000,
+    photos: [], replay: { ...own.replay, takeoffMs: 140000 } };
+  Object.assign(group, { flights: [own, second], visibleFlights: [own, second], candidates: [own, second],
+    pilots: ownerId === "self" ? [own.owner] : [own.owner, owner], selected: second,
+    bounds: { startMs: 100000, endMs: 240000 } });
+  const props = { flightId: own.id, primaryPilot: own.owner, viewerId: "self", takeoffMs: 100000, offsetMin: 0 };
+  try {
+    const { rerender } = render(<FlightViz {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Show clock time" }));
+    fireEvent.click(document.querySelector('[data-takeoff-flight="second"]')!);
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Flight playback time" }), { key: "ArrowRight" });
+    expect(screen.getByTitle("Flight time from takeoff")).toHaveTextContent("0:01");
+    group.selected = own;
+    rerender(<FlightViz {...props} />);
+    expect(screen.getByTitle("Flight time from takeoff")).toHaveTextContent("0:41");
+    fireEvent.click(screen.getByRole("button", { name: "Show clock time" }));
+    expect(screen.getByTitle("Clock time")).toHaveTextContent("00:02:21");
+  } finally { Object.assign(group, original); }
+});
+
 it("shows the selected flight's statistics and seeks that flight's metrics on the shared timeline", () => {
   const original = { ...group };
   const own = group.flights[0];
@@ -159,8 +190,32 @@ it("shows the selected flight's statistics and seeks that flight's metrics on th
     expect(group.select).toHaveBeenLastCalledWith(pilot, second.id);
     expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "460");
     group.selected = own;
-    rerender(<FlightViz {...props} />);
-    expect(screen.getByText("Own wing").closest("[data-statistics-flight]"))
-      .toHaveAttribute("data-statistics-pilot", "own");
+    rerender(<FlightViz {...props} viewerId={null} />);
+    const sharedPrimaryStatistics = screen.getByText("Own wing").closest("[data-statistics-flight]");
+    expect(sharedPrimaryStatistics).toHaveAttribute("data-statistics-pilot", "own");
+    expect(sharedPrimaryStatistics).not.toHaveStyle({ "--replay-icon": "var(--replay-group-companion)" });
   } finally { Object.assign(group, original); }
+});
+
+it("uses space before button, slider, and map handlers while leaving typing alone", () => {
+  view();
+  const refresh = screen.getByRole("button", { name: "Refresh friends" });
+  const map = screen.getByTestId("replay");
+  const mapHandler = vi.fn((event: Event) => event.stopPropagation());
+  map.addEventListener("keydown", mapHandler);
+  fireEvent.keyDown(refresh, { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  expect(group.discover).not.toHaveBeenCalled();
+  fireEvent.keyDown(map, { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+  expect(mapHandler).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("slider"), { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  fireEvent.keyDown(refresh, { code: "Space", key: " ", repeat: true });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  const { unmount } = render(<div><input aria-label="Typing" /><div contentEditable suppressContentEditableWarning><span>Editable text</span></div></div>);
+  fireEvent.keyDown(screen.getByLabelText("Typing"), { code: "Space", key: " " });
+  fireEvent.keyDown(screen.getByText("Editable text"), { code: "Space", key: " " });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  unmount();
 });

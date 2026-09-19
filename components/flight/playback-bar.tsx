@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, ChevronUp, Pause, PencilLine, Play } from "lucide-react";
+import { CalendarDays, ChevronUp, Clock3, Pause, PencilLine, Play } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
@@ -13,6 +13,15 @@ function clock(tSec: number, takeoffMs: number, offsetMin: number) {
     .getUTCMinutes()
     .toString()
     .padStart(2, "0")}:${d.getUTCSeconds().toString().padStart(2, "0")}`;
+}
+
+function flightTime(tSec: number) {
+  const seconds = Math.max(0, Math.floor(tSec));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = (seconds % 60).toString().padStart(2, "0");
+  return minutes < 60
+    ? `${minutes}:${remainder}`
+    : `${Math.floor(minutes / 60)}:${(minutes % 60).toString().padStart(2, "0")}:${remainder}`;
 }
 
 import { PLAYBACK_SPEEDS as SPEEDS } from "@/lib/flights/map-defaults";
@@ -273,6 +282,7 @@ export function PlaybackTimeline({
 /** Compact lower-left map card for clock time and playback rate. */
 export function PlaybackStatus({
   time,
+  elapsedTime,
   speed,
   takeoffMs,
   offsetMin,
@@ -282,6 +292,7 @@ export function PlaybackStatus({
   onTrackDisplay,
 }: {
   time: number;
+  elapsedTime: number;
   speed: number;
   takeoffMs: number;
   offsetMin: number;
@@ -291,8 +302,9 @@ export function PlaybackStatus({
   onTrackDisplay: (mode: "elapsed" | "full") => void;
 }) {
   const progressive = trackDisplay === "elapsed";
+  const [showClock, setShowClock] = useState(true);
   return (
-    <Card className="flex items-center gap-2 bg-paper/95 px-2 py-1.5 shadow-sm backdrop-blur-sm">
+    <Card className="flex items-center gap-1 bg-paper/95 px-2 py-1.5 shadow-sm backdrop-blur-sm">
       <button
         type="button"
         disabled={disabled}
@@ -326,9 +338,17 @@ export function PlaybackStatus({
         />
       </button>
       <PlaybackSpeedPicker speed={speed} disabled={disabled} onSpeed={onSpeed} />
-      <span className="w-[4.75rem] text-right font-mono text-xs tabular-nums text-gray-700">
-        {disabled ? "--:--:--" : clock(time, takeoffMs, offsetMin)}
+      <span className="min-w-[3.25rem] text-right font-mono text-xs tabular-nums text-gray-700"
+        title={showClock ? "Clock time" : "Flight time from takeoff"}>
+        {disabled ? "--:--" : showClock ? clock(time, takeoffMs, offsetMin) : flightTime(elapsedTime)}
       </span>
+      <button type="button" disabled={disabled} aria-pressed={showClock}
+        aria-label="Show clock time" title={showClock ? "Clock time (click for flight time from takeoff)" : "Flight time from takeoff (click for clock time)"}
+        onClick={() => setShowClock((current) => !current)}
+        className={cn("grid h-7 w-7 place-items-center rounded border transition-colors disabled:opacity-50",
+          showClock ? "border-[var(--replay-active-border)] bg-[var(--replay-active-bg)] text-[var(--replay-active-fg)]"
+            : "border-[var(--replay-inactive-border)] bg-[var(--replay-inactive-bg)] text-[var(--replay-inactive-fg)] hover:brightness-95")}
+      ><Clock3 className="h-3.5 w-3.5" aria-hidden="true" /></button>
     </Card>
   );
 }

@@ -4,7 +4,7 @@ export const MAX_CSV_BYTES = 2_000_000;
 export const MAX_IMPORT_ROWS = 5000;
 export type CsvTable = { headers: string[]; rows: { line: number; cells: string[] }[] };
 export type ColumnMapping = Partial<Record<EntryField, number>>;
-export type CsvOptions = { dateFormat: "ymd" | "mdy" | "dmy"; durationFormat: "minutes" | "hours" | "clock" | "seconds"; altitudeUnit: "m" | "ft"; distanceUnit: "km" | "mi" | "nmi"; varioUnit: "m/s" | "ft/min" | "knots"; timeZone: string };
+export type CsvOptions = { dateFormat: "ymd" | "mdy" | "dmy"; durationFormat: "minutes" | "hours" | "clock" | "seconds"; altitudeUnit: "m" | "ft"; distanceUnit: "km" | "mi" | "nmi"; varioUnit: "m/s" | "ft/min" | "knots"; timeZone: string; takeoffCoordinateMeaning?: "flight" | "site"; landingCoordinateMeaning?: "flight" | "site" };
 export const CSV_DEFAULTS: CsvOptions = { dateFormat: "ymd", durationFormat: "minutes", altitudeUnit: "m", distanceUnit: "km", varioUnit: "m/s", timeZone: "" };
 export type ImportRow = { line: number; draft: EntryDraft; excluded: boolean; allowDuplicate: boolean };
 
@@ -73,7 +73,13 @@ export function guessColumns(headers: string[]): ColumnMapping {
 export function csvEntries(table: CsvTable, mapping: ColumnMapping, options: CsvOptions): ImportRow[] {
   return table.rows.map(row => {
     const draft: EntryDraft = { ...emptyEntry(), altitudeUnit: options.altitudeUnit, distanceUnit: options.distanceUnit, varioUnit: options.varioUnit, timeZone: options.timeZone };
+    draft.takeoffCoordinateMeaning = options.takeoffCoordinateMeaning ?? "flight";
+    draft.landingCoordinateMeaning = options.landingCoordinateMeaning ?? "flight";
     for (const [field, index] of Object.entries(mapping)) if (index !== undefined && row.cells[index]?.trim()) draft[field as EntryField] = row.cells[index].trim();
+    for (const endpoint of ['takeoff', 'landing'] as const) {
+      const cell = (field: EntryField) => mapping[field] === undefined ? '' : row.cells[mapping[field]!] ?? '';
+      draft[`${endpoint}OriginalLocation`] = JSON.stringify({ name: cell(`${endpoint}SiteName`), latitude: cell(`${endpoint}Lat`), longitude: cell(`${endpoint}Lon`) });
+    }
     const day = /^(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,4})$/.exec(draft.date);
     if (day) {
       const [year, month, date] = options.dateFormat === "ymd" ? [day[1], day[2], day[3]] : options.dateFormat === "mdy" ? [day[3], day[1], day[2]] : [day[3], day[2], day[1]];
@@ -94,6 +100,7 @@ export function csvEntries(table: CsvTable, mapping: ColumnMapping, options: Csv
     const units: Record<string, string> = { meters: "m", metres: "m", feet: "ft", miles: "mi", nauticalmiles: "nmi", kilometers: "km", kilometres: "km", fpm: "ft/min", kt: "knots", kts: "knots" };
     for (const field of ["altitudeUnit", "distanceUnit", "varioUnit"] as const) draft[field] = units[normalize(draft[field])] ?? draft[field].toLowerCase();
     draft.occupancy = draft.occupancy.toLowerCase();
+    draft.flightTypes = draft.flightTypes.toLowerCase().split(/[;,]/).map(value => value.trim()).filter(Boolean).join(";");
     return { line: row.line, draft, excluded: false, allowDuplicate: false };
   });
 }

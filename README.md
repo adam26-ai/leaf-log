@@ -22,7 +22,7 @@ A running log of shipped features lives in [`FEATURES.md`](./FEATURES.md).
 
 ## Prerequisites
 
-- Node 20+ and `pnpm`
+- Node 24.14.0 (see `.node-version`) and `pnpm` 10.28.2
 - Docker (for local Postgres)
 
 ## Local development
@@ -101,31 +101,45 @@ system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 ## Testing
 
 ```bash
+pnpm check       # required before submitting: typecheck, lint, tests, build AND browsers
+pnpm check:linux # reproduce CI in Linux with Docker, pinned runtimes and an isolated database
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # eslint
 pnpm e2e         # Playwright browser suite (needs local Postgres running)
 ```
 
-Integration tests (`*.integration.test.ts`, `lib/sites/lookup.test.ts`) auto-skip
-when `DATABASE_URL` is unset.
+The test suite requires a local `DATABASE_URL` and running PostgreSQL. Missing
+configuration fails immediately instead of skipping integration coverage.
+`pnpm check` uses the same pinned Node version and entry points as CI
+(`check:gates` and `check:e2e`), and rejects focused tests such as `test.only`.
+It requires installed dependencies and Chromium. A passing `pnpm test` alone
+does not validate browser workflows. See [the CI audit](docs/testing.md) for the
+failure history and the rules for changing shared UI workflows.
 
 With a local database configured, the unit/integration suite applies migrations
 to its own temporary schema and removes it afterward. Files run serially because
 they exercise the shared XC queue. Existing development flights are not included
 in backfill tests, so a growing local logbook cannot slow down those checks.
 
-Playwright starts its own server at `http://localhost:3100`, with separate
-`.next-e2e` output and a fresh temporary PostgreSQL schema for each run. It applies
-migrations, generates the IGC fixture, and removes that schema after the run;
-your normal logbook and phone-testing settings are left alone. Real email is
+Playwright builds and starts its own production server at `http://localhost:3100`,
+with separate `.next-e2e` output and a fresh temporary PostgreSQL schema for each
+run. This avoids development rebuilds and Fast Refresh interrupting browser
+interactions. It applies migrations, generates the IGC fixture, and removes the
+schema after the run; your normal logbook and phone-testing settings are left alone. Real email is
 disabled for this server, and its magic links use a separate temporary file.
-Keep port 3100 free. Test traces are saved under `test-results/playwright` on failure.
+Keep port 3100 free. Test traces and screenshots are saved under
+`test-results/playwright` on failure. Open the HTML report with
+`pnpm exec playwright show-report`; CI retains it and both suites' JUnit results
+for seven days, including successful runs.
 
 Install Chromium once with `pnpm exec playwright install chromium` (CI uses
 `--with-deps`). Windows falls back to installed Edge if bundled Chromium is
 missing; `PLAYWRIGHT_CHANNEL=msedge` can also select it explicitly. The test
-browser enables software WebGL for map interactions on machines without a GPU.
+browser explicitly uses software WebGL locally and in CI. Shared browser
+fixtures cover every pilot's session and replace third-party map data; real app
+requests and map rendering remain enabled. Unexpected external requests fail
+with diagnostics instead of silently depending on live services.
 
 ## Sites data
 
@@ -143,13 +157,21 @@ than silently choosing the nearest candidate.
 Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
 `prisma migrate deploy` as the pre-deploy step, `/api/health` health check).
 
-1. Create a Railway project; add a **Postgres** plugin (provides `DATABASE_URL`).
+1. Create a Railway project; add a **Postgres** service (provides `DATABASE_URL`).
 2. Add the web service from this repo.
-3. Set env vars: `DATABASE_URL` (from the Postgres plugin), `AUTH_SECRET`,
-   `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in production), `AUTH_EMAIL_FROM`,
-   `RESEND_API_KEY`, and optionally `NEXT_PUBLIC_MAPTILER_KEY`.
+3. Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the web service to use
+   Railway's private network. Do not point it at `DATABASE_PUBLIC_URL`. Set
+   `AUTH_SECRET`, `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in
+   production), `AUTH_EMAIL_FROM`, `RESEND_API_KEY`, and optionally
+   `NEXT_PUBLIC_MAPTILER_KEY`.
 4. Deploy — `prisma migrate deploy` runs automatically before each release. No
    site seeding step — sites are fully community-driven.
+
+The build (`prisma generate && next build`) does not use the database, so no
+`DATABASE_BUILD_URL` is needed. Railway's pre-deploy migration runs after the
+build with private-network access; the running app uses the same private
+`DATABASE_URL`. Keep a public database URL only for clients outside Railway,
+not as a web-service variable.
 
 ## Project structure
 

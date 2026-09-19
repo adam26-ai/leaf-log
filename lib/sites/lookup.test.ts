@@ -84,7 +84,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       },
     });
     siteIds.push(site.id);
-    return site;
+    return { ...site, lat: site.lat!, lon: site.lon! };
   }
 
   async function createZone(opts: {

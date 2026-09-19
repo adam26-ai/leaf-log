@@ -66,6 +66,10 @@ model Profile {
   // Default visibility applied to newly ingested flights (private | friends | public).
   defaultVisibility  String        @default("private")
   defaultUnits       String        @default("metric")
+  hiddenWings        String[]      @default([])
+  // UI opt-in only; saved wing defaults remain active when controls are hidden.
+  tandemEnabled      Boolean       @default(false)
+  tandemWings        String[]      @default([])
   customUnits        Json?
   mapDefaults        Json?
   // Opt-in: reveals the Ratings tracking section (Flight details tags +
@@ -215,10 +219,12 @@ model Flight {
   // owner's free-text notes about the flight — shown wherever the flight
   // itself is visible, edited only from the flight-edit page
   notes                 String?
-  // solo | tandem; null = solo-equivalent (matches every pre-existing row,
-  // since ingestion never distinguished tandem flights before this). Drives
-  // exact solo-airtime for USHPA ratings (lib/ratings/stats.ts).
+  flightFlags           String[] @default([])
+  // solo | tandem; legacy null remains solo-equivalent. Kept in sync with
+  // the tandem flag for exact solo-airtime in USHPA ratings.
   occupancy             String?
+  // null follows the wing; true/false is the pilot's explicit tandem/solo choice.
+  tandemOverride        Boolean?
   // Self-reported flight-character tags (currently just "XC" — cross
   // country). Separate from launchTypes: this describes the flight as a
   // whole, not how it launched. See lib/ratings/skill-tags.ts.
@@ -254,6 +260,10 @@ model Flight {
   takeoffLon            Float?
   landingLat            Float?
   landingLon            Float?
+  takeoffLocationSource String        @default("legacy")
+  landingLocationSource String        @default("legacy")
+  takeoffLocationEvidence Json?
+  landingLocationEvidence Json?
   bounds                Json?
   // located sites (denormalized name kept for history)
   takeoffSiteId         String?
@@ -323,6 +333,7 @@ model LogbookImport {
   importedCount Int
   skippedCount Int
   snapshot    Json
+  siteChanges Json     @default("[]")
   undoneAt    DateTime?
   createdAt   DateTime @default(now())
   flights     Flight[]
@@ -456,8 +467,11 @@ model Site {
   name           String
   normalizedName String // NFKC + folded, for proximity-scoped dup checks
   kind           String    @default("unknown") // takeoff | landing | both | unknown
-  lat            Float
-  lon            Float
+  lat            Float?
+  lon            Float?
+  pinSource      String    @default("legacy") // manual | csv | flight_gps | legacy
+  autoGroupKey   String? // retry-safe, owner-scoped import/name group identity
+  archivedAt     DateTime?
   countryCode    String?
   region         String?
   source         String    @default("manual") // manual | user
@@ -496,6 +510,7 @@ model Site {
   @@index([lat, lon])
   @@index([ownerId])
   @@index([ownerId, normalizedName])
+  @@unique([ownerId, autoGroupKey])
 }
 
 // SPRINT-005: a specific launch/landing spot within a Site (e.g. "North

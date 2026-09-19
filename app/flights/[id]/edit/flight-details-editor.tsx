@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SuccessStatus } from "@/components/ui/success-status";
 import {
@@ -37,30 +37,47 @@ export function FlightDetailsEditor({
 }) {
   const action = updateFlightDetails.bind(null, flightId);
   const [state, formAction, pending] = useActionState(action, initial);
+  const [tandemTouched, setTandemTouched] = useState(false);
+  const [value, setValue] = useState(details);
+  const [saved, setSaved] = useState(details);
+  const submitted = useRef(details);
+  useEffect(() => { if (state.ok) setSaved(submitted.current); }, [state]);
+  const sameTags = (a: string[], b: string[]) => a.length === b.length && a.every((tag) => b.includes(tag));
+  const dirty = (value.occupancy ?? "solo") !== (saved.occupancy ?? "solo")
+    || !sameTags(value.flightTypeTags, saved.flightTypeTags)
+    || !sameTags(value.launchTypes, saved.launchTypes)
+    || value.restrictedLandingField !== saved.restrictedLandingField;
+  const toggleTag = (field: "flightTypeTags" | "launchTypes", tag: string, checked: boolean) => {
+    setValue((current) => ({ ...current, [field]: checked
+      ? [...current[field], tag] : current[field].filter((item) => item !== tag) }));
+  };
 
   return (
-    <form action={formAction} className="flex flex-col gap-5">
-      <fieldset className="flex flex-col gap-2">
+    <form action={formAction} onSubmit={() => { submitted.current = value; }} className="flex flex-col gap-5">
+      <input type="hidden" name="tandemTouched" value={String(tandemTouched)} />
+      <fieldset disabled={pending} className="flex flex-col gap-2">
         <legend className="text-xs font-medium tracking-wide text-gray-500 uppercase">
           Occupancy
         </legend>
         <div className="flex gap-4">
-          {OCCUPANCIES.map((value) => (
-            <label key={value} className="flex items-center gap-2 text-sm text-ink">
+          {OCCUPANCIES.map((occupancy) => (
+            <label key={occupancy} className="flex items-center gap-2 text-sm text-ink">
               <input
                 type="radio"
                 name="occupancy"
-                value={value}
-                defaultChecked={(details.occupancy ?? "solo") === value}
+                value={occupancy}
+                onClick={() => setTandemTouched(true)}
+                checked={(value.occupancy ?? "solo") === occupancy}
+                onChange={() => { setTandemTouched(true); setValue((current) => ({ ...current, occupancy })); }}
                 className="h-4 w-4 accent-brand-blue"
               />
-              {OCCUPANCY_LABELS[value]}
+              {OCCUPANCY_LABELS[occupancy]}
             </label>
           ))}
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
+      <fieldset disabled={pending} className="flex flex-col gap-2">
         <legend className="text-xs font-medium tracking-wide text-gray-500 uppercase">
           Flight type
         </legend>
@@ -71,7 +88,8 @@ export function FlightDetailsEditor({
                 type="checkbox"
                 name="flightTypeTags"
                 value={tag}
-                defaultChecked={details.flightTypeTags.includes(tag)}
+                checked={value.flightTypeTags.includes(tag)}
+                onChange={(event) => toggleTag("flightTypeTags", tag, event.target.checked)}
                 className="h-4 w-4 accent-brand-blue"
               />
               {FLIGHT_TYPE_TAG_LABELS[tag]} ({tag})
@@ -80,7 +98,7 @@ export function FlightDetailsEditor({
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
+      <fieldset disabled={pending} className="flex flex-col gap-2">
         <legend className="text-xs font-medium tracking-wide text-gray-500 uppercase">
           Launch type
         </legend>
@@ -91,7 +109,8 @@ export function FlightDetailsEditor({
                 type="checkbox"
                 name="launchTypes"
                 value={tag}
-                defaultChecked={details.launchTypes.includes(tag)}
+                checked={value.launchTypes.includes(tag)}
+                onChange={(event) => toggleTag("launchTypes", tag, event.target.checked)}
                 className="h-4 w-4 accent-brand-blue"
               />
               {LAUNCH_TYPE_LABELS[tag]} ({tag})
@@ -100,7 +119,7 @@ export function FlightDetailsEditor({
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
+      <fieldset disabled={pending} className="flex flex-col gap-2">
         <legend className="text-xs font-medium tracking-wide text-gray-500 uppercase">
           Landing
         </legend>
@@ -108,7 +127,8 @@ export function FlightDetailsEditor({
           <input
             type="checkbox"
             name="restrictedLandingField"
-            defaultChecked={details.restrictedLandingField}
+            checked={value.restrictedLandingField}
+            onChange={(event) => setValue((current) => ({ ...current, restrictedLandingField: event.target.checked }))}
             className="h-4 w-4 accent-brand-blue"
           />
           Restricted Landing Field (RLF)
@@ -116,7 +136,7 @@ export function FlightDetailsEditor({
       </fieldset>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" variant={dirty ? "primary" : "outline"} disabled={pending || !dirty}>
           {pending ? "Saving…" : "Save flight details"}
         </Button>
         {state.ok && <SuccessStatus>Saved.</SuccessStatus>}

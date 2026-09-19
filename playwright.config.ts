@@ -25,22 +25,33 @@ process.env.NEXTAUTH_URL = baseURL;
 process.env.RESEND_API_KEY = "";
 process.env.LEAF_E2E = "1";
 
-// Use bundled Chromium in CI; on Windows, Edge is a convenient installed fallback.
+// Use the real Chromium browser's headless mode, not the separate headless
+// shell. This also matches Edge's headless implementation on Windows.
 const channel = process.env.PLAYWRIGHT_CHANNEL ||
-  (!existsSync(chromium.executablePath()) && process.platform === "win32" ? "msedge" : undefined);
+  (!existsSync(chromium.executablePath()) && process.platform === "win32" ? "msedge" : "chromium");
 
 export default defineConfig({
   testDir: "./test/e2e",
   timeout: 60_000,
+  forbidOnly: !!process.env.CI,
   fullyParallel: false,
   workers: 1,
   outputDir: "test-results/playwright",
-  reporter: [["list"], ["./test/e2e/cleanup-reporter.ts"]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    ["junit", { outputFile: "test-results/e2e.xml" }],
+    ["./test/e2e/cleanup-reporter.ts"],
+  ],
   use: {
     baseURL,
     channel,
-    launchOptions: { args: ["--enable-unsafe-swiftshader"] },
+    // Force the CI renderer locally too; allowing SwiftShader alone still lets
+    // a developer's GPU conceal software-rendering failures.
+    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"] },
+    serviceWorkers: "block",
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
@@ -49,6 +60,7 @@ export default defineConfig({
     command: "node --import tsx test/e2e/server.ts",
     url: "http://127.0.0.1:3100/api/health",
     reuseExistingServer: false,
-    timeout: 120_000,
+    // Includes the isolated production build, before any test deadlines start.
+    timeout: 300_000,
   },
 });

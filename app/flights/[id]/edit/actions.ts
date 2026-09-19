@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { OCCUPANCIES, FLIGHT_TYPE_TAGS, LAUNCH_TYPES } from "@/lib/ratings/skill-tags";
+import { flightFlagsSchema } from "@/lib/flights/type-flags";
 import { canAssignInstructor } from "@/lib/ratings/authz";
+import { applyWingTandemDefault, lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
 
 export type NotesState = { error?: string; ok?: boolean };
 
@@ -21,10 +23,16 @@ export async function updateFlightWing(
   if (typeof glider !== "string" || glider.trim().length > 200 || /[\r\n\x00]/.test(glider)) {
     return { error: "Enter a wing name of 200 characters or fewer, on one line." };
   }
-  const result = await prisma.flight.updateMany({
-    where: { id: flightId, ownerId: userId },
-    // Historical pilot labels and the original IGC are never changed by wing edits.
-    data: { glider: glider.trim() || null },
+  const result = await prisma.$transaction(async tx => {
+    const settings = await lockWingSettings(tx, userId);
+    const name = glider.trim() || null;
+    const result = await tx.flight.updateMany({
+      where: { id: flightId, ownerId: userId },
+      // Historical pilot labels and the original IGC are never changed by wing edits.
+      data: { glider: name },
+    });
+    if (result.count) await applyWingTandemDefault(tx, userId, name, wingIsTandem(settings.tandemWings, name), flightId);
+    return result;
   });
   if (!result.count) return { error: "Flight not found." };
   revalidatePath("/", "layout");
@@ -85,15 +93,26 @@ export async function updateFlightDetails(
   const flightTypeTags = pickMultiSelect(formData, "flightTypeTags", FLIGHT_TYPE_TAGS);
   const launchTypes = pickMultiSelect(formData, "launchTypes", LAUNCH_TYPES);
   const restrictedLandingField = formData.get("restrictedLandingField") === "on";
-
-  const res = await prisma.flight.updateMany({
-    where: { id: flightId, ownerId: userId },
-    data: {
-      occupancy: occupancyRaw,
-      flightTypeTags,
-      launchTypes,
-      restrictedLandingField,
-    },
+  const res = await prisma.$transaction(async tx => {
+    await lockWingSettings(tx, userId);
+    const current = await tx.flight.findFirst({ where: { id: flightId, ownerId: userId }, select: { flightFlags: true, occupancy: true } });
+    if (!current) return { count: 0 };
+    const touched = formData.get("tandemTouched") !== "false";
+    const tandem = touched ? occupancyRaw === "tandem" : current.occupancy === "tandem" || current.flightFlags.includes("tandem");
+    return tx.flight.updateMany({
+      where: { id: flightId, ownerId: userId },
+      data: {
+        ...(touched ? { tandemOverride: tandem } : {}),
+        ...tandemFlightData([
+          ...current.flightFlags.filter(flag => flag !== "tow" && flag !== "tandem"),
+          ...(tandem ? ["tandem"] : []),
+          ...(launchTypes.includes("ST") ? ["tow"] : []),
+        ], tandem),
+        flightTypeTags,
+        launchTypes,
+        restrictedLandingField,
+      },
+    });
   });
   if (res.count === 0) return { error: "Flight not found." };
 
@@ -145,5 +164,27 @@ export async function updateInstructor(
 
   revalidatePath(`/flights/${flightId}`);
   revalidatePath(`/flights/${flightId}/edit`);
+  return { ok: true };
+}
+
+export async function saveFlightFlags(flightId: string, input: unknown, tandemTouched = true): Promise<NotesState> {
+  const ownerId = await getCurrentUserId();
+  if (!ownerId) return { error: "Not signed in." };
+  const parsed = flightFlagsSchema.safeParse(input);
+  if (!parsed.success) return { error: "Choose a valid flight type." };
+  if (typeof tandemTouched !== "boolean") return { error: "Choose a valid tandem setting." };
+  const result = await prisma.$transaction(async tx => {
+    await lockWingSettings(tx, ownerId);
+    const current = await tx.flight.findFirst({ where: { id: flightId, ownerId }, select: { launchTypes: true, flightFlags: true, occupancy: true } });
+    if (!current) return { count: 0 };
+    const tandem = tandemTouched ? parsed.data.includes("tandem") : current.occupancy === "tandem" || current.flightFlags.includes("tandem");
+    return tx.flight.updateMany({ where: { id: flightId, ownerId }, data: {
+      ...tandemFlightData(parsed.data, tandem),
+      ...(tandemTouched ? { tandemOverride: tandem } : {}),
+      launchTypes: parsed.data.includes("tow") ? [...new Set([...current.launchTypes, "ST"])] : current.launchTypes.filter(tag => tag !== "ST"),
+    } });
+  });
+  if (!result.count) return { error: "Flight not found." };
+  revalidatePath("/", "layout");
   return { ok: true };
 }

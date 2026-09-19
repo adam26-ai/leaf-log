@@ -1,8 +1,8 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { uploadFlight } from "./helpers";
+import { addEntrySite, uploadFlight } from "./helpers";
 import { PrismaClient } from "@prisma/client";
 
 async function signUp(page: Page) {
@@ -23,6 +23,134 @@ async function signUp(page: Page) {
   return handle;
 }
 
+test("site picker searches visible sites and saves only explicit choices", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const other = await db.user.create({ data: { email: `sites-${handle}@test.local`, profile: { create: { handle: `s${handle}`, displayName: "Other pilot" } } } });
+    const publicSite = await db.site.create({ data: { ownerId: other.id, name: "Picker Pine Mountain", normalizedName: "picker pine mountain", kind: "takeoff", visibility: "public", lat: 45, lon: 6 } });
+    await db.site.create({ data: { ownerId: owner.id, name: "Picker Pine Ridge", normalizedName: "picker pine ridge", kind: "takeoff", visibility: "private" } });
+    await db.site.create({ data: { ownerId: other.id, name: "Picker Pine Secret", normalizedName: "picker pine secret", kind: "takeoff", visibility: "private" } });
+    await page.goto("/upload");
+    await page.getByLabel("Flight date", { exact: true }).fill("2024-06-10");
+    const field = page.getByRole("group", { name: "Flying site", exact: true });
+    const search = field.getByRole("combobox", { name: "Search flying site", exact: true });
+    await search.fill("picker pine");
+    await expect(field.getByRole("option", { name: /Picker Pine Mountain/ })).toBeVisible();
+    await expect(field.getByRole("option", { name: /Picker Pine Ridge/ })).toBeVisible();
+    await expect(field.getByRole("option", { name: /Picker Pine Secret/ })).toHaveCount(0);
+    await expect(field.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
+    await search.press("Enter");
+    await expect(page).toHaveURL(/\/upload$/);
+    expect(await db.flight.count({ where: { ownerId: owner.id } })).toBe(0);
+    await search.press("ArrowDown");
+    await search.press("Enter");
+    await expect(field.getByText("Picker Pine Mountain", { exact: true })).toBeVisible();
+    await page.getByText("Flight positions", { exact: true }).click();
+    await expect(page.getByLabel("Takeoff latitude", { exact: true })).toHaveValue("");
+    await page.getByLabel("Takeoff latitude", { exact: true }).fill("45.001");
+    await page.getByLabel("Takeoff longitude", { exact: true }).fill("6.001");
+    await field.getByRole("button", { name: "Change", exact: true }).click();
+    await search.fill("Discarded replacement");
+    await search.press("Escape");
+    await expect(field.getByText("Picker Pine Mountain", { exact: true })).toBeVisible();
+    await field.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(page.getByLabel("Takeoff latitude", { exact: true })).toHaveValue("45.001");
+    await expect(page.getByLabel("Takeoff longitude", { exact: true })).toHaveValue("6.001");
+    await search.fill("Picker Pine Mountain");
+    await field.getByRole("option", { name: "Picker Pine Mountain Public", exact: true }).click();
+    await page.getByRole("button", { name: "Add manual flight", exact: true }).click();
+    await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
+    const flightId = page.url().split("/").at(-1)!;
+    expect(await db.flight.findUniqueOrThrow({ where: { id: flightId } })).toMatchObject({ takeoffSiteId: publicSite.id, takeoffLat: 45.001, takeoffLon: 6.001 });
+    await page.goto(`/flights/${flightId}/edit`);
+    await expect(field.getByText("Picker Pine Mountain", { exact: true })).toBeVisible();
+    await field.getByRole("button", { name: "Clear", exact: true }).click();
+    await page.getByRole("button", { name: "Save flight details", exact: true }).click();
+    await expect(page).toHaveURL(`/flights/${flightId}`);
+    expect(await db.flight.findUniqueOrThrow({ where: { id: flightId } })).toMatchObject({ takeoffSiteId: null, takeoffLat: 45.001, takeoffLon: 6.001 });
+    expect(await db.site.findUnique({ where: { id: publicSite.id } })).not.toBeNull();
+
+    await page.goto("/upload");
+    await addEntrySite(page, "Picker Unsaved Meadow");
+    expect(await db.site.count({ where: { ownerId: owner.id, name: "Picker Unsaved Meadow" } })).toBe(0);
+    await page.goto("/logbook");
+    expect(await db.site.count({ where: { ownerId: owner.id, name: "Picker Unsaved Meadow" } })).toBe(0);
+    await page.goto("/upload");
+    await page.getByLabel("Flight date", { exact: true }).fill("2024-06-11");
+    await page.setViewportSize({ width: 320, height: 844 });
+    await addEntrySite(page, "Picker New Meadow");
+    await page.getByText("More flight details", { exact: true }).click();
+    await addEntrySite(page, "Picker Landing Meadow", "Landing site");
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole("button", { name: "Add manual flight", exact: true }).click();
+    await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
+    const created = await db.flight.findUniqueOrThrow({ where: { id: page.url().split("/").at(-1)! }, include: { takeoffSite: true, landingSite: true } });
+    expect(created.takeoffSite).toMatchObject({ name: "Picker New Meadow", visibility: "private", lat: null, lon: null });
+    expect(created.landingSite).toMatchObject({ name: "Picker Landing Meadow", visibility: "private", lat: null, lon: null });
+    await page.getByRole("link", { name: "Edit flight", exact: true }).click();
+    await expect(field.getByText("Picker New Meadow", { exact: true })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Landing site", exact: true }).getByText("Picker Landing Meadow", { exact: true })).toBeVisible();
+  } finally { await db.$disconnect(); }
+});
+
+test("site replacement and deletion require confirmation and preserve flight records", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const other = await db.user.create({ data: { email: `replace-${handle}@test.local`, profile: { create: { handle: `r${handle}`, displayName: "Other pilot" } } } });
+    const source = await db.site.create({ data: { ownerId: owner.id, name: "Original Ridge", normalizedName: "original ridge", kind: "both", visibility: "public", lat: 45, lon: 6 } });
+    const target = await db.site.create({ data: { ownerId: owner.id, name: "Replacement Meadow", normalizedName: "replacement meadow", kind: "takeoff", visibility: "private" } });
+    await db.site.create({ data: { ownerId: other.id, name: "Hidden replacement", normalizedName: "hidden replacement", visibility: "private" } });
+    const flight = await db.flight.create({ data: { ownerId: owner.id, recordingKind: "logbook", source: "manual_entry", status: "ready", takeoffSiteId: source.id, landingSiteId: source.id, takeoffLat: 45, takeoffLon: 6, landingLat: 44, landingLon: 5, notes: "Keep my flight" } });
+    const stranger = await db.flight.create({ data: { ownerId: other.id, takeoffSiteId: source.id, status: "ready" } });
+    await page.goto("/settings/sites");
+    const list = page.getByRole("region", { name: "Sites list", exact: true });
+    await list.getByRole("button", { name: /Original Ridge/ }).click();
+    const flights = page.getByRole("region", { name: "Flights at this site (1)", exact: true });
+    await flights.getByRole("button", { name: "Replace site", exact: true }).click();
+    const replacement = page.getByRole("dialog", { name: "Replace site in your logbook", exact: true });
+    await expect(replacement.getByRole("button", { name: /Hidden replacement/ })).toHaveCount(0);
+    await replacement.getByRole("button", { name: "Replacement Meadow Private · Name only", exact: true }).click();
+    await expect(replacement.getByRole("button", { name: "Replace in 1 flight", exact: true })).toBeVisible();
+    expect(await db.flight.findUnique({ where: { id: flight.id } })).toEqual(flight);
+    await replacement.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await db.flight.findUnique({ where: { id: flight.id } })).toEqual(flight);
+    await flights.getByRole("button", { name: "Replace site", exact: true }).click();
+    await replacement.getByRole("button", { name: "Replacement Meadow Private · Name only", exact: true }).click();
+    await replacement.getByRole("button", { name: "Replace in 1 flight", exact: true }).click();
+    await expect(replacement).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "Replaced Original Ridge" })).toBeVisible();
+    await page.reload();
+    expect(await db.flight.findUnique({ where: { id: flight.id } })).toMatchObject({ takeoffSiteId: target.id, landingSiteId: target.id, takeoffLat: 45, takeoffLon: 6, landingLat: 44, landingLon: 5, notes: "Keep my flight" });
+    expect(await db.flight.findUnique({ where: { id: stranger.id } })).toEqual(stranger);
+    expect(await db.site.findUnique({ where: { id: source.id } })).toEqual(source);
+    expect(await db.site.findUnique({ where: { id: target.id } })).toEqual(target);
+    await list.getByRole("button", { name: /Original Ridge/ }).click();
+    await page.getByRole("button", { name: "Delete site", exact: true }).click();
+    const deletion = page.getByRole("dialog", { name: "Delete site", exact: true });
+    await expect(deletion.getByRole("alert")).toContainText("Other pilots");
+    await expect(deletion.getByRole("button", { name: "Delete site", exact: true })).toHaveCount(0);
+    await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+    await list.getByRole("button", { name: /Replacement Meadow/ }).click();
+    await page.getByRole("button", { name: "Delete site", exact: true }).click();
+    await expect(deletion.getByText(/connection to 1 flight/)).toBeVisible();
+    await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await db.site.findUnique({ where: { id: target.id } })).toEqual(target);
+    await page.getByRole("button", { name: "Delete site", exact: true }).click();
+    await deletion.getByRole("button", { name: "Delete site", exact: true }).click();
+    await expect(deletion).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "Replacement Meadow deleted" })).toBeVisible();
+    await page.reload();
+    await expect(list.getByRole("button", { name: /Replacement Meadow/ })).toHaveCount(0);
+    expect(await db.site.findUnique({ where: { id: target.id } })).toBeNull();
+    expect(await db.flight.findUnique({ where: { id: flight.id } })).toMatchObject({ takeoffSiteId: null, landingSiteId: null, takeoffLat: 45, takeoffLon: 6, landingLat: 44, landingLon: 5, notes: "Keep my flight" });
+    expect(await db.flight.findUnique({ where: { id: stranger.id } })).toEqual(stranger);
+  } finally { await db.$disconnect(); }
+});
+
 test("exports the full logbook as CSV and original IGC ZIP from desktop and mobile", async ({ page }) => {
   const handle = await signUp(page);
   const db = new PrismaClient();
@@ -32,6 +160,9 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     await db.flight.create({ data: { ownerId: profile.id, status: "failed", flightDate: new Date("2026-06-12"), data: { create: { rawIgc: raw } } } });
     await db.flight.create({ data: { ownerId: profile.id, recordingKind: "logbook", source: "manual_entry", status: "ready", flightDate: new Date("2000-01-01"), notes: "Manual flight" } });
     await page.reload();
+    await expect(page.getByRole("img", { name: "Manual logbook entry" })).toBeVisible();
+    await expect(page.getByText(/No track recorded|Reported XC/, { exact: true })).toHaveCount(0);
+
     await page.waitForFunction(id => sessionStorage.getItem(`leaf-logbook-filters:v1:${id}`) !== null, profile.id);
     await page.getByRole("button", { name: "Select Dates" }).click();
     await page.getByLabel("From", { exact: true }).fill("2099-01-01");
@@ -93,7 +224,6 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
 
 test("manual location search moves the map before choosing exact coordinates, including on mobile", async ({ page }) => {
   await signUp(page);
-  await page.route("https://tiles.openfreemap.org/styles/liberty", route => route.fulfill({ json: { version: 8, sources: {}, layers: [] } }));
   let searches = 0;
   await page.route("https://api.maptiler.com/geocoding/**", route => {
     searches++;
@@ -105,8 +235,8 @@ test("manual location search moves the map before choosing exact coordinates, in
   await expect(introduction.locator("code, span")).toHaveCount(0);
   await expect(page.getByLabel("Flight date", { exact: true })).toBeEnabled();
   await page.getByLabel("Flight date", { exact: true }).fill("2024-07-12");
-  await page.getByLabel("Flying site name", { exact: true }).fill("Memory Hill");
-  await page.getByText("Site location", { exact: true }).click();
+  await addEntrySite(page, "Memory Hill");
+  await page.getByText("Flight positions", { exact: true }).click();
   await page.getByRole("button", { name: "Choose on map", exact: true }).click();
   const search = page.getByRole("searchbox", { name: "Find a place" });
   await search.fill("Annecy France");
@@ -127,12 +257,12 @@ test("manual location search moves the map before choosing exact coordinates, in
   await search.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/manual-place-search-mobile.png" });
   await result.click();
-  const latitude = page.getByLabel("Site latitude", { exact: true });
-  const longitude = page.getByLabel("Site longitude", { exact: true });
+  const latitude = page.getByLabel("Takeoff latitude", { exact: true });
+  const longitude = page.getByLabel("Takeoff longitude", { exact: true });
   await expect(latitude).toHaveValue("");
   await expect(longitude).toHaveValue("");
-  await expect(page.getByLabel("Flying site name", { exact: true })).toHaveValue("Memory Hill");
-  const canvas = page.getByLabel("Flight site map", { exact: true }).locator("canvas");
+  await expect(page.getByRole("group", { name: "Flying site", exact: true }).getByText("Memory Hill", { exact: true })).toBeVisible();
+  const canvas = page.getByLabel("Flight position map", { exact: true }).locator("canvas");
   // Let the 350 ms camera movement finish before picking (a click interrupts it).
   await page.waitForTimeout(500);
   await canvas.click();
@@ -157,17 +287,17 @@ test("manual location search moves the map before choosing exact coordinates, in
   expect([landingLat, landingLon]).not.toEqual([flyingLat, flyingLon]);
   await expect(latitude).toHaveValue(flyingLat);
   await expect(longitude).toHaveValue(flyingLon);
-  await expect(page.getByRole("img", { name: "Flying site pin (blue)" })).toBeAttached();
-  await expect(page.getByRole("img", { name: "Landing pin (orange)" })).toBeAttached();
+  await expect(page.getByRole("img", { name: "Takeoff position (blue)" })).toBeAttached();
+  await expect(page.getByRole("img", { name: "Landing position (orange)" })).toBeAttached();
   await canvas.scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
   await page.screenshot({ path: "test-results/manual-landing-map-mobile.png" });
   await page.getByRole("button", { name: "Add manual flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
   await page.getByRole("link", { name: "Edit flight", exact: true }).click();
-  await page.getByText("Site location", { exact: true }).click();
-  await expect(page.getByLabel("Site latitude", { exact: true })).toHaveValue(flyingLat);
-  await expect(page.getByLabel("Site longitude", { exact: true })).toHaveValue(flyingLon);
+  await page.getByText("Flight positions", { exact: true }).click();
+  await expect(page.getByLabel("Takeoff latitude", { exact: true })).toHaveValue(flyingLat);
+  await expect(page.getByLabel("Takeoff longitude", { exact: true })).toHaveValue(flyingLon);
   await expect(page.getByLabel("Landing latitude", { exact: true })).toHaveValue(landingLat);
   await expect(page.getByLabel("Landing longitude", { exact: true })).toHaveValue(landingLon);
 });
@@ -180,17 +310,17 @@ test("manual flight → edit → attach a reviewed IGC, keeping one entry", asyn
   await page.getByRole("spinbutton", { name: "Duration hours", exact: true }).fill("1");
   await page.getByRole("spinbutton", { name: "Duration minutes", exact: true }).fill("30");
   await page.getByLabel("Wing", { exact: true }).fill("Historic wing");
-  await page.getByLabel("Flying site name", { exact: true }).fill("Memory Hill");
+  await addEntrySite(page, "Memory Hill");
   await page.getByRole("combobox", { name: "XC type", exact: true }).selectOption("fai-triangle");
   await page.getByLabel("XC distance", { exact: true }).fill("45");
-  await page.getByText("Site location", { exact: true }).click();
-  await page.getByLabel("Site latitude", { exact: true }).fill("37.6685");
-  await page.getByLabel("Site longitude", { exact: true }).fill("-122.4936");
+  await page.getByText("Flight positions", { exact: true }).click();
+  await page.getByLabel("Takeoff latitude", { exact: true }).fill("37.6685");
+  await page.getByLabel("Takeoff longitude", { exact: true }).fill("-122.4936");
   await page.getByRole("button", { name: "Add manual flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
   const flightUrl = page.url();
   await expect(page.getByText("Manual logbook entry · no track recorded")).toBeVisible();
-  await expect(page.getByLabel("Flight site map", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Flight position map", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Go to max altitude" })).toHaveCount(0);
   await page.getByRole("link", { name: "Edit flight", exact: true }).click();
   await expect(page.getByLabel("Duration minutes", { exact: true })).toHaveValue("30");

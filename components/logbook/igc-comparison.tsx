@@ -3,6 +3,8 @@ import { formatDuration } from "@/lib/flights/format";
 
 export type IgcFacts = {
   date: string;
+  recorder?: string | null;
+  localUtcOffsetMinutes?: number | null;
   durationS: number | null;
   maxAltM: number | null;
   launchAltM: number | null;
@@ -28,22 +30,30 @@ export type IgcComparisonPreview = {
 
 const labels: Partial<Record<keyof IgcFacts, string>> = {
   date: "Flight date",
+  takeoffAt: "Start time",
+  landingAt: "End time",
+  recorder: "Recorder ID",
   durationS: "Duration",
   maxAltM: "Maximum altitude",
   launchAltM: "Launch altitude",
   altGainM: "Total climbs",
   maxClimbMs: "Best climb",
   maxSinkMs: "Max sink",
-  takeoffAt: "Takeoff",
-  landingAt: "Landing",
+
 };
 
-function display(field: keyof IgcFacts, value: IgcFacts[keyof IgcFacts]) {
+function display(field: keyof IgcFacts, facts: IgcFacts) {
+  const value = facts[field];
   if (value == null) return "Unknown";
   if (field === "durationS") return formatDuration(Number(value));
   if (["maxAltM", "launchAltM", "altGainM"].includes(field)) return `${value} m`;
   if (["maxClimbMs", "maxSinkMs"].includes(field)) return `${Number(value).toFixed(1)} m/s`;
-  if (field.endsWith("At")) return String(value).replace("T", " ").replace(".000Z", " UTC");
+  if (field.endsWith("At")) {
+    const utc = new Date(String(value));
+    const local = new Date(utc.getTime() + (facts.localUtcOffsetMinutes ?? 0) * 60_000);
+    const clock = (date: Date) => `${date.toISOString().slice(0, 10) !== facts.date ? date.toISOString().slice(0, 10) + " " : ""}${date.toISOString().slice(11, 19)}`;
+    return <span className="flex flex-col gap-1">{facts.localUtcOffsetMinutes != null && <span>{clock(local)} local</span>}<span className="text-gray-500">{clock(utc)} UTC</span></span>;
+  }
   return String(value);
 }
 
@@ -77,8 +87,8 @@ export function IgcComparison({
             {Object.entries(labels).map(([field, label]) => (
               <tr key={field} className="border-b border-gray-100">
                 <th className="p-2 font-medium">{label}</th>
-                <td className="p-2">{display(field as keyof IgcFacts, preview.previous[field as keyof IgcFacts])}</td>
-                <td className="p-2">{display(field as keyof IgcFacts, preview.recorded[field as keyof IgcFacts])}</td>
+                <td className="p-2">{display(field as keyof IgcFacts, preview.previous)}</td>
+                <td className="p-2">{display(field as keyof IgcFacts, preview.recorded)}</td>
               </tr>
             ))}
             {(["takeoff", "landing"] as const).map((endpoint) => (
@@ -98,7 +108,7 @@ export function IgcComparison({
       </div>
       {preview.mergeable && onMerge ? (
         <p className="text-gray-600">
-          Attaching replaces these measurements and adds the recorded track to this same flight. Your wing, chosen site names, notes, photos, visibility, and reported XC result are kept. Blank wings and sites may be filled from the recording. XC calculation runs separately.
+          Attaching replaces these measurements and adds the recorded track to this same flight. Your wing, flight types, chosen site names, notes, photos, visibility, and reported XC result are kept. Blank wings and sites may be filled from the recording. XC calculation runs separately.
         </p>
       ) : !onMerge ? (
         <p className="text-gray-600">

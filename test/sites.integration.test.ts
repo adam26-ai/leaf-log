@@ -90,7 +90,7 @@ describe("sites: read-path firewall", () => {
       },
     });
     siteIds.push(site.id);
-    return site;
+    return { ...site, lat: site.lat!, lon: site.lon! };
   }
 
   async function createFlight(opts: {
@@ -412,6 +412,21 @@ describe("sites: read-path firewall", () => {
   // Leak sweep
   // ---------------------------------------------------------------------
   describe("leak sweep", () => {
+    it("includes the site review state in logbook, profile, and feed rows", async () => {
+      const owner = await createPilot("reviewstate");
+      const viewer = await createPilot("reviewviewer");
+      await befriend(owner, viewer);
+      const flight = await createFlight({ ownerId: owner, visibility: "public" });
+      await prisma.flight.update({ where: { id: flight.id }, data: { takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" } });
+      const rows = [
+        ...(await repo.listOwnFlights(owner)),
+        ...(await repo.listProfileFlightsForViewer(owner, viewer)),
+        ...(await repo.listFeedForViewer(viewer)).rows,
+      ].filter(row => row.id === flight.id);
+      expect(rows).toHaveLength(3);
+      for (const row of rows) expect(row).toMatchObject({ takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review", takeoffSiteId: null, landingSiteId: null });
+    });
+
     it("no flight created through the real cache writer carries a cached name whose site is not public", async () => {
       const owner = await createPilot("sweepowner");
       const privSite = await createSite({ lat: 8, lon: 8, visibility: "private", ownerId: owner });
@@ -1208,8 +1223,8 @@ describe("sites: read-path firewall", () => {
       const stranger = await createPilot("zmx-pubpub-stranger");
       await befriend(owner, friendViewer);
 
-      const site = await createSite({ lat: -140, lon: -140, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -140, lon: -140, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -40, lon: -140, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -40, lon: -140, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       for (const viewerId of [owner, friendViewer, stranger, null]) {
@@ -1230,8 +1245,8 @@ describe("sites: read-path firewall", () => {
       const siteOwner = await createPilot("zmx-pubpriv-siteowner");
       const zoneOwner = await createPilot("zmx-pubpriv-zoneowner");
       const stranger = await createPilot("zmx-pubpriv-stranger");
-      const site = await createSite({ lat: -139, lon: -139, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -139, lon: -139, visibility: "private", ownerId: zoneOwner });
+      const site = await createSite({ lat: -39, lon: -139, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -39, lon: -139, visibility: "private", ownerId: zoneOwner });
       const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const zoneOwnerView = await repo.getFlightForViewer(flight.id, zoneOwner);
@@ -1257,8 +1272,8 @@ describe("sites: read-path firewall", () => {
     it("only the shared owner sees both; everyone else sees Unknown site entirely", async () => {
       const owner = await createPilot("zmx-privpriv-owner");
       const stranger = await createPilot("zmx-privpriv-stranger");
-      const site = await createSite({ lat: -138, lon: -138, visibility: "private", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -138, lon: -138, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -38, lon: -138, visibility: "private", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -38, lon: -138, visibility: "private", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const ownerView = await repo.getFlightForViewer(flight.id, owner);
@@ -1285,11 +1300,11 @@ describe("sites: read-path firewall", () => {
       const siteOwner = await createPilot("zmx-privpub-siteowner");
       const zoneOwner = await createPilot("zmx-privpub-zoneowner");
       const stranger = await createPilot("zmx-privpub-stranger");
-      const site = await createSite({ lat: -137, lon: -137, visibility: "private", ownerId: siteOwner });
+      const site = await createSite({ lat: -37, lon: -137, visibility: "private", ownerId: siteOwner });
       // This row should never be reachable through PR3's create flow (refused
       // at write time); written directly here to prove the READ side closes
       // it independently, per SPRINT-005's two-layer design.
-      const zone = await createZone({ siteId: site.id, lat: -137, lon: -137, visibility: "public", ownerId: zoneOwner });
+      const zone = await createZone({ siteId: site.id, lat: -37, lon: -137, visibility: "public", ownerId: zoneOwner });
       const flight = await createFlightWithZone({ ownerId: siteOwner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const siteOwnerView = await repo.getFlightForViewer(flight.id, siteOwner);
@@ -1316,8 +1331,8 @@ describe("sites: read-path firewall", () => {
       const friendViewer = await createPilot("zmx-surfaces-friend");
       await befriend(zoneOwner, friendViewer);
 
-      const site = await createSite({ lat: -136, lon: -136, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -136, lon: -136, visibility: "private", ownerId: zoneOwner });
+      const site = await createSite({ lat: -36, lon: -136, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -36, lon: -136, visibility: "private", ownerId: zoneOwner });
       const flight = await createFlightWithZone({ ownerId: zoneOwner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       // Owner's own logbook: full visibility, via listOwnFlights.
@@ -1351,14 +1366,14 @@ describe("sites: read-path firewall", () => {
   describe("leak sweep — zones", () => {
     it("no flight created through the real cache writer carries a cached zone name whose zone (or parent site) is not public", async () => {
       const owner = await createPilot("sweepzoneowner");
-      const pubSite = await createSite({ lat: -135, lon: -135, visibility: "public", ownerId: owner });
-      const privSite = await createSite({ lat: -134, lon: -134, visibility: "private", ownerId: owner });
-      const pubZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -135, lon: -135, visibility: "public", ownerId: owner });
-      const privZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -134.999, lon: -134.999, visibility: "private", ownerId: owner });
+      const pubSite = await createSite({ lat: -35, lon: -135, visibility: "public", ownerId: owner });
+      const privSite = await createSite({ lat: -34, lon: -134, visibility: "private", ownerId: owner });
+      const pubZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -35, lon: -135, visibility: "public", ownerId: owner });
+      const privZoneUnderPubSite = await createZone({ siteId: pubSite.id, lat: -34.999, lon: -134.999, visibility: "private", ownerId: owner });
       // The incoherent row: a public zone under a private site. Written
       // directly via locationCachePatch (not the create flow, which refuses
       // it) — the sweep must still prove no leak reaches the cache.
-      const pubZoneUnderPrivSite = await createZone({ siteId: privSite.id, lat: -134, lon: -134, visibility: "public", ownerId: owner });
+      const pubZoneUnderPrivSite = await createZone({ siteId: privSite.id, lat: -34, lon: -134, visibility: "public", ownerId: owner });
 
       await createFlightWithZone({ ownerId: owner, visibility: "public", site: pubSite, zone: pubZoneUnderPubSite, endpoint: "takeoff" });
       await createFlightWithZone({ ownerId: owner, visibility: "public", site: pubSite, zone: privZoneUnderPubSite, endpoint: "landing" });
@@ -1411,8 +1426,8 @@ describe("sites: read-path firewall", () => {
     it("strips a hand-written cached zone name pointing at a private zone", async () => {
       const owner = await createPilot("stalezoneowner");
       const stranger = await createPilot("stalezonestranger");
-      const site = await createSite({ lat: -133, lon: -133, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -133, lon: -133, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -33, lon: -133, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -33, lon: -133, visibility: "private", ownerId: owner });
 
       // Hand-write a row that never went through locationCachePatch — a
       // poisoned cache column, exactly what a bug or a direct DB edit could
@@ -1438,10 +1453,10 @@ describe("sites: read-path firewall", () => {
 
     it("strips a hand-written zone id whose siteId disagrees with the row's takeoffSiteId (mismatch, not a leak)", async () => {
       const owner = await createPilot("mismatchowner");
-      const siteA = await createSite({ lat: -132, lon: -132, visibility: "public", ownerId: owner });
-      const siteB = await createSite({ lat: -131, lon: -131, visibility: "public", ownerId: owner });
+      const siteA = await createSite({ lat: -32, lon: -132, visibility: "public", ownerId: owner });
+      const siteB = await createSite({ lat: -31, lon: -131, visibility: "public", ownerId: owner });
       // A zone that REALLY belongs to siteB...
-      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -131, lon: -131, visibility: "public", ownerId: owner });
+      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -31, lon: -131, visibility: "public", ownerId: owner });
 
       // ...hand-written onto a flight whose takeoffSiteId is siteA instead.
       const flight = await createFlight({
@@ -1461,8 +1476,8 @@ describe("sites: read-path firewall", () => {
 
     it("a zone id with a NULL site id renders 'Unknown site', not a dangling zone name (the absent CHECK's job)", async () => {
       const owner = await createPilot("danglingzoneowner");
-      const site = await createSite({ lat: -130, lon: -130, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -130, lon: -130, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -30, lon: -130, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -30, lon: -130, visibility: "public", ownerId: owner });
 
       // The invariant zoneId ⇒ siteId is enforced by the single writer, not a
       // DB CHECK — hand-write the row a CHECK would have blocked.
@@ -1491,8 +1506,8 @@ describe("sites: read-path firewall", () => {
       process.env.ZONES_ENABLED = "true";
       const owner = await createPilot("conjowner");
       const stranger = await createPilot("conjstranger");
-      const site = await createSite({ lat: -129, lon: -129, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -129, lon: -129, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -29, lon: -129, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -29, lon: -129, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       await associate.setSiteVisibility(site.id, owner, "private");
@@ -1506,9 +1521,9 @@ describe("sites: read-path firewall", () => {
       // PrismaClient — findLocation's Db type requires it structurally.
       const { findLocation } = await import("@/lib/sites/lookup");
       const { prisma: appPrisma } = await import("@/lib/prisma");
-      const strangerMatch = await findLocation(appPrisma, { lat: -129, lon: -129, kind: "takeoff", viewerId: stranger });
+      const strangerMatch = await findLocation(appPrisma, { lat: -29, lon: -129, kind: "takeoff", viewerId: stranger });
       expect(strangerMatch).toBeNull();
-      const ownerMatch = await findLocation(appPrisma, { lat: -129, lon: -129, kind: "takeoff", viewerId: owner });
+      const ownerMatch = await findLocation(appPrisma, { lat: -29, lon: -129, kind: "takeoff", viewerId: owner });
       expect(ownerMatch?.zone?.id).toBe(zone.id);
 
       // Display: the cache was nulled by the demote transaction.
@@ -1526,9 +1541,9 @@ describe("sites: read-path firewall", () => {
 
     it("re-promoting a site restores ONLY its still-public zones' names, not a zone that was demoted independently", async () => {
       const owner = await createPilot("conjselective");
-      const site = await createSite({ lat: -128, lon: -128, visibility: "public", ownerId: owner });
-      const stillPublicZone = await createZone({ siteId: site.id, lat: -128, lon: -128, visibility: "public", ownerId: owner });
-      const nowPrivateZone = await createZone({ siteId: site.id, lat: -127.999, lon: -127.999, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -28, lon: -128, visibility: "public", ownerId: owner });
+      const stillPublicZone = await createZone({ siteId: site.id, lat: -28, lon: -128, visibility: "public", ownerId: owner });
+      const nowPrivateZone = await createZone({ siteId: site.id, lat: -27.999, lon: -127.999, visibility: "public", ownerId: owner });
       const flightA = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: stillPublicZone, endpoint: "takeoff" });
       const flightB = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: nowPrivateZone, endpoint: "takeoff" });
 
@@ -1550,8 +1565,8 @@ describe("sites: read-path firewall", () => {
   describe("zone transitions", () => {
     it("promoting a private zone to public populates the cache when the parent site is public", async () => {
       const owner = await createPilot("zonepromote");
-      const site = await createSite({ lat: -127, lon: -127, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -127, lon: -127, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -27, lon: -127, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -27, lon: -127, visibility: "private", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       let row = await prisma.flight.findUniqueOrThrow({ where: { id: flight.id } });
@@ -1565,8 +1580,8 @@ describe("sites: read-path firewall", () => {
 
     it("promoting a zone whose PARENT site is private does not populate the cache (the write-time conjunction)", async () => {
       const owner = await createPilot("zonepromoteprivsite");
-      const site = await createSite({ lat: -126, lon: -126, visibility: "private", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -126, lon: -126, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -26, lon: -126, visibility: "private", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -26, lon: -126, visibility: "private", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       await associate.setZoneVisibility(zone.id, owner, "public");
@@ -1577,8 +1592,8 @@ describe("sites: read-path firewall", () => {
 
     it("demoting a public zone nulls the cache on every referencing flight", async () => {
       const owner = await createPilot("zonedemote");
-      const site = await createSite({ lat: -125, lon: -125, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -125, lon: -125, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -25, lon: -125, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -25, lon: -125, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       await associate.setZoneVisibility(zone.id, owner, "private");
@@ -1590,8 +1605,8 @@ describe("sites: read-path firewall", () => {
 
     it("renaming a public zone updates the cache on every referencing flight", async () => {
       const owner = await createPilot("zonerename");
-      const site = await createSite({ lat: -124, lon: -124, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -124, lon: -124, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -24, lon: -124, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -24, lon: -124, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const newName = `Renamed Zone ${seq}${suffix}`;
@@ -1603,8 +1618,8 @@ describe("sites: read-path firewall", () => {
 
     it("renaming a private zone never populates the cache", async () => {
       const owner = await createPilot("zonerenameprivate");
-      const site = await createSite({ lat: -123, lon: -123, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -123, lon: -123, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -23, lon: -123, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -23, lon: -123, visibility: "private", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const newName = `RenamedPriv Zone ${seq}${suffix}`;
@@ -1617,12 +1632,12 @@ describe("sites: read-path firewall", () => {
     it("a non-owner cannot promote someone else's zone; renaming a PRIVATE zone also stays owner-only", async () => {
       const owner = await createPilot("zonenonowner");
       const stranger = await createPilot("zonenonownerstr");
-      const site = await createSite({ lat: -122, lon: -122, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -122, lon: -122, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -22, lon: -122, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -22, lon: -122, visibility: "public", ownerId: owner });
       // SPRINT-007: renaming a PUBLIC zone is now open to any onboarded
       // pilot (community edit v1) — that case is covered separately below.
       // A PRIVATE zone is the one where a stranger must still be refused.
-      const privateZone = await createZone({ siteId: site.id, lat: -122, lon: -122, visibility: "private", ownerId: owner });
+      const privateZone = await createZone({ siteId: site.id, lat: -22, lon: -122, visibility: "private", ownerId: owner });
 
       await expect(associate.renameZone(privateZone.id, stranger, "Hijack", "hijack")).rejects.toThrow();
       await expect(associate.setZoneVisibility(zone.id, stranger, "private")).rejects.toThrow();
@@ -1631,8 +1646,8 @@ describe("sites: read-path firewall", () => {
     it("SPRINT-007: an onboarded stranger MAY rename a PUBLIC zone — community edit v1", async () => {
       const owner = await createPilot("zonecommrename-owner");
       const stranger = await createPilot("zonecommrename-stranger");
-      const site = await createSite({ lat: -122.02, lon: -122.02, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -122.02, lon: -122.02, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -22.02, lon: -122.02, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -22.02, lon: -122.02, visibility: "public", ownerId: owner });
 
       const renamed = await associate.renameZone(zone.id, stranger, "Renamed by stranger", "renamed by stranger");
       expect(renamed.name).toBe("Renamed by stranger");
@@ -1645,8 +1660,8 @@ describe("sites: read-path firewall", () => {
   describe("deletes", () => {
     it("deleting a zone keeps the flight's SITE binding but drops the zone name entirely (no history)", async () => {
       const owner = await createPilot("deletezone");
-      const site = await createSite({ lat: -121, lon: -121, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -121, lon: -121, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -21, lon: -121, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -21, lon: -121, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
       const deletedZoneName = zone.name;
 
@@ -1666,8 +1681,8 @@ describe("sites: read-path firewall", () => {
 
     it("deleting a site cascades its zones, keeps the site name as history, and drops the zone names", async () => {
       const owner = await createPilot("deletesitewithzone");
-      const site = await createSite({ lat: -120, lon: -120, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -120, lon: -120, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -20, lon: -120, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -20, lon: -120, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
       const deletedSiteName = site.name;
 
@@ -1688,10 +1703,10 @@ describe("sites: read-path firewall", () => {
     it("deleting a site refuses while another pilot owns a zone under it, even with no flight referencing either", async () => {
       const siteOwner = await createPilot("deletesiteotherzone");
       const otherZoneOwner = await createPilot("deletesiteotherzoneowner");
-      const site = await createSite({ lat: -119, lon: -119, visibility: "public", ownerId: siteOwner });
+      const site = await createSite({ lat: -19, lon: -119, visibility: "public", ownerId: siteOwner });
       // No flight references this zone at all — the guard must still fire,
       // because it protects the CONTRIBUTION, not just current references.
-      await createZone({ siteId: site.id, lat: -119, lon: -119, visibility: "public", ownerId: otherZoneOwner });
+      await createZone({ siteId: site.id, lat: -19, lon: -119, visibility: "public", ownerId: otherZoneOwner });
 
       await expect(associate.deleteSite(site.id, siteOwner)).rejects.toThrow(/depends on this site/);
 
@@ -1702,8 +1717,8 @@ describe("sites: read-path firewall", () => {
     it("unpublishing a site refuses while another pilot owns a zone under it", async () => {
       const siteOwner = await createPilot("unpubsiteotherzone");
       const otherZoneOwner = await createPilot("unpubsiteotherzoneowner");
-      const site = await createSite({ lat: -118, lon: -118, visibility: "public", ownerId: siteOwner });
-      await createZone({ siteId: site.id, lat: -118, lon: -118, visibility: "public", ownerId: otherZoneOwner });
+      const site = await createSite({ lat: -18, lon: -118, visibility: "public", ownerId: siteOwner });
+      await createZone({ siteId: site.id, lat: -18, lon: -118, visibility: "public", ownerId: otherZoneOwner });
 
       await expect(associate.unpublishOwnSite(site.id, siteOwner)).rejects.toThrow(/depends on this site/);
 
@@ -1714,8 +1729,8 @@ describe("sites: read-path firewall", () => {
     it("deleting a site succeeds once the other-owned zone is gone (the operator-remedy escape hatch)", async () => {
       const siteOwner = await createPilot("delsiteafterzone1");
       const otherZoneOwner = await createPilot("delsiteafterzone2");
-      const site = await createSite({ lat: -117, lon: -117, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -117, lon: -117, visibility: "public", ownerId: otherZoneOwner });
+      const site = await createSite({ lat: -17, lon: -117, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -17, lon: -117, visibility: "public", ownerId: otherZoneOwner });
 
       await expect(associate.deleteSite(site.id, siteOwner)).rejects.toThrow();
 
@@ -1739,8 +1754,8 @@ describe("sites: read-path firewall", () => {
     it("[gate-on legacy] unpublishes a zone with no other pilot's flight attached", async () => {
       process.env.ZONES_ENABLED = "true";
       const owner = await createPilot("zoneundopub");
-      const site = await createSite({ lat: -116, lon: -116, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -116, lon: -116, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -16, lon: -116, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -16, lon: -116, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       const updated = await associate.unpublishOwnZone(zone.id, owner);
@@ -1757,8 +1772,8 @@ describe("sites: read-path firewall", () => {
     it("refuses to unpublish or delete a zone once another pilot's flight depends on it", async () => {
       const owner = await createPilot("zoneundoblocked");
       const other = await createPilot("zoneundoblockedother");
-      const site = await createSite({ lat: -115, lon: -115, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -115, lon: -115, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -15, lon: -115, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -15, lon: -115, visibility: "public", ownerId: owner });
       await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone, endpoint: "takeoff" });
 
       // Another pilot's flight now depends on the zone directly.
@@ -1774,8 +1789,8 @@ describe("sites: read-path firewall", () => {
     it("a non-owner cannot unpublish or delete someone else's zone", async () => {
       const owner = await createPilot("zoneundononowner");
       const stranger = await createPilot("zoneundononownerstr");
-      const site = await createSite({ lat: -114, lon: -114, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -114, lon: -114, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -14, lon: -114, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -14, lon: -114, visibility: "public", ownerId: owner });
 
       await expect(associate.unpublishOwnZone(zone.id, stranger)).rejects.toThrow();
       await expect(associate.deleteZone(zone.id, stranger)).rejects.toThrow();
@@ -1788,8 +1803,8 @@ describe("sites: read-path firewall", () => {
     it("the site's owner can rename a zone contributed by a different pilot", async () => {
       const siteOwner = await createPilot("siteownerrename");
       const zoneCreator = await createPilot("zonecreatorrename");
-      const site = await createSite({ lat: -112.5, lon: -112.5, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -112.5, lon: -112.5, visibility: "public", ownerId: zoneCreator });
+      const site = await createSite({ lat: -12.5, lon: -112.5, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -12.5, lon: -112.5, visibility: "public", ownerId: zoneCreator });
 
       const newName = `Site Owner Renamed ${seq}${suffix}`;
       const updated = await associate.renameZone(zone.id, siteOwner, newName, newName.toLowerCase());
@@ -1800,8 +1815,8 @@ describe("sites: read-path firewall", () => {
     it("the site's owner can unpublish a zone contributed by a different pilot", async () => {
       const siteOwner = await createPilot("siteownerunpub");
       const zoneCreator = await createPilot("zonecreatorunpub");
-      const site = await createSite({ lat: -112.4, lon: -112.4, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -112.4, lon: -112.4, visibility: "public", ownerId: zoneCreator });
+      const site = await createSite({ lat: -12.4, lon: -112.4, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -12.4, lon: -112.4, visibility: "public", ownerId: zoneCreator });
       // Bound to the CALLER's (site owner's) own flight — the zone creator
       // themselves has no flight referencing it yet, so the guard passes.
       const flight = await createFlightWithZone({ ownerId: siteOwner, visibility: "public", site, zone, endpoint: "takeoff" });
@@ -1816,8 +1831,8 @@ describe("sites: read-path firewall", () => {
     it("the site's owner can delete a zone contributed by a different pilot", async () => {
       const siteOwner = await createPilot("siteownerdel");
       const zoneCreator = await createPilot("zonecreatordel");
-      const site = await createSite({ lat: -112.3, lon: -112.3, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -112.3, lon: -112.3, visibility: "public", ownerId: zoneCreator });
+      const site = await createSite({ lat: -12.3, lon: -112.3, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -12.3, lon: -112.3, visibility: "public", ownerId: zoneCreator });
 
       await associate.deleteZone(zone.id, siteOwner);
       zoneIds.splice(zoneIds.indexOf(zone.id), 1);
@@ -1829,8 +1844,8 @@ describe("sites: read-path firewall", () => {
     it("the site owner's delete is STILL blocked while the zone creator's own flight depends on it", async () => {
       const siteOwner = await createPilot("siteownerblocked");
       const zoneCreator = await createPilot("zonecreatorblocked");
-      const site = await createSite({ lat: -112.2, lon: -112.2, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -112.2, lon: -112.2, visibility: "public", ownerId: zoneCreator });
+      const site = await createSite({ lat: -12.2, lon: -112.2, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -12.2, lon: -112.2, visibility: "public", ownerId: zoneCreator });
       await createFlightWithZone({ ownerId: zoneCreator, visibility: "public", site, zone, endpoint: "takeoff" });
 
       // The site owner did not create this reference — it's the ZONE
@@ -1843,8 +1858,8 @@ describe("sites: read-path firewall", () => {
       const zoneCreator = await createPilot("neitherzonecreator");
       const siteOwner = await createPilot("neithersiteowner");
       const stranger = await createPilot("neitherstranger");
-      const site = await createSite({ lat: -112.1, lon: -112.1, visibility: "public", ownerId: siteOwner });
-      const zone = await createZone({ siteId: site.id, lat: -112.1, lon: -112.1, visibility: "public", ownerId: zoneCreator });
+      const site = await createSite({ lat: -12.1, lon: -112.1, visibility: "public", ownerId: siteOwner });
+      const zone = await createZone({ siteId: site.id, lat: -12.1, lon: -112.1, visibility: "public", ownerId: zoneCreator });
 
       // SPRINT-007: renaming a PUBLIC zone is now open to any onboarded
       // pilot (community edit v1) — covered separately. Unpublish/delete
@@ -1859,8 +1874,8 @@ describe("sites: read-path firewall", () => {
     // -------------------------------------------------------------------
     it("deleting the last zone under a site leaves a fully functional bare site", async () => {
       const owner = await createPilot("lastzoneowner");
-      const site = await createSite({ lat: -111.5, lon: -111.5, visibility: "public", ownerId: owner });
-      const onlyZone = await createZone({ siteId: site.id, lat: -111.5, lon: -111.5, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -11.5, lon: -111.5, visibility: "public", ownerId: owner });
+      const onlyZone = await createZone({ siteId: site.id, lat: -11.5, lon: -111.5, visibility: "public", ownerId: owner });
       const flight = await createFlightWithZone({ ownerId: owner, visibility: "public", site, zone: onlyZone, endpoint: "takeoff" });
 
       await associate.deleteZone(onlyZone.id, owner);
@@ -1877,7 +1892,7 @@ describe("sites: read-path firewall", () => {
       // The now-zoneless site still matches a brand-new flight at the same spot.
       const { findLocation } = await import("@/lib/sites/lookup");
       const { prisma: appPrisma } = await import("@/lib/prisma");
-      const match = await findLocation(appPrisma, { lat: -111.5, lon: -111.5, kind: "takeoff", viewerId: null });
+      const match = await findLocation(appPrisma, { lat: -11.5, lon: -111.5, kind: "takeoff", viewerId: null });
       expect(match?.site.id).toBe(site.id);
       expect(match?.zone).toBeNull();
 
@@ -1898,8 +1913,8 @@ describe("sites: read-path firewall", () => {
       const viewer = await createPilot("zonecursorviewer");
       await befriend(owner, viewer);
 
-      const site = await createSite({ lat: -113, lon: -113, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -113, lon: -113, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -13, lon: -113, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -13, lon: -113, visibility: "private", ownerId: owner });
       const dates = ["2026-05-04", "2026-05-05", "2026-05-06"];
       for (const d of dates) {
         seq += 1;
@@ -1972,7 +1987,7 @@ describe("sites: read-path firewall", () => {
     it("adds a zone to an EXISTING visible site, including one owned by a different pilot", async () => {
       const siteOwner = await createPilot("existingsiteowner");
       const zoneCreator = await createPilot("existingsitezonecreator");
-      const site = await createSite({ lat: -109, lon: -109, visibility: "public", ownerId: siteOwner });
+      const site = await createSite({ lat: -9, lon: -109, visibility: "public", ownerId: siteOwner });
 
       const flight = await createFlight({ ownerId: zoneCreator, visibility: "public", takeoffLat: 91, takeoffLon: 91 });
       const result = await siteRepo.createOrAttachSiteFromFlight({
@@ -1991,8 +2006,8 @@ describe("sites: read-path firewall", () => {
 
     it("reuses a sibling zone under the resolved site", async () => {
       const owner = await createPilot("reusezone");
-      const site = await createSite({ lat: -108, lon: -108, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -108, lon: -108, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -8, lon: -108, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: -8, lon: -108, visibility: "public", ownerId: owner });
 
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 92, takeoffLon: 92 });
       const result = await siteRepo.createOrAttachSiteFromFlight({
@@ -2009,9 +2024,9 @@ describe("sites: read-path firewall", () => {
 
     it("refuses to reuse a zone under the WRONG site", async () => {
       const owner = await createPilot("reusewrongzone");
-      const siteA = await createSite({ lat: -107, lon: -107, visibility: "public", ownerId: owner });
-      const siteB = await createSite({ lat: -106, lon: -106, visibility: "public", ownerId: owner });
-      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -106, lon: -106, visibility: "public", ownerId: owner });
+      const siteA = await createSite({ lat: -7, lon: -107, visibility: "public", ownerId: owner });
+      const siteB = await createSite({ lat: -6, lon: -106, visibility: "public", ownerId: owner });
+      const zoneUnderB = await createZone({ siteId: siteB.id, lat: -6, lon: -106, visibility: "public", ownerId: owner });
 
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 93, takeoffLon: 93 });
       await expect(
@@ -2027,8 +2042,8 @@ describe("sites: read-path firewall", () => {
 
     it("a public zone name colliding with a PUBLIC sibling is refused with a steer to reuse", async () => {
       const owner = await createPilot("zonecollidepublic");
-      const site = await createSite({ lat: -105, lon: -105, visibility: "public", ownerId: owner });
-      await createZone({ siteId: site.id, lat: -105, lon: -105, visibility: "public", ownerId: owner, name: "Shared Zone Name" });
+      const site = await createSite({ lat: -5, lon: -105, visibility: "public", ownerId: owner });
+      await createZone({ siteId: site.id, lat: -5, lon: -105, visibility: "public", ownerId: owner, name: "Shared Zone Name" });
 
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 95, takeoffLon: 95 });
       await expect(
@@ -2048,10 +2063,10 @@ describe("sites: read-path firewall", () => {
     it("a public zone name matching a DIFFERENT pilot's PRIVATE sibling succeeds — a second row, no leak", async () => {
       const privateZoneOwner = await createPilot("privzonenameowner");
       const publicZoneCreator = await createPilot("pubzonenamecreator");
-      const site = await createSite({ lat: -104, lon: -104, visibility: "public", ownerId: privateZoneOwner });
+      const site = await createSite({ lat: -4, lon: -104, visibility: "public", ownerId: privateZoneOwner });
       await createZone({
         siteId: site.id,
-        lat: -104,
+        lat: -4,
         lon: -104,
         visibility: "private",
         ownerId: privateZoneOwner,
@@ -2075,7 +2090,7 @@ describe("sites: read-path firewall", () => {
 
     it("refuses to create a PUBLIC zone under a PRIVATE site", async () => {
       const owner = await createPilot("pubzoneprivsite");
-      const site = await createSite({ lat: -103, lon: -103, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -3, lon: -103, visibility: "private", ownerId: owner });
 
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 97, takeoffLon: 97 });
       await expect(
@@ -2094,7 +2109,7 @@ describe("sites: read-path firewall", () => {
 
     it("a PRIVATE zone under a private site succeeds (the coherent private/private case)", async () => {
       const owner = await createPilot("privzoneprivsite");
-      const site = await createSite({ lat: -102, lon: -102, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: -2, lon: -102, visibility: "private", ownerId: owner });
 
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 98, takeoffLon: 98 });
       const result = await siteRepo.createOrAttachSiteFromFlight({
@@ -2112,7 +2127,7 @@ describe("sites: read-path firewall", () => {
 
     it("opposite-endpoint zone reuse widens Zone.kind to 'both', never narrows", async () => {
       const owner = await createPilot("widenzonekind");
-      const site = await createSite({ lat: -101, lon: -101, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: -1, lon: -101, visibility: "public", ownerId: owner });
       const flightA = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 99, takeoffLon: 99 });
       const created = await siteRepo.createOrAttachSiteFromFlight({
         flightId: flightA.id,
@@ -2156,7 +2171,7 @@ describe("sites: read-path firewall", () => {
       // invariant: never more than one public "Race Zone" under this site.
       const pilotA = await createPilot("concurrentzoneA");
       const pilotB = await createPilot("concurrentzoneB");
-      const site = await createSite({ lat: -100, lon: -100, visibility: "public", ownerId: pilotA });
+      const site = await createSite({ lat: 0, lon: -100, visibility: "public", ownerId: pilotA });
 
       const flightA = await createFlight({ ownerId: pilotA, visibility: "public", takeoffLat: 100, takeoffLon: 100 });
       const flightB = await createFlight({ ownerId: pilotB, visibility: "public", takeoffLat: 100.0002, takeoffLon: 100.0002 });
@@ -2191,7 +2206,7 @@ describe("sites: read-path firewall", () => {
     it("a non-owner cannot name a zone on someone else's flight", async () => {
       const owner = await createPilot("zonehijackowner");
       const stranger = await createPilot("zonehijackstranger");
-      const site = await createSite({ lat: -99, lon: -99, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 1, lon: -99, visibility: "public", ownerId: owner });
       const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 101, takeoffLon: 101 });
 
       await expect(
@@ -2210,12 +2225,12 @@ describe("sites: read-path firewall", () => {
 
     it("the shared daily cap refuses across sites AND zones combined", async () => {
       const owner = await createPilot("sharedcap");
-      const site = await createSite({ lat: -98, lon: -98, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 2, lon: -98, visibility: "public", ownerId: owner });
 
       // One site already "used" one slot conceptually; fill the rest with
       // zones under the same site (spread out so none collide on proximity).
       for (let i = 0; i < siteRepo.DAILY_CREATE_CAP - 1; i++) {
-        const lat = 102 + i * 0.01; // ~1.1 km apart — outside SUGGEST_RADIUS_M
+        const lat = 62 + i * 0.01; // ~1.1 km apart — outside SUGGEST_RADIUS_M
         const flight = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: lat, takeoffLon: 102 });
         const result = await siteRepo.createOrAttachSiteFromFlight({
           flightId: flight.id,
@@ -2246,10 +2261,10 @@ describe("sites: read-path firewall", () => {
 
     it("surfaces a site's visible zones nested underneath it", async () => {
       const owner = await createPilot("nestedsuggest");
-      const site = await createSite({ lat: -96, lon: -96, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -96, lon: -96, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 4, lon: -96, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: 4, lon: -96, visibility: "public", ownerId: owner });
 
-      const suggestions = await siteRepo.suggestNearbyLocations(-95.999, -95.999, owner);
+      const suggestions = await siteRepo.suggestNearbyLocations(4.001, -95.999, owner);
       const match = suggestions.find((s) => s.id === site.id);
       expect(match).toBeTruthy();
       expect(match?.zones.some((z) => z.id === zone.id)).toBe(true);
@@ -2259,16 +2274,16 @@ describe("sites: read-path firewall", () => {
       const owner = await createPilot("farsitesuggest");
       // Site anchor far from the query point (just past SUGGEST_RADIUS_M),
       // but its zone sits right at the query point.
-      const site = await createSite({ lat: -95, lon: -95, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 5, lon: -95, visibility: "public", ownerId: owner });
       const zone = await createZone({
         siteId: site.id,
-        lat: -94.98, // ~2.2 km away — outside SUGGEST_RADIUS_M from the site's OWN anchor
+        lat: 5.02, // ~2.2 km away — outside SUGGEST_RADIUS_M from the site's OWN anchor
         lon: -95,
         visibility: "public",
         ownerId: owner,
       });
 
-      const suggestions = await siteRepo.suggestNearbyLocations(-94.98, -95, owner);
+      const suggestions = await siteRepo.suggestNearbyLocations(5.02, -95, owner);
       const match = suggestions.find((s) => s.id === site.id);
       expect(match).toBeTruthy();
       expect(match?.zones.some((z) => z.id === zone.id)).toBe(true);
@@ -2277,14 +2292,14 @@ describe("sites: read-path firewall", () => {
     it("never surfaces a private zone the viewer cannot see, even nested under a visible site", async () => {
       const owner = await createPilot("privzonesuggestowner");
       const stranger = await createPilot("privzonesuggeststranger");
-      const site = await createSite({ lat: -94, lon: -94, visibility: "public", ownerId: owner });
-      const zone = await createZone({ siteId: site.id, lat: -94, lon: -94, visibility: "private", ownerId: owner });
+      const site = await createSite({ lat: 6, lon: -94, visibility: "public", ownerId: owner });
+      const zone = await createZone({ siteId: site.id, lat: 6, lon: -94, visibility: "private", ownerId: owner });
 
-      const strangerSuggestions = await siteRepo.suggestNearbyLocations(-93.999, -93.999, stranger);
+      const strangerSuggestions = await siteRepo.suggestNearbyLocations(6.001, -93.999, stranger);
       const strangerMatch = strangerSuggestions.find((s) => s.id === site.id);
       expect(strangerMatch?.zones.some((z) => z.id === zone.id)).toBe(false);
 
-      const ownSuggestions = await siteRepo.suggestNearbyLocations(-93.999, -93.999, owner);
+      const ownSuggestions = await siteRepo.suggestNearbyLocations(6.001, -93.999, owner);
       const ownMatch = ownSuggestions.find((s) => s.id === site.id);
       expect(ownMatch?.zones.some((z) => z.id === zone.id)).toBe(true);
     });
@@ -2298,7 +2313,7 @@ describe("sites: read-path firewall", () => {
     it("does not silently upgrade either pilot's already-site-bound back-catalog", async () => {
       const owner = await createPilot("upgradeowner");
       const other = await createPilot("upgradeother");
-      const site = await createSite({ lat: -93, lon: -93, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 7, lon: -93, visibility: "public", ownerId: owner });
 
       // The creator's own OLDER flight, already bound to the bare site
       // (takeoffZoneId null) — exactly the split-logbook state SPRINT-005
@@ -2309,10 +2324,10 @@ describe("sites: read-path firewall", () => {
       const othersAtSite = await createFlightWithSite({ ownerId: other, visibility: "public", site, endpoint: "takeoff" });
       // Set their coordinates to the site's own spot so they fall within
       // the new zone's radius once one is created there.
-      await prisma.flight.update({ where: { id: olderOwnAtSite.id }, data: { takeoffLat: -93, takeoffLon: -93 } });
-      await prisma.flight.update({ where: { id: othersAtSite.id }, data: { takeoffLat: -93, takeoffLon: -93 } });
+      await prisma.flight.update({ where: { id: olderOwnAtSite.id }, data: { takeoffLat: 7, takeoffLon: -93 } });
+      await prisma.flight.update({ where: { id: othersAtSite.id }, data: { takeoffLat: 7, takeoffLon: -93 } });
 
-      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: -93, takeoffLon: -93 });
+      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 7, takeoffLon: -93 });
       const result = await siteRepo.createOrAttachSiteFromFlight({
         flightId: current.id,
         ownerId: owner,
@@ -2335,8 +2350,8 @@ describe("sites: read-path firewall", () => {
 
     it("does NOT upgrade a flight already bound to a DIFFERENT zone under the same site", async () => {
       const owner = await createPilot("noupgradeowner");
-      const site = await createSite({ lat: -92, lon: -92, visibility: "public", ownerId: owner });
-      const otherZone = await createZone({ siteId: site.id, lat: -92, lon: -92, visibility: "public", ownerId: owner });
+      const site = await createSite({ lat: 8, lon: -92, visibility: "public", ownerId: owner });
+      const otherZone = await createZone({ siteId: site.id, lat: 8, lon: -92, visibility: "public", ownerId: owner });
       const alreadyZoned = await createFlightWithZone({
         ownerId: owner,
         visibility: "public",
@@ -2345,7 +2360,7 @@ describe("sites: read-path firewall", () => {
         endpoint: "takeoff",
       });
 
-      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: -92, takeoffLon: -92 });
+      const current = await createFlight({ ownerId: owner, visibility: "public", takeoffLat: 8, takeoffLon: -92 });
       const result = await siteRepo.createOrAttachSiteFromFlight({
         flightId: current.id,
         ownerId: owner,

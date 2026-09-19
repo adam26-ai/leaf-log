@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ user: vi.fn(), update: vi.fn(), revalidate: vi.fn() }));
 vi.mock("@/lib/profile", () => ({ getCurrentUserId: mocks.user }));
-vi.mock("@/lib/prisma", () => ({ prisma: { flight: { updateMany: mocks.update } } }));
+vi.mock("@/lib/prisma", () => ({ prisma: { $transaction: async (callback: (tx: unknown) => unknown) => callback({ $queryRaw: async () => [{ tandemWings: [], tandemEnabled: false }], $executeRaw: vi.fn(), flight: { updateMany: mocks.update } }) } }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("@/lib/ratings/authz", () => ({ canAssignInstructor: vi.fn() }));
 import { updateFlightWing } from "./actions";

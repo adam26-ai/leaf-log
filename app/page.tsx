@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AccentBar } from "@/components/ui/accent-bar";
-import { Wordmark } from "@/components/brand/wordmark";
+import { LeafLogLogo } from "@/components/brand/leaf-log-logo";
 
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
-        <Wordmark className="text-2xl" />
+        <Link href="/" aria-label="Leaf Log home"><LeafLogLogo /></Link>
         <Button asChild variant="ghost" size="sm">
           <Link href="/sign-in">Sign in</Link>
         </Button>

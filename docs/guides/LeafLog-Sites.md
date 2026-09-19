@@ -1,182 +1,87 @@
-# LeafLog sites
+# Sites in Leaf Log
 
-Sites give a familiar name to a takeoff or landing area. They are reusable places, separate from the GPS coordinates recorded for any one flight.
+A site is a reusable place. It can start with just a name and gain a map pin and boundary later. Every site uses the same full editor.
 
-This distinction is the most important thing to remember:
+| What you see | What it means |
+| --- | --- |
+| **Mapped** | The site has a name and a map pin. A boundary is optional. |
+| **Name only** | The site has a name but no established location or flight GPS evidence. |
+| **Location needs review** | Coordinates or possible matches exist, but the intended place is uncertain. |
+| **Site not identified · GPS available** | The flight has coordinates but no identified site. |
+| **Site not recorded** | Neither a site nor a geographic position was recorded. |
 
-- A **site** has a name, an anchor point, a kind, a visibility setting, and optionally a boundary.
-- A **flight** keeps its own takeoff and landing coordinates.
-- Assigning a flight to a site links the two; it does not replace the flight's recorded coordinates.
+Private and Public describe visibility, independently of whether a site is mapped. Public sites require a map pin. Takeoff and Landing describe how a site is used.
 
-## Contents
+## Edit a site from any starting point
 
-- [The three location concepts](#the-three-location-concepts)
-- [Public and private sites](#public-and-private-sites)
-- [Avoiding duplicate sites](#avoiding-duplicate-sites)
-- [Creating a site without an IGC file](#creating-a-site-without-an-igc-file)
-- [Creating or changing a site from a flight](#creating-or-changing-a-site-from-a-flight)
-- [CSV and manually entered flights](#csv-and-manually-entered-flights)
-- [Automatic IGC site detection](#automatic-igc-site-detection)
-- [Overlapping sites](#overlapping-sites)
-- [What changes affect existing flights?](#what-changes-affect-existing-flights)
-- [Recommended workflow](#recommended-workflow)
+Open a flight’s site name, then choose **Edit this site**. You can also open **Settings → Sites → Edit site**, or **Site details** on a selected site inside a manual entry or CSV review. For a new site, choose **Add location or details**.
 
-## The three location concepts
+The editor always includes:
 
-| Concept | What it means | What changing it does |
-| --- | --- | --- |
-| Flight endpoint | The takeoff or landing latitude/longitude recorded for one flight, usually from its IGC track or a CSV/manual entry | Changes only that flight's location data |
-| Site anchor | The representative point for a reusable site | Moves the site's reference point; does not move any flight endpoints |
-| Site boundary | A custom shape defining where that site may match a flight endpoint | Changes future matching and previews; does not automatically reassign flights |
+- Name, use for takeoff/landing, and visibility.
+- Place search and tools to place or move a pin.
+- Latitude and longitude fields.
+- Tools to draw, adjust, and remove a boundary.
+- Save and Cancel.
 
-Without a custom boundary, LeafLog uses a circle around the site anchor: **600 m for takeoffs** and **900 m for landings**. Once a boundary is drawn, the boundary replaces that default circle for matching.
+For a flight with recorded coordinates, **Use this flight’s position** can place the site pin there. A name-only site has all these tools too; adding a location does not require creating a replacement site.
 
-The site anchor does not have to be the first point in an IGC file. This is useful when a logger acquired its GPS fix late. Move the site anchor to the real launch location, then draw the boundary around the area that should count as the site. A saved boundary must contain its site's anchor.
+A saved boundary must contain the site pin. You can change both together and save once. Invalid details or a conflicting edit in another tab leave the whole edit unsaved.
+
+On a saved flight or in Settings, **Save site** saves the complete site immediately. Within an unsaved manual entry or CSV review, **Done** keeps a pending site draft. The site is saved only when the flight is saved or the import is confirmed. Canceling the enclosing entry or import creates nothing.
+
+## Site location and flight position are different facts
+
+The **site pin** is the representative location of a place. The **flight position** is the coordinate recorded or entered for that particular takeoff or landing.
+
+Selecting or editing a site never copies its pin into missing flight coordinates. Editing a flight coordinate does not silently remove its site selection. If a selected site and flight position disagree, the selection remains and the location needs review.
+
+A flight without takeoff coordinates can display its selected site’s map with **“Site location; takeoff position not recorded.”** That pin is not presented as a recorded takeoff.
+
+Changing a site’s name or location affects how all flights using that site display the place. Their recorded positions remain unchanged. **Remove site from this flight** clears that flight’s selection while retaining its coordinates and the reusable site.
+
+## Manual entries and CSV imports
+
+Use **Search or enter a site name** for both flying and landing sites. Matching sites appear immediately, with names starting with your text first and previously used sites prioritized within each match group. Choose a result, or explicitly choose **Add “[name]” as a new site**. Typing alone does not attach or create a site.
+
+After choosing a site, **Change** reopens search and **Clear** removes the selection from this flight while retaining flight coordinates. Escape or **Keep current site** cancels a replacement. **Site details** opens the full editor for an existing site; **Add location or details** does the same for a new name. New sites and pending edits are saved with the flight or confirmed import, never while searching. Leaving an unsaved entry creates nothing.
+
+A name alone creates a private unmapped site. A name with usable coordinates normally creates a private mapped site, or reuses a matching existing site.
+
+In CSV column matching, specify whether coordinates describe **this flight’s position** or **the site’s reference location**. Reference coordinates can establish a site pin without becoming recorded flight positions.
+
+The import preview describes the proposed sites. It writes no sites or flights. New sites remain private even when imported flights are public; importing does not publish locations.
+
+Repeated names are checked geographically. New takeoff groups have a maximum diameter of 150 m; landing groups have a maximum diameter of 300 m. Widely separated namesakes and rows without coordinates remain separate. A group’s pin uses an actual supplied coordinate. Overlapping existing sites or disagreeing names produce a review message instead of a guess.
+
+When explicitly selecting an unmapped site, coherent flight coordinates can add a pin to that same site. Conflicting positions already associated with it prevent automatic enrichment; choose its intended pin in the editor.
+
+CSV location text and coordinates are retained as original evidence. Changing a site selection does not erase that evidence. Exports include site pins separately from flight positions and include location provenance.
 
 ## Public and private sites
 
-| | Public site | Private site |
-| --- | --- | --- |
-| Who can discover it? | Every pilot | Only its owner |
-| Whose uploads can match it? | Any pilot's | Its owner's only |
-| Who sees its name and location? | Everyone | Only its owner; other viewers see an unknown site |
-| Best for | Established launches and landings that the community should reuse | Personal, sensitive, temporary, or not-yet-ready locations |
+Private sites are visible only to their owner. Public sites can be discovered and reused by other pilots. Sharing a site does not share the flights that use it.
 
-Choose **Public** when the place is a real shared launch or landing and you are confident that a public version does not already exist. Choose **Private** when the location should remain personal or when you want to verify it before sharing it.
+Signed-in pilots with a profile can edit a public site’s name, pin, boundary, and use for takeoff/landing. The editor explains that these changes are shared. Only the owner can change visibility. A public site must remain public when other pilots use it or have contributed to it.
 
-Public sites are shared records. Renaming a public site changes the displayed name wherever that same site record is used. It does not change flight GPS coordinates or silently attach new flights.
+## Automatic recording detection
 
-## Avoiding duplicate sites
+Web uploads and device uploads use the same conservative geographic matching. A single matching visible site can be selected automatically. More than one plausible site requires review. Coordinates alone do not produce an invented site name.
 
-Before creating a site, look for an existing public one near the flight location. The flight site chooser shows public sites and your own private sites within the nearby search area, including sites whose drawn boundary contains the flight point.
+Without a boundary, matching uses 600 m around a takeoff pin and 900 m around a landing pin. A boundary replaces the default circle. These matching distances are distinct from the stricter grouping limits used when importing new sites.
 
-![The flight site chooser lists nearby reusable sites and labels each one as public or private.](../images/sites/choose-site.png)
+Attaching an IGC recording to an existing entry keeps an explicitly chosen site. The recorded endpoints replace the entry’s reported flight positions; a disagreement with the selected site is shown for review.
 
-Use this order:
+## Manage existing flights and undo imports
 
-1. Open the site chooser for a flight, or the known-site selector for a manual/CSV entry.
-2. Compare the nearby site's name, distance, kind, and visibility.
-3. Select **Use this site** when it represents the same real-world place.
-4. Create a new site only when the launch or landing is genuinely distinct.
+Settings → Sites lists your sites and public sites used in your logbook. **Flights at this site** lists flights using the selected site. **Review matching flights** finds additional endpoint candidates for explicit selection. It does not reassign history automatically.
 
-LeafLog also rejects creation of the same normalized site name near a public site or one of your private sites and asks you to reuse the existing record. That protects against obvious duplicates, but differently spelled names can still describe the same place, so the nearby list remains the best check.
+**Replace site**, inside **Flights at this site**, lets you choose another available site and review the number of affected flights before confirming. It replaces every takeoff and landing reference to the selected site in your own logbook, including flights on other pages. Flight coordinates and other flight details are preserved; neither site nor other pilots’ flights are changed. If the sites or flight references change while the confirmation is open, review the replacement again.
 
-> **Note:** **Your sites** on the Sites settings page lists sites you own. It is not a directory of every public site. Use a flight or entry's site chooser to see public candidates near that location.
+**Delete site** is available to the site owner and requires confirmation showing the affected flight count. It permanently removes the reusable site and its saved zones, while keeping the flights and recorded positions. Sites used or edited by other pilots cannot be deleted this way; use replacement to change your own logbook instead.
 
-## Creating a site without an IGC file
+The logbook has separate takeoff and landing site filters. The site-location filter can find missing or uncertain locations at either endpoint.
 
-Go to **Settings → Sites** and expand **Create a site**. No flight or IGC file is required.
+Undo import removes untouched imported entries. It also removes private sites created by that import when they remain unchanged and unused. Sites that were subsequently edited, shared, or reused are retained.
 
-![The Sites settings page starts with Create a site collapsed so Your sites remains easy to reach.](../images/sites/sites-overview.png)
-
-Enter:
-
-- **Name:** a clear, commonly recognized name.
-- **Kind:** Takeoff, Landing, or Both.
-- **Visibility:** Public or Private.
-- **Anchor:** search for a nearby place, then click the map at the representative location.
-
-![The standalone Create a site form supports a name, kind, visibility, and freely placed map anchor.](../images/sites/create-site.png)
-
-After creation, select the site under **Your sites**. You can then:
-
-- drag or enter a more accurate anchor;
-- draw a boundary;
-- preview which of your existing flight endpoints fall inside the boundary or matching radius; and
-- explicitly select the endpoints you want to assign.
-
-If an existing boundary prevents moving the anchor to the correct place, remove the boundary, save the new anchor, and then redraw the boundary around it.
-
-## Creating or changing a site from a flight
-
-On a flight page, click the takeoff or landing site name. A bound flight first shows the site's overview. Choose **Choose a different site** to see nearby reusable sites or create a new one.
-
-For a new site created from an IGC flight, LeafLog uses that flight endpoint as the initial anchor. If the recorded start is late or inaccurate, create the site and then move its anchor under **Settings → Sites**. The flight's original endpoint remains where the IGC recorded it.
-
-Selecting **Use this site** is only a selection. Press **Save** to confirm the assignment.
-
-## CSV and manually entered flights
-
-CSV and manual flights do not need an IGC track to use sites.
-
-During CSV import, LeafLog groups imported takeoff and landing names for review. For each name you can either:
-
-- keep the name and coordinates from the CSV as a custom location; or
-- map that name to a known public site or one of your private sites.
-
-When the CSV already contains latitude/longitude values, choosing a site keeps those original coordinates and adds the site assignment. When coordinates are missing, selecting a known site can supply the site's anchor as the location.
-
-For an individual manual or CSV-imported flight, use the flight's site control to select a different existing site. If the flight has no usable endpoint coordinate and you need a new site, create it first under **Settings → Sites**, then return to the flight and select it.
-
-## Automatic IGC site detection
-
-Automatic uploads and manually uploaded IGC files use the same location-matching rules. Takeoff and landing are evaluated independently.
-
-```mermaid
-flowchart TD
-    A[IGC file is processed] --> B[Keep the recorded takeoff and landing coordinates]
-    B --> C[Find visible sites of a compatible kind]
-    C --> D[Public sites plus the pilot's own private sites]
-    D --> E{How many site areas contain the endpoint?}
-    E -->|None| F[Leave the site unassigned]
-    E -->|Exactly one| G[Assign that site automatically]
-    E -->|Two or more| H[Mark the endpoint for review]
-    H --> I[Pilot chooses and saves the intended site]
-```
-
-For each endpoint, LeafLog:
-
-1. derives and stores the flight's GPS coordinate;
-2. considers public sites plus private sites owned by that pilot;
-3. filters sites by kind—Takeoff, Landing, or Both;
-4. tests the point against each site's custom boundary, or its default radius when no boundary exists; and
-5. assigns only a single unambiguous match.
-
-An automatically matched site is a link to the site record. The recorded IGC coordinate remains intact.
-
-## Overlapping sites
-
-Nearby launches and generous error boundaries can overlap. When two or more distinct sites match the same endpoint, LeafLog does not guess based on name or nearest anchor. It marks the location as needing review and presents the possible sites to the flight owner.
-
-The pilot's explicit choice wins. This makes wide boundaries safe for late GPS fixes without allowing one nearby launch to silently absorb another launch's flights.
-
-## What changes affect existing flights?
-
-Site records are shared by every flight assigned to them, but flight coordinates remain independent.
-
-```mermaid
-flowchart LR
-    A[Rename, move, or redraw a site] --> B[Update the site record]
-    B --> C[No automatic flight reassignment]
-    B --> D[No flight coordinate changes]
-    B --> E[Bound flights display the site's current name]
-    C --> F[Preview matching flights]
-    F --> G[Select exact endpoints]
-    G --> H[Assign selected endpoints only]
-```
-
-| Action | Result |
-| --- | --- |
-| Rename a site | Every flight already linked to that site displays the new shared name |
-| Move a site anchor | Changes the site's reference location and matching area; flight coordinates stay unchanged |
-| Draw or edit a boundary | Changes matching and preview results; no flights are reassigned automatically |
-| Choose a different site on one flight | Changes only that flight endpoint's assignment |
-| Preview matching flights | Read-only; shows possible endpoints using their stored coordinates |
-| Assign selected matches | Changes only the checked flight endpoints |
-
-![Preview matching flights is read-only until exact endpoints are selected and assigned.](../images/sites/review-matches.png)
-
-This means a site edit can “ripple” visually only when several flights already reference the same site record—for example, a rename changes the shared label on all of them. It must not rewrite their recorded GPS points or automatically pull other flights into the site.
-
-## Recommended workflow
-
-For the cleanest logbook:
-
-1. Reuse an existing public site when it represents the same real-world place.
-2. Create a private site while location or naming details are uncertain.
-3. Set an accurate anchor and draw a boundary only as wide as necessary for normal GPS error or delayed fixes.
-4. Preview matching flights after changing geometry.
-5. Review every proposed endpoint and assign only the intended rows.
-6. Resolve overlapping matches from each flight's **Choose site** prompt.
-
-Following this workflow keeps community locations reusable while preserving the original location evidence attached to every flight.
+Historical entries that predate this model can already open the full editor. A separate conversion tool supports previewing and converting historical names in batches; it preserves existing site selections and recorded coordinates.

@@ -1,7 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
+import { expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -17,7 +18,7 @@ async function getMagicLink(): Promise<string> {
   throw new Error("magic link file never appeared");
 }
 
-test("sign up → upload → view → share → logged-out view", async ({ page, context }) => {
+test("sign up → upload → view → share → logged-out view", async ({ page, newContext }) => {
   const suffix = `${Date.now()}`;
   const email = `e2e_${suffix}@test.local`;
   const handle = `e2e${suffix}`.slice(0, 18);
@@ -53,12 +54,12 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
 
   // 5. Land on the flight page with real metrics. Sites are fully
   // community-driven (no curated seed), so a first-ever flight here reads
-  // "Unknown site" until a pilot names it — that's the correct, honest state.
+  // "Site not identified" until a pilot names it — that's the correct, honest state.
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
   const flightUrl = page.url();
   await expect(page.getByText("Airtime")).toBeVisible();
   await expect(page.getByText("Max altitude")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Unknown site" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Site not identified" })).toBeVisible();
 
   // 6. Share through the real edit UI and wait for persistence.
   await page.goto(`${flightUrl}/edit`);
@@ -66,10 +67,58 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await expect(page.getByRole("button", { name: "Public", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   // 7. A logged-out visitor can see the now-public flight.
-  const anon = await context.browser()!.newContext();
+  const anon = await newContext();
   const anonPage = await anon.newPage();
-  const res = await anonPage.goto(flightUrl);
+  const res = await anonPage.goto(`${flightUrl}?trackDebug=1`);
   expect(res?.status()).toBe(200);
   await expect(anonPage.getByText("Airtime")).toBeVisible();
+  await expectSignedOutHeader(anonPage);
+  // The server-rendered header can be visible while the replay's WebGL map is
+  // still starting. Let its first frame finish before testing link navigation.
+  await waitForMapReady(anonPage.locator(".flight-replay-map"));
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "path2");
+  await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" }).getByRole("button")).toHaveCount(3);
+  await expect(anonPage.locator('[data-gpu-report="ready"]')).toBeAttached();
+  await expect(anonPage.getByText("Device report", { exact: true })).toBeVisible();
+  await selectTrackDiagnosticRenderer(anonPage, "256-point path", "path256");
+  await selectTrackDiagnosticRenderer(anonPage, "Colored segments", "lines");
+  await selectTrackDiagnosticRenderer(anonPage, "2-point path", "path2");
+  await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();
+});
+
+test("unfinished signup can switch email and sign out", async ({ page }) => {
+  const suffix = Date.now();
+  const wrongEmail = `wrong_${suffix}@test.local`;
+  const rightEmail = `right_${suffix}@test.local`;
+
+  rmSync(LINK_FILE, { force: true });
+  await page.goto("/sign-in");
+  await page.getByPlaceholder("you@example.com").fill(wrongEmail);
+  await page.getByRole("button", { name: "Send magic link" }).click();
+  await page.goto(await getMagicLink());
+  await expect(page.getByText(wrongEmail)).toBeVisible();
+  await page.getByRole("button", { name: "Keep me signed in" }).click();
+  await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByText(wrongEmail)).toBeVisible();
+
+  await page.getByRole("button", { name: "Use a different email" }).click();
+  await expect(page).toHaveURL(/\/sign-in/);
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  rmSync(LINK_FILE, { force: true });
+  await page.getByPlaceholder("you@example.com").fill(rightEmail);
+  await page.getByRole("button", { name: "Send magic link" }).click();
+  await page.goto(await getMagicLink());
+  await page.getByRole("button", { name: "Just this time" }).click();
+  await expect(page).toHaveURL(/\/onboarding/);
+  await expect(page.getByText(rightEmail)).toBeVisible();
+  await expect(page.getByText(wrongEmail)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+  await page.goto("/onboarding");
+  await expect(page).toHaveURL(/\/sign-in/);
 });

@@ -1,9 +1,12 @@
+import { hasSitePoint } from "./model";
 import { Prisma, type Site, type Zone } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canSeeSite, canSeeZone, normalizeSiteVisibility, type SiteVisibility } from "./visibility";
 import { validateBoundary, boundaryColumns, type BoundaryColumns } from "./boundary";
 import { writeAuditEntry, type AuditAction } from "./audit";
 import { assignmentPatch } from "./assignment";
+import { createHash } from "node:crypto";
+import { lockSiteRows } from "./locks";
 
 export type SiteEndpoint = "takeoff" | "landing";
 
@@ -186,19 +189,14 @@ interface LocationCacheWriteDb {
  * its parent unchanged (see docs/sprints/SPRINT-005.md's "Effective
  * visibility" section for why that's deliberate, not an oversight).
  */
-async function recomputeSiteAndZoneCaches(
+export async function recomputeSiteAndZoneCaches(
   tx: LocationCacheWriteDb,
   site: Pick<Site, "id" | "name" | "visibility">,
 ): Promise<void> {
   const cachedSiteName = normalizeSiteVisibility(site.visibility) === "public" ? site.name : null;
-  await tx.flight.updateMany({
-    where: { takeoffSiteId: site.id },
-    data: { takeoffSiteName: cachedSiteName },
-  });
-  await tx.flight.updateMany({
-    where: { landingSiteId: site.id },
-    data: { landingSiteName: cachedSiteName },
-  });
+  // Display-cache refreshes do not count as an edit to a flight or break import undo.
+  await tx.$executeRaw`UPDATE "Flight" SET "takeoffSiteName" = ${cachedSiteName} WHERE "takeoffSiteId" = ${site.id}`;
+  await tx.$executeRaw`UPDATE "Flight" SET "landingSiteName" = ${cachedSiteName} WHERE "landingSiteId" = ${site.id}`;
 
   await tx.$executeRaw`
     UPDATE "Flight" f
@@ -214,6 +212,18 @@ async function recomputeSiteAndZoneCaches(
              ELSE NULL END
       FROM "Zone" z JOIN "Site" s ON s."id" = z."siteId"
      WHERE f."landingZoneId" = z."id" AND s."id" = ${site.id}`;
+}
+
+/** Convert representation without changing recorded positions or flight edit history. */
+export async function writeMigratedEndpoint(tx: Pick<typeof prisma, "flight">, input: {
+  ownerId: string; flightId: string; expectedUpdatedAt: Date; endpoint: SiteEndpoint;
+  site: SiteForCacheRow; needsReview: boolean; evidence?: Prisma.InputJsonObject;
+}) {
+  const { endpoint } = input;
+  return tx.flight.updateMany({ where: { id: input.flightId, ownerId: input.ownerId, updatedAt: input.expectedUpdatedAt, [`${endpoint}SiteId`]: null }, data: {
+    ...locationCachePatch(input.site, null, endpoint), [`${endpoint}SiteAssignment`]: input.needsReview ? "needs_review" : "legacy",
+    ...(input.evidence ? { [`${endpoint}LocationEvidence`]: input.evidence } : {}), updatedAt: input.expectedUpdatedAt,
+  } });
 }
 
 // ---------------------------------------------------------------------
@@ -241,7 +251,7 @@ async function isOnboardedCaller(tx: CommunityEditDb, callerId: string): Promise
 
 /** True once `callerId` may rename or boundary-edit this SITE: its owner
  *  (any visibility), or — for a PUBLIC site only — any onboarded pilot. */
-async function canCommunityEditSite(
+export async function canCommunityEditSite(
   tx: CommunityEditDb,
   site: { visibility: string; ownerId: string | null },
   callerId: string,
@@ -486,13 +496,19 @@ async function siteHasOtherOwnedZone(
  * first — once the site is naturally unreferenced and footprint-free, this
  * same guard passes.
  */
-export async function deleteSite(siteId: string, ownerId: string): Promise<void> {
+export async function deleteSite(siteId: string, ownerId: string, expectedRevision?: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    await lockSiteRows(tx, [siteId]);
     const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
     if (!existing) throw notFoundOrNotOwned();
     if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
     if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
     if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
+
+    if (expectedRevision && (await siteDeletionPreview(tx, siteId, ownerId)).revision !== expectedRevision) {
+      throw new Error("This site or its flights changed. Review the deletion again before confirming.");
+    }
 
     await tx.$executeRaw`
       UPDATE "Flight" f SET "takeoffZoneId" = NULL, "takeoffZoneName" = NULL
@@ -514,6 +530,27 @@ export async function deleteSite(siteId: string, ownerId: string): Promise<void>
 
     await tx.site.delete({ where: { id: siteId } });
   });
+}
+
+export type SiteDeletionPreview = { id: string; name: string; flightCount: number; zoneCount: number; revision: string };
+
+async function siteDeletionPreview(db: Pick<typeof prisma, "site" | "flight" | "zone" | "locationAuditEntry">, siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
+  const site = await db.site.findFirst({ where: { id: siteId, ownerId } });
+  if (!site) throw new Error("Only the site owner can delete this site.");
+  if (await referencedByOthers(db, siteId, ownerId) || await siteHasOtherOwnedZone(db, siteId, ownerId)) {
+    throw new Error("Other pilots use this site or own locations within it, so it cannot be deleted. You can replace it in your own logbook instead.");
+  }
+  if (await hasCommunityFootprint(db, "site", siteId, ownerId)) {
+    throw new Error("Other pilots have contributed to this site, so it cannot be deleted. You can replace it in your own logbook instead.");
+  }
+  const flights = await db.flight.findMany({ where: { ownerId, OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }] }, select: { id: true, takeoffSiteId: true, landingSiteId: true }, orderBy: { id: "asc" } });
+  const zones = await db.zone.findMany({ where: { siteId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } });
+  return { id: site.id, name: site.name, flightCount: flights.length, zoneCount: zones.length,
+    revision: createHash("sha256").update(JSON.stringify([site.id, site.updatedAt, flights, zones])).digest("hex") };
+}
+
+export async function previewSiteDeletion(siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
+  return siteDeletionPreview(prisma, siteId, ownerId);
 }
 
 /**
@@ -769,7 +806,8 @@ export async function setSiteBoundary(siteId: string, callerId: string, raw: unk
     if (!existing) throw notFoundOrNotEditable();
     if (!(await canCommunityEditSite(tx, existing, callerId))) throw notFoundOrNotEditable();
 
-    const validated = validateBoundary(raw, "site", { lat: existing.lat, lon: existing.lon });
+    if (!hasSitePoint(existing)) throw new Error("Add a site pin before saving a boundary.");
+    const validated = validateBoundary(raw, "site", existing);
     if (!validated.ok) throw boundaryInvalid(validated.error);
 
     await enforceDailyCommunityEditCap(tx, callerId);
@@ -900,7 +938,7 @@ export async function listOwnedSitesForBoundaryEditing(callerId: string): Promis
     select: { id: true, name: true, visibility: true, lat: true, lon: true, boundaryMinLat: true },
     orderBy: { name: "asc" },
   });
-  return rows.map((r) => ({
+  return rows.filter(hasSitePoint).map((r) => ({
     id: r.id,
     name: r.name,
     visibility: r.visibility,

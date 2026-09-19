@@ -10,6 +10,9 @@ export default defineConfig({
     },
   },
   test: {
+    allowOnly: !process.env.CI,
+    reporters: ["default", "junit"],
+    outputFile: { junit: "test-results/vitest.xml" },
     // Integration files share the local database and global XC queue.
     fileParallelism: false,
     globalSetup: ["./test/unit-setup.ts"],

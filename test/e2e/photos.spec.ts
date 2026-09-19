@@ -1,5 +1,5 @@
-import { uploadFlight } from "./helpers";
-import { test, expect } from "@playwright/test";
+import { uploadFlight, waitForMapReady } from "./helpers";
+import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
@@ -53,11 +53,18 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await (await photosChooser).setFiles([JPEG, HEIC, JPEG, JPEG, JPEG]);
   await expect(page.getByText(/added 2 photos\. 3 were already on this flight/i)).toBeVisible({ timeout: 30_000 });
   await page.goto(flightUrl);
+  // The gallery can appear while the replay's WebGL map is still starting.
+  // Wait for its first frame before measuring thumbnail decoding.
+  await waitForMapReady(page.locator(".flight-replay-map"));
 
   // Two thumbnails appear in the gallery, both served (decoded) successfully.
   const thumbs = page.locator('img[src*="/photos/"]');
   await expect(thumbs).toHaveCount(2, { timeout: 30_000 });
   for (let i = 0; i < 2; i++) {
+    // Bring lazy images into view before checking decoding. This also moves
+    // the pointer/view away from the replay, as a pilot viewing photos would.
+    await thumbs.nth(i).scrollIntoViewIfNeeded();
+    await expect(thumbs.nth(i)).toBeInViewport();
     await expect
       .poll(() => thumbs.nth(i).evaluate((img: HTMLImageElement) => img.naturalWidth), {
         timeout: 15_000,
@@ -72,4 +79,9 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await expect
     .poll(() => big.evaluate((img: HTMLImageElement) => img.naturalWidth), { timeout: 15_000 })
     .toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(big).toHaveAttribute("alt", "tiled-sample.heic");
+  await expect.poll(() => big.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(big).toHaveCount(0);
 });

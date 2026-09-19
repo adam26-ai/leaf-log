@@ -3,7 +3,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { FlightListItem } from "@/lib/flights/repo";
 import { FlightRow } from "./flight-row";
 
-vi.mock("@/components/flight/analysis-status", () => ({ AnalysisStatus: () => null }));
+
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueMissingFlightAnalysis: vi.fn() }));
 
 afterEach(cleanup);
 
@@ -19,13 +22,33 @@ const flight = {
   maxAltM: 1800,
   takeoffSiteName: "Woodrat",
   takeoffSiteId: "woodrat",
+  takeoffSiteAssignment: "auto_matched",
   takeoffZoneName: null,
   takeoffZoneId: null,
   landingSiteName: null,
   landingSiteId: null,
+  landingSiteAssignment: "unassigned",
   landingZoneName: null,
   landingZoneId: null,
 } as FlightListItem;
+
+it.each([true, false])("distinguishes ambiguous takeoff sites from unmatched sites (compact=%s)", (compact) => {
+  const unknown = { ...flight, takeoffSiteId: null, takeoffSiteName: null };
+  const { rerender } = render(<FlightRow flight={{ ...unknown, takeoffSiteAssignment: "needs_review" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Choose site");
+  expect(screen.queryByText("Unknown site")).not.toBeInTheDocument();
+  rerender(<FlightRow flight={{ ...unknown, takeoffSiteAssignment: "unassigned" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Unknown site");
+  rerender(<FlightRow flight={{ ...flight, takeoffSiteAssignment: "needs_review" }} compact={compact} />);
+  expect(screen.getByRole("link")).toHaveTextContent("Woodrat");
+  expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
+});
+
+it("shows an ambiguous landing even when the takeoff also needs a choice", () => {
+  render(<FlightRow flight={{ ...flight, takeoffSiteId: null, takeoffSiteName: null, takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" }} compact />);
+  expect(screen.getByTitle("Choose site → Choose site")).toBeInTheDocument();
+  expect(screen.getByTitle("Landing: Choose site")).toHaveTextContent("→ Choose site");
+});
 
 it.each([
   ["public", "globe"],
@@ -62,4 +85,19 @@ it("reserves the companion column for flights without a match", () => {
   expect(companionColumn).toHaveClass("w-11");
   expect(companionColumn).toBeEmptyDOMElement();
   expect(screen.getByTitle("Maximum altitude").parentElement).toBe(siteAltitudeGroup);
+});
+
+it.each(["manual_entry", "csv_import"])("identifies %s with an icon without an extra status row", (source) => {
+  const { container } = render(<FlightRow flight={{ ...flight, source, recordingKind: "logbook" }} compact showAnalysis />);
+  expect(screen.getByRole("img", { name: source === "manual_entry" ? "Manual logbook entry" : "Imported logbook entry" })).toBeInTheDocument();
+  expect(screen.queryByText(/No track recorded|Reported XC/)).not.toBeInTheDocument();
+  expect(container.firstElementChild?.children).toHaveLength(1);
+});
+
+it("shows calculation actions only in the owner's logbook", () => {
+  const { rerender } = render(<FlightRow flight={{ ...flight, xcStatus: "unscored" }} compact showAnalysis />);
+  const action = screen.getByRole("button", { name: "Calculate XC" });
+  expect(action.closest("a")).toBeNull();
+  rerender(<FlightRow flight={{ ...flight, xcStatus: "unscored" }} compact />);
+  expect(screen.queryByRole("button", { name: "Calculate XC" })).not.toBeInTheDocument();
 });

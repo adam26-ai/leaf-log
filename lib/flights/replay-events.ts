@@ -10,3 +10,9 @@ export type ReplayMetric = "max-altitude" | "best-climb" | "max-sink";
 export function seekReplayToMetric(metric: ReplayMetric) {
   window.dispatchEvent(new CustomEvent<ReplayMetric>(REPLAY_SEEK_EVENT, { detail: metric }));
 }
+
+export const REPLAY_XC_SELECT_EVENT = "leaf-replay-xc-select";
+export type XcSelection = { flightId: string; shape: import("@/lib/igc/xc-types").XcShape };
+export function selectReplayXcRoute(flightId: string, shape: XcSelection["shape"]) {
+  window.dispatchEvent(new CustomEvent<XcSelection>(REPLAY_XC_SELECT_EVENT, { detail: { flightId, shape } }));
+}

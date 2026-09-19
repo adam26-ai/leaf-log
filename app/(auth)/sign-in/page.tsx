@@ -3,7 +3,7 @@ import { signIn } from "@/lib/auth";
 import { safeNext } from "@/lib/safe-next";
 import { Button } from "@/components/ui/button";
 import { AccentBar } from "@/components/ui/accent-bar";
-import { Wordmark } from "@/components/brand/wordmark";
+import { LeafLogLogo } from "@/components/brand/leaf-log-logo";
 
 async function sendLink(formData: FormData) {
   "use server";
@@ -26,7 +26,7 @@ export default async function SignInPage({
     <div className="flex flex-1 flex-col">
       <header className="px-6 py-5 sm:px-10">
         <Link href="/">
-          <Wordmark className="text-2xl" />
+          <LeafLogLogo />
         </Link>
       </header>
       <main className="flex flex-1 items-center justify-center px-6 py-12">

@@ -4,9 +4,10 @@ import { Mountain, Trophy, ChevronDown, CalendarDays, Users } from "lucide-react
 import { WingIcon } from "@/components/icons/wing-icon";
 import type { FlightListItem } from "@/lib/flights/repo";
 import type { FlightTrophy } from "@/lib/flights/trophies";
-import { EMPTY_FILTERS, flightCalendarDate, matchesDateRange, readLogbookFilters, siteKey, wingKey, type LogbookFilters } from "@/lib/flights/logbook-filters";
+import { EMPTY_FILTERS, flightCalendarDate, matchesDateRange, readLogbookFilters, siteKeys, wingKey, type LogbookFilters } from "@/lib/flights/logbook-filters";
 import { listHighlights } from "@/lib/flights/list-highlights";
 import { formatDuration } from "@/lib/flights/format";
+import { siteLinkLabel } from "@/lib/sites/display";
 import { FlightRow } from "./flight-row";
 import { StatsBar } from "./stats-bar";
 
@@ -45,12 +46,23 @@ function FilterChoices({ label, icon, options = [], selected = null, active = se
   </div>;
 }
 
+function siteChoices(flights: FlightListItem[]) {
+  const counts = new Map<string, { name: string; kind: string; count: number }>();
+  for (const flight of flights) {
+    for (const key of siteKeys(flight)) {
+      const endpoint = key === (flight.takeoffSiteId ?? `name:${flight.takeoffSiteName}`) ? "takeoff" : "landing";
+      const entry = counts.get(key) ?? {
+        name: key === "unknown" ? "Site not recorded" : flight[`${endpoint}SiteName`] ?? "Site",
+        kind: key === "unknown" ? "" : siteLinkLabel(flight[`${endpoint}SiteId`], flight[`${endpoint}SiteName`], flight[`${endpoint}SiteMapped`], flight[`${endpoint}HasGps`], flight[`${endpoint}SiteAssignment`] === "needs_review"),
+        count: 0,
+      };
+      entry.count++; counts.set(key, entry);
+    }
+  }
+  return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})${entry.kind ? ` · ${entry.kind}` : ''}` }));
+}
 export function LogbookList({ flights, trophies, ownerId }: { flights: FlightListItem[]; trophies: Record<string, FlightTrophy[]>; ownerId?: string }) {
-  const sites = useMemo(() => {
-    const counts = new Map<string, { name: string; count: number }>();
-    flights.forEach(f => { const key = siteKey(f), entry = counts.get(key) ?? { name: f.takeoffSiteName ?? "Unknown site", count: 0 }; entry.count++; counts.set(key, entry); });
-    return [...counts].sort((a,b) => a[1].name.localeCompare(b[1].name)).map(([key, entry]) => ({ key, label: `${entry.name} (${entry.count})` }));
-  }, [flights]);
+  const sites = useMemo(() => siteChoices(flights), [flights]);
   const wings = useMemo(() => {
     const counts = new Map<string, number>();
     flights.forEach(f => counts.set(wingKey(f), (counts.get(wingKey(f)) ?? 0) + (f.durationS ?? 0)));
@@ -90,7 +102,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   const friendFlightIds = new Set(friends?.filter(friend => filters.friends?.includes(friend.key)).flatMap(friend => friend.flightIds));
   const sharedFlightIds = new Set(friends?.flatMap(friend => friend.flightIds));
   const visible = flights.filter(f =>
-    (filters.sites === null || filters.sites.includes(siteKey(f))) &&
+    (filters.sites === null || siteKeys(f).some(key => filters.sites!.includes(key))) &&
     (filters.wings === null || filters.wings.includes(wingKey(f))) &&
     (filters.friends === null || friendFlightIds.has(f.id)) &&
     (!filters.trophiesOnly || Boolean(trophies[f.id]?.length)) &&
@@ -99,7 +111,7 @@ export function LogbookList({ flights, trophies, ownerId }: { flights: FlightLis
   const { highlightScore, distanceScore } = listHighlights(flights);
   return <>
     <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
-      <StatsBar stats={{ totalSeconds: ready.reduce((s,f) => s + (f.durationS ?? 0), 0), flightCount: ready.length, unknownDurationCount: ready.filter(f => f.durationS == null).length, siteCount: new Set(ready.map(siteKey).filter(key => key !== "unknown")).size }} />
+      <StatsBar stats={{ totalSeconds: ready.reduce((s,f) => s + (f.durationS ?? 0), 0), flightCount: ready.length, unknownDurationCount: ready.filter(f => f.durationS == null).length, siteCount: new Set(ready.flatMap(siteKeys).filter(key => key !== "unknown")).size }} />
       <div className="relative max-w-full pt-6">
         {Object.values(filters).some(value => value !== null && value !== "" && value !== false) && <button type="button" onClick={() => setFilters(EMPTY_FILTERS)} className="absolute right-0 top-0 text-xs text-gray-600 underline">Clear filters</button>}
         <div className="relative flex flex-wrap items-center gap-2" aria-label="Logbook filters">

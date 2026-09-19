@@ -1,8 +1,14 @@
-export interface FilterFlight { takeoffSiteId: string | null; takeoffSiteName: string | null; glider: string | null }
+export interface FilterFlight { takeoffSiteId: string | null; takeoffSiteName: string | null; glider: string | null; landingSiteId?: string | null; landingSiteName?: string | null }
 export const siteKey = (f: FilterFlight) => f.takeoffSiteId ?? (f.takeoffSiteName ? `name:${f.takeoffSiteName}` : "unknown");
+/** Each flight contributes once per site, regardless of endpoint. */
+export function siteKeys(f: FilterFlight): string[] {
+  const keys = [f.takeoffSiteId ?? (f.takeoffSiteName ? `name:${f.takeoffSiteName}` : null),
+    f.landingSiteId ?? (f.landingSiteName ? `name:${f.landingSiteName}` : null)].filter((key): key is string => Boolean(key));
+  return keys.length ? [...new Set(keys)] : ["unknown"];
+}
 export const wingKey = (f: FilterFlight) => f.glider?.trim() || "Unknown wing";
 export function matchesLogbookFilters(f: FilterFlight & { id: string }, sites: string[] | null, wings: string[] | null, trophiesOnly: boolean, trophyIds: Set<string>) {
-  return (sites === null || sites.includes(siteKey(f))) && (wings === null || wings.includes(wingKey(f))) && (!trophiesOnly || trophyIds.has(f.id));
+  return (sites === null || siteKeys(f).some(key => sites.includes(key))) && (wings === null || wings.includes(wingKey(f))) && (!trophiesOnly || trophyIds.has(f.id));
 }
 
 export interface LogbookFilters {
@@ -25,7 +31,7 @@ export function readLogbookFilters(value: string | null): LogbookFilters {
     // Retire the old unshared/category selections without leaving invisible filters.
     const friends = selection("friends")?.filter(key => key !== "__no_shared_flights__");
     const trophiesOnly = typeof parsed.trophiesOnly === "boolean" ? parsed.trophiesOnly : Boolean(selection("trophies")?.some(key => key !== "none"));
-    return { sites: selection("sites"), wings: selection("wings"), friends: friends?.length ? friends : null, trophiesOnly, from: date("from"), until: date("until") };
+    return { sites: selection("sites")?.map(key => key === "gps" ? "unknown" : key) ?? null, wings: selection("wings"), friends: friends?.length ? friends : null, trophiesOnly, from: date("from"), until: date("until") };
   } catch { return EMPTY_FILTERS; }
 }
 

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "re
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Undo2, Eraser, Trash2, Save as SaveIcon, Check, X } from "lucide-react";
-import { styleFor } from "./basemaps";
+import { SiteMapControls, SiteMapLegend } from "./site-map-controls";
+import { styleFor, hasMapTiler, type BasemapId } from "./basemaps";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { Boundary, Ring } from "@/lib/sites/geo";
@@ -167,6 +168,8 @@ function MapIconButton({
  *  pending boundary edit, rather than showing a second, confusingly
  *  identical "Save" of its own. */
 export interface BoundaryEditorHandle {
+  readDraft(): unknown;
+  locate(point: { lat: number; lon: number }): void;
   /** Commits the current draft via `onSave` only if it's actually been
    *  touched since load (see `dirtyRef`) — returns null when there's
    *  nothing pending, so the caller can skip its own boundary-specific
@@ -181,7 +184,12 @@ export interface BoundaryEditorHandle {
 
 export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   anchor: { lat: number; lon: number };
+  compact?: boolean;
+  anchorVisible?: boolean;
   initialBoundary: Boundary | null;
+  editingMode?: "boundary" | "anchor";
+  onAnchorChange?: (point: { lat: number; lon: number }) => void;
+  flightPoint?: { lat: number; lon: number } | null;
   level: BoundaryLevel;
   /** The circle this boundary would replace, drawn as a dashed reference
    *  ring so the pilot sees what they're changing. */
@@ -213,7 +221,12 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
 }>(function BoundaryEditor(
   {
     anchor,
+    compact = false,
+    anchorVisible = true,
     initialBoundary,
+    editingMode = "boundary",
+    onAnchorChange,
+    flightPoint,
     level,
     referenceRadiusM,
     parent = null,
@@ -230,6 +243,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const [basemap, setBasemap] = useState<BasemapId>(hasMapTiler() ? "satellite" : "monochrome");
+  const modeRef = useRef(editingMode);
+  const anchorChangeRef = useRef(onAnchorChange);
+  const anchorMarkerRef = useRef<maplibregl.Marker | null>(null);
   const vertexMarkersRef = useRef<maplibregl.Marker[]>([]);
   const initialRing: Ring | null = initialBoundary ? { coordinates: initialBoundary.geometry.coordinates[0] } : null;
   const stateRef = useRef<EditorState>(loadEditor(initialRing));
@@ -281,6 +298,8 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     updateDraftLine(vertices);
 
     for (const m of vertexMarkersRef.current) m.remove();
+    vertexMarkersRef.current = [];
+    if (modeRef.current !== "boundary") return;
     vertexMarkersRef.current = vertices.map(([lon, lat], index) => {
       const el = document.createElement("div");
       el.dataset.testid = "boundary-vertex";
@@ -323,6 +342,26 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   }
 
   useEffect(() => {
+    modeRef.current = editingMode;
+    anchorChangeRef.current = onAnchorChange;
+    anchorMarkerRef.current?.setDraggable(editingMode === "anchor");
+    if (anchorMarkerRef.current) {
+      const element = anchorMarkerRef.current.getElement();
+      element.style.pointerEvents = editingMode === "anchor" ? "auto" : "none";
+      element.tabIndex = editingMode === "anchor" ? 0 : -1;
+    }
+    syncDrawing();
+    // The current draft is retained when switching editing tools.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingMode, onAnchorChange]);
+  useEffect(() => {
+    anchorMarkerRef.current?.setLngLat([anchor.lon, anchor.lat]);
+    if (anchorMarkerRef.current) anchorMarkerRef.current.getElement().style.display = anchorVisible ? "" : "none";
+    const source = mapRef.current?.getSource("reference-circle") as maplibregl.GeoJSONSource | undefined;
+    if (source && referenceRadiusM) source.setData(ringGeoJson(circleRing(anchor.lat, anchor.lon, referenceRadiusM)));
+  }, [anchor.lat, anchor.lon, referenceRadiusM, anchorVisible]);
+
+  useEffect(() => {
     if (!containerRef.current) return;
 
     const map = new maplibregl.Map({
@@ -333,7 +372,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       // set, so the editor still works with no key — just without imagery.
       style: styleFor("satellite"),
       center: [anchor.lon, anchor.lat],
-      zoom: 15,
+      zoom: anchorVisible || flightPoint ? 15 : 2,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
@@ -353,8 +392,29 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     publishViewState();
     map.on("moveend", publishViewState);
 
-    map.on("load", () => {
-      new maplibregl.Marker({ color: "#272727" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
+    const anchorMarker = new maplibregl.Marker({ color: "#0099ff", draggable: modeRef.current === "anchor" }).setLngLat([anchor.lon, anchor.lat]).addTo(map);
+    anchorMarkerRef.current = anchorMarker;
+    anchorMarker.getElement().style.display = anchorVisible ? "" : "none";
+    anchorMarker.getElement().setAttribute("aria-label", "Site pin (blue)");
+    // In boundary mode the pin is a reference, so it must not block edges
+    // or vertices underneath it. Moving the pin has its own editing tool.
+    anchorMarker.getElement().style.pointerEvents = modeRef.current === "anchor" ? "auto" : "none";
+    anchorMarker.getElement().tabIndex = modeRef.current === "anchor" ? 0 : -1;
+    anchorMarker.getElement().addEventListener("click", event => event.stopPropagation());
+    anchorMarker.on("dragend", () => {
+      const point = anchorMarker.getLngLat().wrap();
+      anchorChangeRef.current?.({ lat: point.lat, lon: point.lng });
+    });
+    if (flightPoint) {
+      const el = document.createElement("div");
+      el.setAttribute("aria-label", "Flight position (green)");
+      el.style.cssText = "width:14px;height:14px;border-radius:50%;background:var(--color-success-accent, #d8ff00);border:2px solid #141414;box-sizing:border-box;pointer-events:none;";
+      new maplibregl.Marker({ element: el }).setLngLat([flightPoint.lon, flightPoint.lat]).addTo(map).getElement().tabIndex = -1;
+    }
+    const observer = new ResizeObserver(() => map.resize());
+    observer.observe(containerRef.current);
+    let framed = false;
+    map.on("style.load", () => {
 
       if (initialBoundary) {
         // A row that already has a boundary is being replaced by whatever
@@ -373,9 +433,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
           paint: { "line-color": "#3b7dd8", "line-width": 2, "line-dasharray": [2, 2] },
         });
       } else if (referenceRadiusM) {
+        const point = anchorMarker.getLngLat();
         map.addSource("reference-circle", {
           type: "geojson",
-          data: ringGeoJson(circleRing(anchor.lat, anchor.lon, referenceRadiusM)),
+          data: ringGeoJson(circleRing(point.lat, point.lng, referenceRadiusM)),
         });
         map.addLayer({
           id: "reference-circle-line",
@@ -447,7 +508,8 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       // No shape yet and no circle to reference (a picker-opened row with
       // neither) — nothing to frame beyond the initial center/zoom already
       // set at map construction.
-      if (framingRing) {
+      if (framingRing && !framed) {
+        framed = true;
         const bounds = boundsOfPoints([...framingRing, [anchor.lon, anchor.lat]]);
         if (bounds) map.fitBounds(bounds, { padding: 56, duration: 0, maxZoom: 17 });
       }
@@ -460,6 +522,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     // there's no permanent handle sitting on every edge.
     let edgeInsertHandled = false;
     map.on("mousedown", (ev) => {
+      if (modeRef.current !== "boundary" || (ev.originalEvent.target as HTMLElement | null)?.closest(".maplibregl-marker")) return;
       // Pressing an EXISTING vertex must always move that vertex, never
       // insert a new one next to it — a vertex sits exactly on its own two
       // adjacent edges (distance 0), so without this check the proximity
@@ -507,6 +570,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     });
 
     map.on("click", (ev) => {
+      if (modeRef.current === "anchor") {
+        anchorChangeRef.current?.({ lat: ev.lngLat.lat, lon: ev.lngLat.wrap().lng });
+        return;
+      }
       if (edgeInsertHandled) {
         edgeInsertHandled = false;
         return; // already handled by the mousedown-driven edge insert above
@@ -517,7 +584,9 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     return () => {
       for (const m of vertexMarkersRef.current) m.remove();
       vertexMarkersRef.current = [];
+      observer.disconnect();
       map.remove();
+      anchorMarkerRef.current = null;
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -549,6 +618,11 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   }
 
   useImperativeHandle(ref, () => ({
+    readDraft() {
+      const vertices = stateRef.current.vertices;
+      return vertices.length ? { type: "Polygon", coordinates: [[...vertices, vertices[0]]] } : null;
+    },
+    locate(point) { mapRef.current?.flyTo({ center: [point.lon, point.lat], zoom: 13 }); },
     async commitIfDirty() {
       if (!dirtyRef.current) return null;
       if (!canSave) return "invalid";
@@ -573,18 +647,20 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   const hasVertices = stateRef.current.vertices.length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={`flex shrink-0 flex-col ${compact ? "gap-1.5" : "gap-3"}`}>
+      <p className="text-xs text-gray-600">{editingMode === "anchor" ? "Drag the blue site pin or click the map to move it." : "Click to add boundary points. Drag points or edges to adjust the shape; click a point to remove it."}</p>
       <div className="relative">
         <div
           ref={containerRef}
           data-testid="boundary-editor-map"
-          className="h-[clamp(260px,45vh,520px)] w-full rounded-lg"
+          className={`${compact ? "h-[clamp(180px,32dvh,320px)]" : "h-[clamp(260px,45vh,520px)]"} w-full rounded-lg`}
         />
         {/* On-map control stack, right below MapLibre's own zoom buttons
          *  (top-right) — icons instead of the old below-map text row, which
          *  crowded awkwardly against this component's embedding contexts'
          *  own bottom action rows. */}
-        <div className="absolute right-[10px] top-[84px] z-10 flex flex-col items-end gap-1.5">
+        <div className="absolute left-2 top-2"><SiteMapControls value={basemap} onChange={next => { setBasemap(next); mapRef.current?.setStyle(styleFor(next)); }} /></div>
+        {editingMode === "boundary" && <div className="absolute right-[10px] top-[84px] z-10 flex flex-col items-end gap-1.5">
           <MapIconButton
             title="Undo last point"
             icon={Undo2}
@@ -630,15 +706,16 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
               disabled={!canSave || saving}
             />
           )}
-        </div>
+        </div>}
       </div>
+      <SiteMapLegend flightPoint={Boolean(flightPoint)} />
       {initialBoundary && (
         <p className="text-xs text-neutral-500">
           <span className="inline-block h-0 w-3 border-t-2 border-dashed border-[#3b7dd8] align-middle" /> dashed blue
           — the currently saved boundary
         </p>
       )}
-      {errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
+      {editingMode === "boundary" && errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
       {showCancel && (
         <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving} className="self-start">

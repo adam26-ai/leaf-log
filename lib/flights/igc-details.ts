@@ -28,12 +28,13 @@ export function recordingDetails(flight: { pilot: string | null; recorder: strin
 
 /** Owner-only wing choices and read-only metadata for the flight being edited. */
 export async function getIgcDetailsOptions(ownerId: string, flightId: string) {
-  const [flights, current] = await Promise.all([
+  const [flights, current, profile] = await Promise.all([
     prisma.flight.findMany({ where: { ownerId, glider: { not: null } }, select: { glider: true }, distinct: ["glider"] }),
     prisma.flight.findFirst({ where: { id: flightId, ownerId }, select: { pilot: true, recorder: true, data: { select: { rawIgc: true } } } }),
+    prisma.profile.findUnique({ where: { id: ownerId }, select: { hiddenWings: true } }),
   ]);
   return {
-    gliders: [...new Set(flights.map(flight => flight.glider?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)),
+    gliders: [...new Set(flights.filter(flight => !profile?.hiddenWings.includes(flight.glider!)).map(flight => flight.glider?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)),
     recording: current ? recordingDetails(current) : null,
   };
 }

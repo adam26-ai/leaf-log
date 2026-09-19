@@ -1,3 +1,8 @@
+import { flightFlags } from "@/lib/flights/type-flags";
+import { FlightTypeBadges } from "./type-flags";
+import { ReplayTrophies } from "./replay-trophies";
+import { replayXcRoutes } from "@/lib/flights/xc-selection";
+import type { FlightTrophy } from "@/lib/flights/trophies";
 import { AccentBar } from "@/components/ui/accent-bar";
 import { SiteNameControl } from "@/components/flight/name-site-dialog";
 import { zonesEnabled } from "@/lib/sites/zones-enabled";
@@ -51,21 +56,21 @@ export function FlightHeader({
   previousFlightId,
   nextFlightId,
   actions,
+  trophies = [],
 }: {
   flight: Flight;
   isOwner: boolean;
   previousFlightId: string | null;
   nextFlightId: string | null;
   actions: ReactNode;
+  trophies?: FlightTrophy[];
 }) {
-  const hasLandingFix = flight.landingLat != null && flight.landingLon != null;
-  // A named landing only earns its own display when it's somewhere other
-  // than takeoff (e.g. not a top-landing back at launch) — otherwise it's
-  // just noise repeating the title.
-  const showLanding = hasLandingFix && (
+  const primaryEndpoint = !flight.takeoffSiteName && flight.landingSiteName ? "landing" : "takeoff";
+  const primaryLat = flight[`${primaryEndpoint}Lat`];
+  const primaryLon = flight[`${primaryEndpoint}Lon`];
+  const showLanding = primaryEndpoint === "takeoff" && Boolean(flight.landingSiteName) && (
     flight.landingSiteId !== flight.takeoffSiteId ||
-    flight.landingSiteName !== flight.takeoffSiteName ||
-    flight.landingSiteAssignment === "needs_review"
+    flight.landingSiteName !== flight.takeoffSiteName
   );
   // SPRINT-008: a client component can't read process.env directly — the
   // gate's value is computed here (server-side) and threaded down as a
@@ -79,7 +84,7 @@ export function FlightHeader({
   const timeRange = `${formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} – ${formatLocalTime(flight.landingAt, flight.localUtcOffsetMinutes)}`;
 
   return (
-    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
       <div className="flex min-w-0 items-center justify-start gap-1">
         <FlightArrow flightId={previousFlightId} direction="previous" />
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 font-condensed text-lg font-bold text-ink">
@@ -96,18 +101,21 @@ export function FlightHeader({
       </div>
 
       <div className="flex min-w-0 flex-col items-center gap-1">
-        <div className="flex min-w-0 flex-wrap items-baseline justify-center gap-x-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-2">
+          <FlightTypeBadges flags={flightFlags(flight)} />
           <SiteNameControl
+            key={`${flight.id}:${primaryEndpoint}`}
             as="h1"
             flightId={flight.id}
-            endpoint="takeoff"
-            initialSiteName={flight.takeoffSiteName}
-            initialZoneName={flight.takeoffZoneName}
-            siteId={flight.takeoffSiteId}
-            zoneId={flight.takeoffZoneId}
+            endpoint={primaryEndpoint}
+            flightPoint={primaryLat != null && primaryLon != null ? { lat: primaryLat, lon: primaryLon } : null}
+            initialSiteName={flight[`${primaryEndpoint}SiteName`]}
+            initialZoneName={flight[`${primaryEndpoint}ZoneName`]}
+            siteId={flight[`${primaryEndpoint}SiteId`]}
+            zoneId={flight[`${primaryEndpoint}ZoneId`]}
             isOwner={isOwner}
             zonesEnabled={zonesOn}
-            needsReview={flight.takeoffSiteAssignment === "needs_review"}
+            needsReview={flight[`${primaryEndpoint}SiteAssignment`] === "needs_review"}
             className="font-condensed text-3xl font-bold tracking-tight text-ink"
           />
           {showLanding && (
@@ -118,6 +126,7 @@ export function FlightHeader({
               <SiteNameControl
                 flightId={flight.id}
                 endpoint="landing"
+                flightPoint={flight.landingLat != null && flight.landingLon != null ? { lat: flight.landingLat, lon: flight.landingLon } : null}
                 initialSiteName={flight.landingSiteName}
                 initialZoneName={flight.landingZoneName}
                 siteId={flight.landingSiteId}
@@ -129,6 +138,7 @@ export function FlightHeader({
               />
             </>
           )}
+          <ReplayTrophies flightId={flight.id} trophies={trophies} routes={replayXcRoutes(flight.xcScore).map(route => route.shape)} />
         </div>
         <AccentBar width="3rem" className="h-[var(--replay-header-accent-height)] bg-[var(--replay-accent)]" />
       </div>

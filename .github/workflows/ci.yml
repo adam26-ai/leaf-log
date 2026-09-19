@@ -12,8 +12,8 @@ concurrency:
 
 env:
   # Matches docker-compose.yml (postgres:16, user/pass leaflog, db leaf_log_dev).
-  # Integration tests (incl. the friends-only privacy matrix) require this — without
-  # DATABASE_URL they auto-skip, which would be a false green. CI must NOT skip them.
+  # The unit/integration suite fails setup without a local DATABASE_URL.
+  # Each suite migrates and cleans up its own temporary schema.
   DATABASE_URL: "postgresql://leaflog:leaflog@localhost:5437/leaf_log_dev?schema=public"
   AUTH_SECRET: "ci-auth-secret-at-least-32-characters-long-000000"
   AUTH_TRUST_HOST: "true"
@@ -21,7 +21,8 @@ env:
 jobs:
   gates:
     name: typecheck · lint · test · build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -39,24 +40,23 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec prisma migrate deploy
-      # No curated seed data (sites are fully community-driven) — kept as the
-      # entry point in case future non-site seed data is ever needed.
-      - run: pnpm db:seed
-      - run: pnpm typecheck
-      - run: pnpm lint
-      # Guard against a false green: assert the DB-backed privacy suite actually
-      # runs (does not skip) before trusting the matrix.
-      - name: Test (privacy matrix must run, not skip)
-        run: pnpm test
-      - run: pnpm build
+      # Same checks as the local pre-PR command. Tests migrate their own schema.
+      - run: pnpm check:gates
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report
+          path: test-results/vitest.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
   e2e:
     name: e2e (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16-alpine
@@ -74,18 +74,17 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec prisma migrate deploy
-      # No curated seed data (sites are fully community-driven) — kept as the
-      # entry point in case future non-site seed data is ever needed.
-      - run: pnpm db:seed
       - run: pnpm exec playwright install --with-deps chromium
-      # `pnpm e2e` generates the IGC fixture and starts its own dev server
-      # (playwright webServer). The dev magic-link is written to /tmp.
-      - run: pnpm e2e
-      - if: failure()
+      - name: Record browser runner environment
+        run: |
+          node -e "const os = require('node:os'); console.log({ node: process.version, playwright: require('@playwright/test/package.json').version, cpus: os.availableParallelism(), memoryGiB: Math.round(os.totalmem() / 2 ** 30), browser: 'chromium', webgl: 'swiftshader-webgl' })"
+      # `pnpm e2e` builds and starts an isolated production server, without HMR.
+      # The IGC fixture and local magic-link fallback need no external services.
+      - run: pnpm check:e2e
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

@@ -1,7 +1,9 @@
 import { uploadFlight } from "./helpers";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { PrismaClient } from "@prisma/client";
+import { foldName } from "@/lib/sites/name";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -16,18 +18,6 @@ async function getMagicLink(): Promise<string> {
   throw new Error("magic link file never appeared");
 }
 
-/** A minimal, valid, source-and-tile-free MapLibre style — the basemap
- *  itself has no matching value for this test, and depending on a live
- *  third-party tile CDN (OpenFreeMap) would make a map-driving test a
- *  flake generator. `map.on('load')` fires against this exactly as it
- *  would against the real style. */
-const EMPTY_STYLE = { version: 8, sources: {}, layers: [] };
-
-async function stubBasemapTiles(page: Page) {
-  await page.route("**/tiles.openfreemap.org/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
-  await page.route("**/api.maptiler.com/**", (route) => route.fulfill({ json: EMPTY_STYLE }));
-}
-
 /** The editor no longer displays a "N points" line (removed per the user's
  *  own UI-declutter request) — count the actual vertex marker elements
  *  instead, the same signal the editor itself uses to decide whether a
@@ -39,7 +29,9 @@ async function expectVertexCount(page: Page, n: number, timeout = 5_000) {
 // Validation messages change the centered dialog's height while drawing.
 // Re-measure its position for every gesture instead of reusing stale pixels.
 async function mapPoint(page: Page, point: { x: number; y: number }) {
-  const box = await page.getByTestId("boundary-editor-map").boundingBox();
+  const map = page.getByTestId("boundary-editor-map");
+  await map.scrollIntoViewIfNeeded();
+  const box = await map.boundingBox();
   if (!box) throw new Error("Boundary map is not visible");
   return { x: box.x + point.x, y: box.y + point.y };
 }
@@ -66,6 +58,33 @@ function remoteFlightIgc(runOffset: number, lat: number, lon: number, seed: numb
     t += 1;
   }
   return Buffer.from(makeIgc({ glider: "Test Wing", fixes }));
+}
+
+/** Arrange an existing flight/site for focused geometry tests. The sites and
+ * zones suites cover the complete upload/create journey; repeating that setup
+ * in every gesture test adds unrelated replay startup and dialog transitions. */
+async function arrangeBoundFlight(page: Page, siteName: string, buffer: Buffer) {
+  const response = await page.request.post("/api/upload", { multipart: { files: {
+    name: "boundary-fixture.igc", mimeType: "text/plain", buffer,
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
+  const db = new PrismaClient();
+  try {
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    if (flight.takeoffLat === null || flight.takeoffLon === null) throw new Error("Boundary fixture has no takeoff position");
+    const site = await db.site.create({ data: {
+      name: siteName, normalizedName: foldName(siteName), kind: "takeoff", visibility: "private",
+      lat: flight.takeoffLat, lon: flight.takeoffLon, pinSource: "flight_gps", ownerId: flight.ownerId,
+    } });
+    await db.flight.update({ where: { id: flightId }, data: {
+      takeoffSiteId: site.id, takeoffSiteName: siteName, takeoffSiteAssignment: "user_selected",
+    } });
+  } finally { await db.$disconnect(); }
+  await page.goto(`/flights/${flightId}`);
 }
 
 /** Standard Web Mercator projection (tile size 512, doubling per zoom) —
@@ -127,7 +146,7 @@ async function readMapView(page: Page) {
   });
 }
 
-test("draw a boundary via the owner-scoped picker (no bound flight), then a flight past the old circle but inside the boundary auto-names itself", async ({
+test("draw a boundary from site management without binding the current flight, then a flight inside it auto-names itself", async ({
   page,
 }) => {
   const runOffset = Date.now();
@@ -135,7 +154,6 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   const email = `boundaries_e2e_${suffix}@test.local`;
   const handle = `b6e${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   // Near the equator — keeps Web Mercator meters-per-pixel large (a fixed
   // real-world distance needs fewer on-screen pixels), so the boundary
@@ -157,28 +175,14 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // Flight #1: name a new public site at the anchor. SPRINT-008: zones are
-  // hidden, so this is a bare site — no zone to also name.
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
-
+  // Flight #1 supplies the existing site that will be edited from management.
   const siteName = `E2E Boundary Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Flight #2: a SEPARATE, unrelated, still-unmatched flight far away — its
-  // own naming dialog has NOTHING bound. Reaching the boundary editor for
-  // the site named above from HERE is the reachability fix under test: the
-  // picker, not a bound-flight shortcut.
+  // own naming dialog has NOTHING bound. Site management must let the
+  // owner edit the existing site without assigning it to this flight.
   await page.goto("/upload");
   await uploadFlight(page, {
     name: "b6-2.igc",
@@ -187,15 +191,14 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   });
   await page.getByRole("button", { name: "Keep this uploaded flight", exact: true }).click();
   await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unknown site");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.getByRole("button", { name: /Edit a boundary on one of my sites/i }).click();
-  await expect(page.getByText(siteName)).toBeVisible({ timeout: 10_000 });
+  const unmatchedFlightUrl = page.url();
+  await page.goto("/settings/sites");
+  await page.getByRole("button", { name: new RegExp(siteName) }).click();
   await expect(page.getByText("My spots")).not.toBeVisible();
-  const siteRow = page.locator("li", { hasText: siteName });
-  await siteRow.getByRole("button", { name: "Draw" }).click();
+  await page.getByRole("button", { name: "Edit site", exact: true }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
 
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
@@ -227,8 +230,10 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   }
 
   await expectVertexCount(page, 4, 5000);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(siteName)).not.toBeVisible({ timeout: 10_000 }); // picker/editor closed
+  await page.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Site details" })).toHaveCount(0);
+  await page.goto(unmatchedFlightUrl);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
   // Flight #3: takeoff ~700m EAST of the anchor — outside the site's 600m
   // circle, inside the drawn boundary. Must auto-name with ZERO dialog
@@ -244,13 +249,12 @@ test("draw a boundary via the owner-scoped picker (no bound flight), then a flig
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });
 
-test("an anchor-excluding boundary is refused, live, before Save is even clickable", async ({ page }) => {
+test("an anchor-excluding boundary shows live validation and blocks saving the site", async ({ page }) => {
   const runOffset = Date.now();
   const suffix = `${runOffset}b6excl`;
   const email = `boundaries_e2e_excl_${suffix}@test.local`;
   const handle = `b6x${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 20.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -169.0;
@@ -268,30 +272,17 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  // Name a site, then reach its boundary editor via the BOUND-FLIGHT
-  // shortcut this time (not the picker) — the other reachable path.
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6x-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
+  // Reach the existing site's editor through its bound flight.
   const siteName = `E2E Excluded Anchor Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Re-opening the dialog on an already-bound site lands on the read-only
-  // overview step first; "Edit this site" reaches the management view,
-  // which shows the boundary editor automatically — no further click.
+  // overview step first; "Edit this site" opens the full editor, where
+  // drawing must be selected explicitly instead of moving the pin.
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
 
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
@@ -319,7 +310,7 @@ test("an anchor-excluding boundary is refused, live, before Save is even clickab
   // pending boundary edit. Clicking it surfaces the boundary's own
   // validation error rather than silently discarding the invalid draft or
   // saving the name anyway.
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(page.getByText(/has to include the site's own location/i)).toBeVisible({ timeout: 5_000 });
   // Still on the edit screen — the invalid boundary blocked the whole
   // Save, name included, rather than silently saving the name and
@@ -336,7 +327,6 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   const email = `boundaries_e2e_reopen_${suffix}@test.local`;
   const handle = `b6ro${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 40.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -170.0;
@@ -354,29 +344,16 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6ro-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Reopen Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
-  // First edit: no boundary exists yet — the boundary editor shows
-  // automatically once "Edit this site" is clicked, no further click
-  // needed. The dashed reference should be the CIRCLE, and the "currently
+  // First edit: no boundary exists yet. Open the full editor and select
+  // boundary drawing. The dashed reference should be the CIRCLE, and the "currently
   // saved boundary" legend must be absent.
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
   await expect(page.getByText(/currently saved boundary/i)).not.toBeVisible();
@@ -399,7 +376,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
 
   // The unified Save (bottom row) commits the boundary draft (dirty) and
   // the name (unchanged, still succeeds) together, then closes the dialog.
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(page.getByTestId("boundary-editor-map")).not.toBeVisible();
 
   // Second edit: re-entering "Edit this site" re-fetches from the server
@@ -407,6 +384,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   // vertex count must reflect what was actually just persisted.
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
   await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 10_000 });
   await expectVertexCount(page, 4, 5000);
 
@@ -417,6 +395,7 @@ test("re-opening an already-boundary-bearing site shows the saved shape as a das
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 15_000 });
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
   await page.getByTestId("boundary-editor-map").waitFor({ timeout: 10_000 });
   await expect(page.getByText(/currently saved boundary/i)).toBeVisible({ timeout: 5_000 });
   await expectVertexCount(page, 4, 5000);
@@ -430,7 +409,6 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   const email = `boundaries_e2e_midpoint_${suffix}@test.local`;
   const handle = `b6mp${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 30.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -172.0;
@@ -448,25 +426,13 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6mid-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Midpoint Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
   const box = await mapLocator.boundingBox();
@@ -524,7 +490,7 @@ test("clicking or dragging near an edge inserts a new vertex there and reshapes 
   await page.mouse.up();
 
   await expectVertexCount(page, 6, 5000);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(page.getByTestId("boundary-editor-map")).not.toBeVisible();
 
   // A flight positioned comfortably INSIDE the new south bulge — south of
@@ -555,7 +521,6 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   const email = `boundaries_e2e_vertex_${suffix}@test.local`;
   const handle = `b6vx${suffix}`.slice(0, 18);
   rmSync(LINK_FILE, { force: true });
-  await stubBasemapTiles(page);
 
   const anchorLat = 25.5 + (runOffset % 5000) * 0.001;
   const anchorLon = -173.0;
@@ -573,25 +538,13 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
 
-  await page.goto("/upload");
-  await uploadFlight(page, {
-    name: "b6vtx-1.igc",
-    mimeType: "text/plain",
-    buffer: remoteFlightIgc(runOffset, anchorLat, anchorLon, 1),
-  });
-  await expect(page).toHaveURL(/\/flights\/[a-z0-9]+/, { timeout: 30_000 });
-
   const siteName = `E2E Vertex Ridge ${suffix}`;
-  await page.locator("h1 button").click();
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').waitFor({ timeout: 5_000 });
-  await page.locator('input[placeholder="e.g. Sonoma Ridge"]').fill(siteName);
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  // SPRINT-008: zones hidden — "Next" saves and closes the dialog
-  // directly, no zone step to skip.
+  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   await page.locator("h1 button").click();
   await page.getByRole("button", { name: "Edit this site" }).click();
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
   const box = await mapLocator.boundingBox();
@@ -619,14 +572,18 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   if (!nwBox) throw new Error("nw vertex marker has no bounding box");
   const startX = nwBox.x + nwBox.width / 2;
   const startY = nwBox.y + nwBox.height / 2;
+  const mapAtPress = await mapLocator.boundingBox();
+  if (!mapAtPress) throw new Error("boundary map moved out of view before dragging");
 
-  const dragTarget: [number, number] = [nw[0] - metersToDegLon(60, center.lat), nw[1] + metersToDegLat(60)];
-  const dragEndPx = pixelFor(dragTarget[0], dragTarget[1], center, zoom, container);
+  // This checks marker dragging, not projection math. A fixed geographic
+  // distance can be less than ten pixels at the editor's fitted zoom.
+  const endX = startX + 40;
+  const endY = startY + 40;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await expectVertexCount(page, 4, 2000); // still 4 mid-press, no insert yet
-  await moveOnMap(page, dragEndPx, 10);
+  await page.mouse.move(endX, endY, { steps: 10 });
   await expectVertexCount(page, 4, 2000); // still 4 mid-drag
   await page.mouse.up();
 
@@ -634,9 +591,15 @@ test("dragging an EXISTING vertex moves it — it never inserts a new one, even 
   // it did not insert a 5th one next to it.
   await expectVertexCount(page, 4, 5000);
 
-  // And the marker must have actually followed the drag to its new spot,
-  // not stayed put — confirms this was a real move, not a silent no-op.
-  const movedBox = await nwMarker.boundingBox();
-  if (!movedBox) throw new Error("nw vertex marker lost its bounding box after drag");
-  expect(Math.hypot(movedBox.x - nwBox.x, movedBox.y - nwBox.y)).toBeGreaterThan(10);
+  // Live validation can change the centered dialog's height during the drag.
+  // Compare in map coordinates so its screen shift does not masquerade as a
+  // missed drag, while still requiring the vertex to move the full 40px.
+  await expect.poll(async () => {
+    const movedBox = await nwMarker.boundingBox();
+    const mapNow = await mapLocator.boundingBox();
+    if (!movedBox || !mapNow) return Infinity;
+    const expectedX = endX + mapNow.x - mapAtPress.x;
+    const expectedY = endY + mapNow.y - mapAtPress.y;
+    return Math.hypot(movedBox.x + movedBox.width / 2 - expectedX, movedBox.y + movedBox.height / 2 - expectedY);
+  }).toBeLessThan(5);
 });

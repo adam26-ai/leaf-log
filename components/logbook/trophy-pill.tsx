@@ -8,7 +8,7 @@ const icons = { duration: Clock, altitude: Cloud, "launch-gain": Mountain, open:
 const medals = { 1: "Gold", 2: "Silver", 3: "Bronze" };
 const colors = { 1: "bg-[#f5cd57] text-[#563b00]", 2: "bg-[#dce2e8] text-[#394452]", 3: "bg-[#c99362] text-[#40240e]" };
 
-export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
+export function TrophyPill({ trophies, onActivate, placement = "above-left" }: { trophies: FlightTrophy[]; onActivate?: () => void; placement?: "above-left" | "below-right" }) {
   const { units } = useUnits();
   if (!trophies.length) return null;
   const first = trophies[0], multiple = trophies.length > 1;
@@ -18,11 +18,11 @@ export function TrophyPill({ trophies }: { trophies: FlightTrophy[] }) {
     valueLabel: t.category === "duration" ? formatDuration(t.value) : t.category === "altitude" || t.category === "launch-gain" ? formatAltitude(t.value, units) : formatDistance(t.value, units),
   }));
   const descriptions = records.map(t => `${medals[t.rank]} — ${TROPHY_LABELS[t.category]}: ${t.valueLabel}${t.reported ? " (reported)" : t.approximate ? " (best found)" : ""}`);
-  return <span tabIndex={0} aria-label={descriptions.join("; ")} className="group/trophy relative inline-flex justify-center outline-none">
+  return <span tabIndex={0} role={onActivate ? "button" : undefined} onClick={onActivate} onKeyDown={onActivate ? event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onActivate(); } } : undefined} aria-label={descriptions.join("; ")} className={`group/trophy relative inline-flex justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-brand-blue ${onActivate ? "cursor-pointer" : ""}`}>
     <span data-medal={medals[bestRank].toLowerCase()} className={`inline-flex h-6 w-11 shrink-0 items-center justify-center gap-1 rounded-full border border-black/20 ${colors[bestRank]}`}>
-      <Trophy className="h-3.5 w-3.5" />{multiple ? <Plus className="h-3 w-3" /> : <Icon className="h-3 w-3" />}
+      <Trophy className="h-[17.5px] w-[17.5px]" />{multiple ? <Plus className="h-[15px] w-[15px]" /> : <Icon className="h-[15px] w-[15px]" />}
     </span>
-    <span role="tooltip" className="pointer-events-none absolute right-0 bottom-full z-40 mb-2 hidden w-72 max-w-[85vw] overflow-hidden rounded-xl border border-white/10 bg-gray-900 text-left text-xs font-normal text-white shadow-xl group-hover/trophy:block group-focus/trophy:block">
+    <span role="tooltip" className={`pointer-events-none absolute ${placement === "below-right" ? "left-0 top-full mt-2" : "right-0 bottom-full mb-2"} z-40 hidden w-72 max-w-[85vw] overflow-hidden rounded-xl border border-white/10 bg-gray-900 text-left text-xs font-normal text-white shadow-xl group-hover/trophy:block group-focus/trophy:block`}>
       <span className="block border-b border-white/15 px-3 py-2 font-condensed text-lg font-bold tracking-wide">Personal bests</span>
       <span className="block px-3 py-1">
         {records.map(record => {

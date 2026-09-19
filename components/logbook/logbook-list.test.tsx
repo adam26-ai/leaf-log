@@ -7,8 +7,36 @@ vi.mock("./flight-row", () => ({ FlightRow: ({ flight, friendFlightsFound }: { f
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); });
 const flights = [
   { id: "unknown", status: "ready", takeoffSiteId: null, takeoffSiteName: null, glider: "Wing A", durationS: 3600 },
-  { id: "woodrat", status: "ready", takeoffSiteId: "site", takeoffSiteName: "Woodrat", glider: "Wing B", durationS: 7200 },
+  { id: "woodrat", status: "ready", takeoffSiteId: "site", takeoffSiteMapped: true, takeoffSiteName: "Woodrat", glider: "Wing B", durationS: 7200 },
 ] as FlightListItem[];
+
+it("counts unique flights across both endpoints and only flags flights without any site", () => {
+  render(<LogbookList flights={[
+    flights[0],
+    { ...flights[1], landingSiteId: "site", landingSiteName: "Woodrat", landingSiteMapped: true },
+    { ...flights[0], id: "landing-only", landingSiteId: "site", landingSiteName: "Woodrat", landingSiteMapped: true },
+  ]} trophies={{}} />);
+  expect(screen.queryByRole("button", { name: "Select Landing sites" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Site location status")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Select Sites" }));
+  expect(screen.getByRole("checkbox", { name: "Woodrat (2)" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Site not recorded (1)" }));
+  expect(screen.queryByRole("link", { name: "unknown" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "landing-only" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "woodrat" })).toBeInTheDocument();
+});
+
+it("distinguishes a mapped site and an unmapped site with identical text in the site filter", () => {
+  render(<LogbookList flights={[flights[1], { ...flights[1], id: "name-only", takeoffSiteId: null }]} trophies={{}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select Sites" }));
+  const choices = screen.getByRole("group", { name: "Sites choices" });
+  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1)" })).toBeInTheDocument();
+  expect(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" })).toBeInTheDocument();
+  fireEvent.click(within(choices).getByRole("button", { name: "None" }));
+  fireEvent.click(within(choices).getByRole("checkbox", { name: "Woodrat (1) · Name only" }));
+  expect(screen.getByRole("link", { name: "name-only" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
+});
 
 it("combines icon and choices, clears with All, and dismisses lists on outside touches or Escape", () => {
   render(<LogbookList flights={flights} trophies={{}} />);
@@ -16,7 +44,7 @@ it("combines icon and choices, clears with All, and dismisses lists on outside t
   fireEvent.click(sites);
   const choices = screen.getByRole("group", { name: "Sites choices" });
   fireEvent.click(within(choices).getByRole("button", { name: "None" }));
-  fireEvent.click(within(choices).getByRole("checkbox", { name: "Unknown site (1)" }));
+  fireEvent.click(within(choices).getByRole("checkbox", { name: "Site not recorded (1)" }));
   expect(screen.getByRole("link", { name: "unknown" })).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "woodrat" })).not.toBeInTheDocument();
   expect(sites).toHaveAttribute("aria-expanded", "true");

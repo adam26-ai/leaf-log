@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import {
   getCommunityInfoForRow,
+  getCommunityDialogData,
   renamePublicRow,
   toggleEndorsement,
   type CommunityActionResult,
@@ -28,6 +29,9 @@ import type { BoundaryLevel } from "@/lib/sites/boundary";
 import type { SiteEndpoint } from "@/lib/sites/associate";
 import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { Button } from "@/components/ui/button";
+import { SiteDialog } from "./site-dialog";
+import { PersistedSiteEditor } from "./persisted-site-editor";
+import { SiteAreaMap } from "./site-area-map";
 import { BoundaryEditor } from "@/components/flight/boundary-editor";
 
 function relativeTime(d: Date): string {
@@ -69,12 +73,14 @@ export function LocationCommunityDialog({
   endpoint,
   onClose,
   onRenamed,
+  flightPoint = null,
 }: {
   level: BoundaryLevel;
   id: string;
   name: string;
   endpoint: SiteEndpoint;
   onClose: () => void;
+  flightPoint?: { lat: number; lon: number } | null;
   /** Called with the new name right after a successful rename — lets the
    *  PARENT (SiteNameControl's own h1/label) update live, without which a
    *  successful rename would only show up after a full page reload even
@@ -82,6 +88,7 @@ export function LocationCommunityDialog({
   onRenamed?: (newName: string) => void;
 }) {
   const [displayName, setDisplayName] = useState(name);
+  const [editingSite, setEditingSite] = useState(false);
   const [info, setInfo] = useState<LocationCommunityInfo | null | undefined>(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -93,11 +100,23 @@ export function LocationCommunityDialog({
 
   useEffect(() => {
     let cancelled = false;
-    getCommunityInfoForRow(level, id).then((result) => {
-      if (!cancelled) setInfo(result);
-    });
+    let firstFrame: number | undefined;
+    let secondFrame: number | undefined;
+    getCommunityDialogData(level, id).then(({ boundary, info }) => {
+      if (cancelled) return;
+      setInfo(info);
+      // Give the summary a painted frame before mounting another WebGL map.
+      // Constructing the map in the same update can hold up the dialog content.
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          if (!cancelled) setBoundaryState(boundary);
+        });
+      });
+    }).catch(() => { if (!cancelled) { setInfo(null); setError("Could not load site details. Close and reopen to retry."); } });
     return () => {
       cancelled = true;
+      if (firstFrame !== undefined) cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
     };
   }, [level, id]);
 
@@ -124,13 +143,12 @@ export function LocationCommunityDialog({
 
   async function handleEndorse() {
     setPending(true);
-    const result = await toggleEndorsement(level, id);
-    setPending(false);
-    if (!result.ok) setError(result.error);
-    else {
-      setError(null);
-      getCommunityInfoForRow(level, id).then(setInfo);
-    }
+    try {
+      const result = await toggleEndorsement(level, id);
+      if (!result.ok) setError(result.error);
+      else { setError(null); setInfo(result.info); }
+    } catch { setError("Could not update the endorsement. Please try again."); }
+    finally { setPending(false); }
   }
 
   async function openBoundaryEditor() {
@@ -140,15 +158,14 @@ export function LocationCommunityDialog({
     setEditingBoundary(true);
   }
 
+  if (editingSite) return <SiteDialog onClose={() => setEditingSite(false)}><PersistedSiteEditor context={{ siteId: id }} onCancel={() => setEditingSite(false)} onSaved={site => { setDisplayName(site.name); onRenamed?.(site.name); setEditingSite(false); getBoundaryForPublicRow(level, id).then(setBoundaryState); getCommunityInfoForRow(level, id).then(setInfo); }} /></SiteDialog>;
+
   if (editingBoundary && boundaryState) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4" onClick={() => setEditingBoundary(false)}>
-        <div
-          className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <SiteDialog onClose={() => setEditingBoundary(false)}>
           <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">Boundary for &ldquo;{displayName}&rdquo;</h2>
           <BoundaryEditor
+            flightPoint={flightPoint}
             anchor={boundaryState.anchor}
             initialBoundary={boundaryState.boundary}
             level={level}
@@ -157,22 +174,17 @@ export function LocationCommunityDialog({
             onSave={(raw) => saveBoundaryForOwnedRow(level, id, raw)}
             onClear={() => clearBoundaryForOwnedRow(level, id)}
             onCancel={() => setEditingBoundary(false)}
-            onSaved={() => {
+            onSaved={() => { getBoundaryForPublicRow(level, id).then(setBoundaryState);
               setEditingBoundary(false);
               getCommunityInfoForRow(level, id).then(setInfo);
             }}
           />
-        </div>
-      </div>
+      </SiteDialog>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4" onClick={onClose}>
-      <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-lg bg-paper p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <SiteDialog onClose={onClose}>
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="font-condensed text-xl font-bold tracking-tight text-ink">{displayName}</h2>
@@ -183,8 +195,10 @@ export function LocationCommunityDialog({
           </button>
         </div>
 
+        {boundaryState && <SiteAreaMap key={JSON.stringify(boundaryState.boundary)} anchor={boundaryState.anchor} boundary={boundaryState.boundary} radiusM={level === "site" ? radiusForKind(endpoint) : zoneRadiusForKind(endpoint)} flightPoint={flightPoint} />}
         {info === undefined && <p className="text-sm text-gray-500">Loading…</p>}
         {info === null && <p className="text-sm text-gray-500">Not available.</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
         {info && (
           <>
@@ -212,7 +226,7 @@ export function LocationCommunityDialog({
             )}
 
             <div className="flex flex-col gap-2">
-              {editingName ? (
+              {level === "site" ? <Button type="button" variant="outline" size="sm" onClick={() => setEditingSite(true)}>Edit site</Button> : editingName ? (
                 <div className="flex flex-col gap-2">
                   <input
                     type="text"
@@ -242,11 +256,10 @@ export function LocationCommunityDialog({
                 </div>
               )}
               <p className="text-xs text-gray-500">
-                This is a public {level} — any signed-in pilot can fix its name or shape.
+                This is a public {level} — signed-in pilots can edit its details.
               </p>
             </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
 
             <div>
               <button
@@ -269,7 +282,6 @@ export function LocationCommunityDialog({
             </div>
           </>
         )}
-      </div>
-    </div>
+    </SiteDialog>
   );
 }

@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { hasSitePoint, type SitePoint } from "@/lib/sites/model";
 import type { EntrySite } from "@/lib/logbook/options";
 import { searchPlaces, type MapPlace } from "@/lib/logbook/place-search";
 
-export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLocate: (place: MapPlace) => void }) {
+export function EntryMapSearch({ sites, onLocate, compact = false }: { compact?: boolean; sites: EntrySite[]; onLocate: (place: MapPlace) => void }) {
   const id = useId();
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<MapPlace[]>([]);
-  const [siteMatches, setSiteMatches] = useState<EntrySite[]>([]);
+  const [siteMatches, setSiteMatches] = useState<Array<EntrySite & SitePoint>>([]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const request = useRef<AbortController | null>(null);
@@ -29,7 +30,7 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
     const text = query.trim();
     if (text.length < 2) { setMessage("Enter at least two characters to search."); return; }
     const normalize = (name: string) => name.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase();
-    const matches = sites.filter(site => normalize(site.name).includes(normalize(text))).slice(0, 5);
+    const matches = sites.filter(hasSitePoint).filter(site => normalize(site.name).includes(normalize(text))).slice(0, 5);
     setSiteMatches(matches);
     if (!key) {
       setMessage("City and landmark search is unavailable. You can search known flying sites or move the map.");
@@ -58,8 +59,8 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
     setMessage(`Map moved to ${place.name}.`);
   }
 
-  return <div className="space-y-2 border-b border-gray-200 p-3">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700">Find a place</label>
+  return <div className={compact ? "space-y-1" : "space-y-2 border-b border-gray-200 p-3"}>
+    <label htmlFor={id} className={compact ? "sr-only" : "block text-sm font-medium text-gray-700"}>Find a place</label>
     <div className="flex gap-2">
       <input id={id} type="search" value={query} maxLength={200} placeholder="City, landmark, or flying site" autoComplete="off"
         onChange={event => { reset(); setQuery(event.target.value); }}
@@ -73,7 +74,7 @@ export function EntryMapSearch({ sites, onLocate }: { sites: EntrySite[]; onLoca
       <button type="button" disabled={pending || query.trim().length < 2} onClick={() => void search()}
         className="shrink-0 rounded-md bg-brand-blue px-3 py-2 text-sm font-medium text-white disabled:opacity-50">{pending ? "Searching…" : "Search"}</button>
     </div>
-    <p className="text-xs text-gray-500">Find a nearby place, then click the map to set the exact location.</p>
+    {!compact && <p className="text-xs text-gray-500">Find a nearby place, then click the map to set the exact location.</p>}
     {siteMatches.length > 0 && <div>
       <p className="py-1 text-xs font-medium text-gray-500">Flying sites</p>
       <ul className="divide-y divide-gray-100">
