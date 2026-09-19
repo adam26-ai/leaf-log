@@ -1,5 +1,4 @@
 import type { Attribute } from "@deck.gl/core";
-import { PathLayer } from "@deck.gl/layers";
 import { OutlinedPathLayer } from "./outlined-path-layer";
 
 export type PathColor = [number, number, number] | [number, number, number, number];
@@ -44,18 +43,6 @@ function vertexColorAttribute() {
     accessor: "getColor" as const,
     update: calculateColors,
   };
-}
-
-/** Diagnostic variant that keeps per-vertex colors but uses stock PathLayer shaders. */
-export class PlainMultiColorPathLayer extends PathLayer<MultiColorPathDatum> {
-  static override layerName = "PlainMultiColorPathLayer";
-
-  override initializeState() {
-    super.initializeState();
-    const attributeManager = this.getAttributeManager();
-    attributeManager?.remove(["instanceColors"]);
-    attributeManager?.addInstanced({ instanceColors: vertexColorAttribute() });
-  }
 }
 
 /**

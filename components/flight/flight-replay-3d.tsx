@@ -4,10 +4,10 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Reac
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { IconLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
+import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { styleFor, isImagery, type BasemapId } from "./basemaps";
 import { isPinned, photoUrl, type FlightPhoto } from "./photos";
-import { MultiColorPathLayer, PlainMultiColorPathLayer, type MultiColorPathDatum } from "./multi-color-path-layer";
+import { MultiColorPathLayer, type MultiColorPathDatum, type PathColor } from "./multi-color-path-layer";
 import { Card } from "@/components/ui/card";
 import { locateSample, type Sample } from "@/lib/igc/interpolate";
 import { altitudeAnchorY, cameraSpring, chaseCourse, trackingFrequency } from "@/lib/flights/replay-camera";
@@ -224,12 +224,84 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 }
 
 export type TrackDisplayMode = "elapsed" | "full";
-type TrackDiagnosticMode = "stock" | "outline" | "multicolor";
+type TrackDiagnosticMode = "path2" | "path256" | "lines";
 const TRACK_DIAGNOSTIC_MODES: ReadonlyArray<{ mode: TrackDiagnosticMode; label: string }> = [
-  { mode: "stock", label: "Stock path" },
-  { mode: "outline", label: "Outline shader" },
-  { mode: "multicolor", label: "Vertex colors" },
+  { mode: "path2", label: "2-point path" },
+  { mode: "path256", label: "256-point path" },
+  { mode: "lines", label: "Colored segments" },
 ];
+
+interface DiagnosticLineSegment {
+  source: number[];
+  target: number[];
+  color: PathColor;
+}
+
+/** Pick the wider axis' extrema so the two-point canary crosses the map even
+ * when a flight starts and finishes at nearly the same coordinates. */
+function twoPointDiagnosticTrack(track: MultiColorPathDatum): MultiColorPathDatum {
+  if (track.path.length <= 2) return track;
+  let minLongitude = 0;
+  let maxLongitude = 0;
+  let minLatitude = 0;
+  let maxLatitude = 0;
+  for (let index = 1; index < track.path.length; index++) {
+    const point = track.path[index];
+    if (point[0] < track.path[minLongitude][0]) minLongitude = index;
+    if (point[0] > track.path[maxLongitude][0]) maxLongitude = index;
+    if (point[1] < track.path[minLatitude][1]) minLatitude = index;
+    if (point[1] > track.path[maxLatitude][1]) maxLatitude = index;
+  }
+  const longitudeSpan = haversineM(
+    track.path[minLongitude][1],
+    track.path[minLongitude][0],
+    track.path[maxLongitude][1],
+    track.path[maxLongitude][0],
+  );
+  const latitudeSpan = haversineM(
+    track.path[minLatitude][1],
+    track.path[minLatitude][0],
+    track.path[maxLatitude][1],
+    track.path[maxLatitude][0],
+  );
+  const indices = longitudeSpan >= latitudeSpan
+    ? [minLongitude, maxLongitude]
+    : [minLatitude, maxLatitude];
+  return {
+    path: indices.map((index) => track.path[index]),
+    colors: indices.map((index) => track.colors[index]),
+  };
+}
+
+/** Preserve the route's full extent while putting a strict ceiling on the
+ * number of vertices sent through PathLayer's tessellation pipeline. */
+function sampledDiagnosticTrack(
+  track: MultiColorPathDatum,
+  maximumPoints: number,
+): MultiColorPathDatum {
+  if (track.path.length <= maximumPoints) return track;
+  const indices = Array.from({ length: maximumPoints }, (_, index) =>
+    Math.round(index * (track.path.length - 1) / (maximumPoints - 1))
+  );
+  return {
+    path: indices.map((index) => track.path[index]),
+    colors: indices.map((index) => track.colors[index]),
+  };
+}
+
+function diagnosticLineSegments(tracks: MultiColorPathDatum[]): DiagnosticLineSegment[] {
+  const segments: DiagnosticLineSegment[] = [];
+  for (const track of tracks) {
+    for (let index = 1; index < track.path.length; index++) {
+      segments.push({
+        source: track.path[index - 1],
+        target: track.path[index],
+        color: track.colors[index],
+      });
+    }
+  }
+  return segments;
+}
 
 interface TrackDiagnosticSnapshot {
   capturedAt: string;
@@ -399,6 +471,11 @@ function formatTrackDiagnosticReport(
   contextEvents: string[],
   rendererErrors: string[],
 ): string {
+  const testGeometry = mode === "path2"
+    ? "stock PathLayer, 2 extrema per visible path, depth ignored"
+    : mode === "path256"
+      ? "stock PathLayer, up to 256 sampled vertices per visible path, depth ignored"
+      : "LineLayer, one colored instance per visible segment, depth ignored";
   const gpu = snapshot
     ? [
         `Captured: ${snapshot.capturedAt}`,
@@ -430,6 +507,7 @@ function formatTrackDiagnosticReport(
   return [
     "Leaf Log flight-track diagnostics",
     `Mode: ${mode}`,
+    `Test geometry: ${testGeometry}`,
     `URL: ${window.location.href}`,
     `Raw samples: ${stats.rawSamples}`,
     `Generated paths/points: ${stats.paths}/${stats.generatedPoints}`,
@@ -608,9 +686,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const params = new URLSearchParams(window.location.search);
     if (params.get("trackDebug") !== "1") return;
     const requestedMode = params.get("trackMode");
-    const mode: TrackDiagnosticMode = requestedMode === "outline" || requestedMode === "multicolor"
+    const mode: TrackDiagnosticMode = requestedMode === "path256" || requestedMode === "lines"
       ? requestedMode
-      : "stock";
+      : "path2";
     trackDiagnosticModeRef.current = mode;
     setTrackDiagnosticMode(mode);
     const lumaLog = (globalThis as LumaDiagnosticsGlobal).luma?.log;
@@ -1292,6 +1370,15 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
     const companion = companionLayers(nowMs);
     const diagnosticMode = trackDiagnosticModeRef.current;
+    const path2Tracks = diagnosticMode === "path2"
+      ? displayedTracks.map(twoPointDiagnosticTrack)
+      : [];
+    const path256Tracks = diagnosticMode === "path256"
+      ? displayedTracks.map((track) => sampledDiagnosticTrack(track, 256))
+      : [];
+    const lineSegments = diagnosticMode === "lines"
+      ? diagnosticLineSegments(displayedTracks)
+      : [];
     const primaryTrackProps = {
       id: `track-color-${identities.flightId}-${trackDisplayRef.current}`,
       data: displayedTracks,
@@ -1305,24 +1392,47 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       capRounded: true,
       jointRounded: true,
     };
-    const primaryTrackLayer: Layer = diagnosticMode === "stock"
+    const diagnosticPathProps = {
+      getPath: (flight: MultiColorPathDatum) =>
+        flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
+      getColor: LEAF_GREEN,
+      getWidth: 5.75,
+      widthUnits: "pixels" as const,
+      widthMinPixels: 5.75,
+      billboard: true,
+      parameters: { depthWriteEnabled: false, depthCompare: "always" as const },
+      capRounded: true,
+      jointRounded: true,
+    };
+    const primaryTrackLayer: Layer = diagnosticMode === "path2"
       ? new PathLayer<MultiColorPathDatum>({
-          ...primaryTrackProps,
-          id: `track-stock-${identities.flightId}-${trackDisplayRef.current}`,
-          getColor: LEAF_GREEN,
+          ...diagnosticPathProps,
+          id: `track-path2-${identities.flightId}-${trackDisplayRef.current}`,
+          data: path2Tracks,
         })
-      : diagnosticMode === "outline"
-        ? new OutlinedPathLayer<MultiColorPathDatum>({
-            ...primaryTrackProps,
-            id: `track-outline-${identities.flightId}-${trackDisplayRef.current}`,
-            getColor: LEAF_GREEN,
+      : diagnosticMode === "path256"
+        ? new PathLayer<MultiColorPathDatum>({
+            ...diagnosticPathProps,
+            id: `track-path256-${identities.flightId}-${trackDisplayRef.current}`,
+            data: path256Tracks,
           })
-        : diagnosticMode === "multicolor"
-          ? new PlainMultiColorPathLayer({
-              ...primaryTrackProps,
-              id: `track-multicolor-${identities.flightId}-${trackDisplayRef.current}`,
-              getColor: (flight) => flight.colors,
-              updateTriggers: { getColor: d },
+        : diagnosticMode === "lines"
+          ? new LineLayer<DiagnosticLineSegment>({
+              id: `track-lines-${identities.flightId}-${trackDisplayRef.current}`,
+              data: lineSegments,
+              getSourcePosition: (segment) => {
+                const point = segment.source;
+                return [point[0], point[1], zOf(point[2])] as [number, number, number];
+              },
+              getTargetPosition: (segment) => {
+                const point = segment.target;
+                return [point[0], point[1], zOf(point[2])] as [number, number, number];
+              },
+              getColor: (segment) => segment.color,
+              getWidth: 5.75,
+              widthUnits: "pixels",
+              widthMinPixels: 5.75,
+              parameters: { depthWriteEnabled: false, depthCompare: "always" },
             })
           : new MultiColorPathLayer({
               ...primaryTrackProps,
