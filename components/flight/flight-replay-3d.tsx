@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MapboxOverlay } from "@deck.gl/mapbox";
@@ -450,6 +450,8 @@ export interface FlightReplay3DHandle {
 }
 
 interface FlightReplay3DProps {
+  /** Controls and status UI that must stay positioned against the map viewport. */
+  children?: ReactNode;
   xcRoute?: XcCandidate | null;
   flightId: string;
   primaryFlightId: string;
@@ -486,6 +488,7 @@ interface FlightReplay3DProps {
 export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DProps>(
   function FlightReplay3D(
     {
+      children,
       flightId,
       primaryFlightId,
       primaryOwnerId,
@@ -2237,6 +2240,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           data-track-renderer={trackDiagnosticMode ?? "production"}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
+        {children}
         {hoverPhoto && (
           // eslint-disable-next-line @next/next/no-img-element
           <img

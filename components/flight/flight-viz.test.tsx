@@ -1,6 +1,7 @@
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { LoadedReplayFlight } from "./use-group-replay";
 import type { FlightStatistics } from "@/lib/flights/statistics";
 import { toggleReplayXcRoute } from "@/lib/flights/replay-events";
@@ -15,7 +16,7 @@ const { group } = vi.hoisted(() => {
 vi.mock("./use-group-replay", () => ({ useGroupReplay: () => group }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueMissingFlightAnalysis: vi.fn() }));
-vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ trackDisplay, onPhotoOpen, xcRoute, pilotName }: { trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown; pilotName: string }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)} data-pilot={pilotName}><button onClick={() => onPhotoOpen("photo")}>Map photo</button></div> }));
+vi.mock("./flight-replay-3d", () => ({ FlightReplay3D: ({ children, trackDisplay, onPhotoOpen, xcRoute, pilotName }: { children?: ReactNode; trackDisplay: string; onPhotoOpen: (id: string) => void; xcRoute: unknown; pilotName: string }) => <div data-testid="replay" data-track={trackDisplay} data-xc={Boolean(xcRoute)} data-pilot={pilotName}><button onClick={() => onPhotoOpen("photo")}>Map photo</button>{children}</div> }));
 vi.mock("./barograph", () => ({ BAROGRAPH_PLOT_LEFT_INSET: 40, BAROGRAPH_PLOT_RIGHT_INSET: 10, Barograph: ({ profiles }: { profiles: { id: string; state: string }[] }) => <div>{profiles.map((profile) => <span key={profile.id} data-testid={`profile-${profile.id}`} data-state={profile.state} />)}</div> }));
 import { FlightViz } from "./flight-viz";
 
@@ -35,6 +36,12 @@ it("offers the day calendar for a single own flight even when no companions are 
   fireEvent.click(screen.getByRole("button", { name: "Relive the day" }));
   expect(group.discover).toHaveBeenLastCalledWith(false, true);
   expect(slider).toHaveAttribute("aria-valuenow", "1");
+});
+it("keeps map overlays inside the replay surface", () => {
+  view();
+  const replay = within(screen.getByTestId("replay"));
+  expect(replay.getByTitle("Clock time")).toBeInTheDocument();
+  expect(replay.getByRole("button", { name: "Center on pilot" })).toBeInTheDocument();
 });
 it("labels the selected glider with its owner's profile, using the handle when the display name is blank", () => {
   view();

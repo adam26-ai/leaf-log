@@ -681,7 +681,7 @@ export function FlightViz({
               onManualCameraChange={() => selectCameraMode("fixed")}
               onPhotoOpen={(id) => { const photo = photos.find((p) => p.id === id); if (photo) selectPhoto(photo); }}
               onTerrainProfile={recordTerrain}
-            />
+            >
             <ReplayPilots group={group} primaryOwnerId={primaryPilot.id} viewerId={viewerId}
               onSelect={selectPilot} onToggle={(id) => {
                 const changingSelection = group.selected?.owner.id === id && group.isVisible(id);
@@ -739,6 +739,7 @@ export function FlightViz({
                 </div>
               </div>
             )}
+            </FlightReplay3D>
           </div>
         </div>
 
