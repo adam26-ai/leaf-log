@@ -11,7 +11,19 @@ export async function expectSignedOutHeader(page: Page) {
  * finish. Wait for the real renderer's idle signal within the existing test
  * deadline before measuring a subsequent interaction's response. */
 export async function waitForMapReady(map: Locator) {
-  await map.and(map.page().locator('[data-render-ready="true"]')).waitFor();
+  const page = map.page();
+  const readyMap = map.and(page.locator('[data-render-ready="true"]'));
+  const shaderError = page.getByRole("heading", {
+    name: /Compilation error in .*shader/i,
+  });
+
+  // luma.gl reports shader compilation failures in a rendered error panel.
+  // Race that panel against readiness so a bad shader fails with its real
+  // message instead of consuming the test's entire deadline.
+  await readyMap.or(shaderError).first().waitFor();
+  if (await shaderError.isVisible()) {
+    throw new Error(await shaderError.textContent() ?? "WebGL shader compilation failed");
+  }
 }
 
 /** Exercise one isolated path mechanism without changing the flight/view. */
