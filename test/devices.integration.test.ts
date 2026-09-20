@@ -165,6 +165,18 @@ describe("device tokens", () => {
     expect(await repo.resolveDeviceTokenOwner(plaintext)).toBeNull();
   });
 
+  it("deletes only revoked keys owned by the account", async () => {
+    const active = await repo.createDeviceToken(ownerId, "Keep active");
+    const revoked = await repo.createDeviceToken(ownerId, "Delete revoked");
+    await repo.revokeDeviceToken(revoked.token.id, ownerId);
+
+    expect(await repo.deleteRevokedDeviceToken(active.token.id, ownerId)).toBe(false);
+    expect(await repo.deleteRevokedDeviceToken(revoked.token.id, otherId)).toBe(false);
+    expect(await repo.deleteRevokedDeviceToken(revoked.token.id, ownerId)).toBe(true);
+    expect(await prisma.deviceToken.findUnique({ where: { id: revoked.token.id } })).toBeNull();
+    expect(await prisma.deviceToken.findUnique({ where: { id: active.token.id } })).not.toBeNull();
+  });
+
   it("resolves a generated key and ingests device-pushed flights with dedupe", async () => {
     const { plaintext } = await repo.createDeviceToken(ownerId, "Vario");
     const resolved = await repo.resolveDeviceTokenOwner(plaintext);

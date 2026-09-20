@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Upload } from "lucide-react";
+import { BookOpen, CircleUserRound, Download, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { ExportLogbook } from "@/components/logbook/export-logbook";
+import { CollapsibleSettingsCard } from "@/components/settings/collapsible-settings-card";
+import { LogbookLegend } from "@/components/settings/logbook-legend";
 import { AvatarUploader } from "./avatar-uploader";
 import {
   FLIGHT_VISIBILITIES,
@@ -105,7 +106,7 @@ export function SettingsForm({
     return () => window.clearTimeout(timer);
   }, [revision, saving]);
 
-  const saveStatus = <div role="status" aria-live="polite" className={`text-xs ${error ? "text-red-600" : "text-gray-500"}`}>
+  const saveStatus = <div role="status" aria-label="Settings save status" aria-live="polite" className={`text-xs ${error ? "text-red-600" : "text-gray-500"}`}>
     {status}{error && <button type="button" onClick={changed} className="ml-2 underline">Retry</button>}
   </div>;
   const normalizedDefaultVisibility = normalizeVisibility(defaultVisibility);
@@ -115,126 +116,105 @@ export function SettingsForm({
       const target = e.target;
       if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) && target.name) changed();
     }} className="flex flex-col gap-6">
-      <Card className="flex flex-col gap-5 p-6">
-        <div className="flex flex-col gap-3">
-          <h2 className="font-condensed text-lg font-bold text-ink">Profile</h2>
-          <AvatarUploader handle={handle} displayName={displayName} avatarUpdatedAt={avatarUpdatedAt} />
+      <CollapsibleSettingsCard title="Profile" icon={<CircleUserRound className="h-6 w-6" aria-hidden="true" />}>
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-3">
+            <AvatarUploader handle={handle} displayName={displayName} avatarUpdatedAt={avatarUpdatedAt} />
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="font-condensed text-sm font-bold tracking-wide text-ink">Handle</span>
+            <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/40">
+              <span className="pl-3 font-mono text-gray-500">@</span>
+              <input name="handle" required defaultValue={handle} pattern="[A-Za-z0-9_]{3,20}" className="h-11 w-full bg-transparent px-2 font-mono text-ink outline-none" />
+            </div>
+            <span className="text-xs text-gray-500">Your public profile lives at /@{handle}. Changing this changes that link.</span>
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="font-condensed text-sm font-bold tracking-wide text-ink">Display name</span>
+            <input name="display_name" required defaultValue={displayName} maxLength={60} className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40" />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="font-condensed text-sm font-bold tracking-wide text-ink">Bio</span>
+            <textarea name="bio" defaultValue={bio} maxLength={280} rows={3} placeholder="A line about your flying — wings, home site, anything." className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40" />
+          </label>
+
+          {saveStatus}
         </div>
-      <label className="flex flex-col gap-1.5">
-        <span className="font-condensed text-sm font-bold tracking-wide text-ink">
-          Handle
-        </span>
-        <div className="flex items-center rounded-md border border-gray-300 bg-paper focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-brand-blue/40">
-          <span className="pl-3 font-mono text-gray-500">@</span>
-          <input
-            name="handle"
-            required
-            defaultValue={handle}
-            pattern="[A-Za-z0-9_]{3,20}"
-            className="h-11 w-full bg-transparent px-2 font-mono text-ink outline-none"
-          />
-        </div>
-        <span className="text-xs text-gray-500">
-          Your public profile lives at /@{handle}. Changing this changes that link.
-        </span>
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="font-condensed text-sm font-bold tracking-wide text-ink">
-          Display name
-        </span>
-        <input
-          name="display_name"
-          required
-          defaultValue={displayName}
-          maxLength={60}
-          className="h-11 rounded-md border border-gray-300 bg-paper px-3 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
-        />
-      </label>
-
-      <label className="flex flex-col gap-1.5">
-        <span className="font-condensed text-sm font-bold tracking-wide text-ink">
-          Bio
-        </span>
-        <textarea
-          name="bio"
-          defaultValue={bio}
-          maxLength={280}
-          rows={3}
-          placeholder="A line about your flying — wings, home site, anything."
-          className="resize-none rounded-md border border-gray-300 bg-paper px-3 py-2 text-ink outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/40"
-        />
-      </label>
-
-      {saveStatus}
-      </Card>
+      </CollapsibleSettingsCard>
       {afterProfile}
-      <Card className="flex flex-col gap-5 p-6">
-      <h2 className="font-condensed text-lg font-bold text-ink">Logbook</h2>
-      <div className="grid grid-cols-2 gap-3">
-        <Button asChild variant="outline">
-          <Link href="/settings/import" aria-label="Import logbook"><Upload className="h-4 w-4" aria-hidden="true" />Import</Link>
-        </Button>
-        <ExportLogbook />
-      </div>
-      <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
+      <CollapsibleSettingsCard title="Logbook" icon={<BookOpen className="h-6 w-6" aria-hidden="true" />}>
+        <div className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 gap-3">
+            <Button asChild variant="outline">
+              <Link href="/settings/import" aria-label="Import logbook"><Download className="h-4 w-4" aria-hidden="true" />Import</Link>
+            </Button>
+            <ExportLogbook />
+          </div>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="font-condensed text-sm font-bold tracking-wide text-ink">
-          Default privacy for new flights
-        </legend>
-        <span className="text-xs text-gray-500">
-          New flights start at this visibility. You can change any flight later.
-        </span>
-        <div className="mt-1 flex flex-col gap-2">
-          {FLIGHT_VISIBILITIES.map((value) => (
-            <label
-              key={value}
-              className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5"
-            >
+          <fieldset className="flex flex-col gap-2">
+            <legend className="font-condensed text-sm font-bold tracking-wide text-ink">
+              Default privacy for new flights
+            </legend>
+            <span className="text-xs text-gray-500">
+              New flights start at this visibility. You can change any flight later.
+            </span>
+            <div className="mt-1 flex flex-col gap-2">
+              {FLIGHT_VISIBILITIES.map((value) => (
+                <label
+                  key={value}
+                  className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5"
+                >
+                  <input
+                    type="radio"
+                    name="default_visibility"
+                    value={value}
+                    defaultChecked={normalizedDefaultVisibility === value}
+                    className="mt-0.5 accent-brand-blue"
+                  />
+                  <span className="flex flex-col">
+                    <span className="font-condensed text-sm font-bold text-ink">
+                      {VISIBILITY_COPY[value].label}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {VISIBILITY_COPY[value].hint}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="border-t border-gray-200 pt-5">
+            <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5">
               <input
-                type="radio"
-                name="default_visibility"
-                value={value}
-                defaultChecked={normalizedDefaultVisibility === value}
+                type="checkbox"
+                name="ratings_tracking_enabled"
+                defaultChecked={ratingsTrackingEnabled}
                 className="mt-0.5 accent-brand-blue"
               />
               <span className="flex flex-col">
                 <span className="font-condensed text-sm font-bold text-ink">
-                  {VISIBILITY_COPY[value].label}
+                  Track USHPA ratings progress
                 </span>
                 <span className="text-xs text-gray-500">
-                  {VISIBILITY_COPY[value].hint}
+                  Adds a Ratings tracking section to every flight&apos;s edit page — Occupancy,
+                  Flight type, Launch type, Landing tags, and assigning an instructor. Most pilots
+                  don&apos;t need this; turn it on if you&apos;re working toward P2/P3/P4.
                 </span>
               </span>
             </label>
-          ))}
+          </div>
+          {saveStatus}
+          <LogbookLegend />
         </div>
-      </fieldset>
-      {saveStatus}
-      </Card>
-      <Card className="flex flex-col gap-5 p-6">
-        <h2 className="font-condensed text-lg font-bold text-ink">Ratings</h2>
-        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-gray-200 bg-paper px-3 py-2.5 hover:border-brand-blue has-[:checked]:border-brand-blue has-[:checked]:bg-brand-blue/5">
-          <input
-            type="checkbox"
-            name="ratings_tracking_enabled"
-            defaultChecked={ratingsTrackingEnabled}
-            className="mt-0.5 accent-brand-blue"
-          />
-          <span className="flex flex-col">
-            <span className="font-condensed text-sm font-bold text-ink">
-              Track USHPA ratings progress
-            </span>
-            <span className="text-xs text-gray-500">
-              Adds a Ratings tracking section to every flight&apos;s edit page — Occupancy,
-              Flight type, Launch type, Landing tags, and assigning an instructor. Most pilots
-              don&apos;t need this; turn it on if you&apos;re working toward P2/P3/P4.
-            </span>
-          </span>
-        </label>
-        {saveStatus}
-      </Card>
+      </CollapsibleSettingsCard>
+      <CollapsibleSettingsCard title="Replay" icon={<Play className="h-6 w-6" aria-hidden="true" />}>
+        <div className="flex flex-col gap-5">
+          <MapDefaultsFields units={defaultUnits} customUnits={customUnits} defaults={mapDefaults} onChange={changed} />
+          {saveStatus}
+        </div>
+      </CollapsibleSettingsCard>
     </form>
   );
 }

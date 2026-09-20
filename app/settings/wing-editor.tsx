@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { WingIcon } from "@/components/icons/wing-icon";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CollapsibleSettingsCard } from "@/components/settings/collapsible-settings-card";
 import type { WingSummary } from "@/lib/flights/wings";
 import { Eye, EyeOff, Users } from "lucide-react";
 import { saveWingNames, setWingVisibility, setWingTandem, setTandemEnabled } from "./wing-actions";
 
-export function WingEditor({ wings, tandemEnabled = false }: { wings: WingSummary[]; tandemEnabled?: boolean }) {
+export function WingEditor({ wings, tandemEnabled = false, collapsible = false }: { wings: WingSummary[]; tandemEnabled?: boolean; collapsible?: boolean }) {
   const [selected, setSelected] = useState<(string | null)[]>([]);
   const [target, setTarget] = useState("");
   const [saving, setSaving] = useState(false);
@@ -72,14 +73,11 @@ export function WingEditor({ wings, tandemEnabled = false }: { wings: WingSummar
 
   // This card sits between the profile form's cards. Its unnamed inputs and
   // isolated events keep these bulk edits separate from profile autosaving.
-  return <Card className="p-6" onChange={event => event.stopPropagation()} onKeyDown={event => {
+  const editor = <div onChange={event => event.stopPropagation()} onKeyDown={event => {
     if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault();
   }}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="flex items-center gap-2 font-condensed text-lg font-bold text-ink"><WingIcon aria-hidden="true" className="h-5 w-5" />Wings</h2>
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
-        <input type="checkbox" role="switch" checked={tandemEnabled} disabled={saving} onChange={() => void toggleTandem()} className="h-4 w-4 accent-brand-blue" />Enable tandem
-      </label>
+      {!collapsible && <h2 className="flex items-center gap-2 font-condensed text-lg font-bold text-ink"><WingIcon aria-hidden="true" className="h-5 w-5" />Wings</h2>}
     </div>
     <p className="mt-1 text-sm text-gray-600">Select one wing to rename it, or several to merge them under one name.</p>
     {!wings.length ? <p className="mt-4 text-sm text-gray-500">Wings will appear here after you add flights.</p> : <fieldset disabled={saving} className="mt-4 min-w-0 space-y-4">
@@ -129,6 +127,25 @@ export function WingEditor({ wings, tandemEnabled = false }: { wings: WingSummar
     </fieldset>}
     {message && <p role={error ? "alert" : "status"} className={`mt-3 text-sm ${error ? "text-red-600" : "text-gray-600"}`}>{message}</p>}
     {tandemEnabled && <p className="mt-3 text-xs text-gray-500">Use the two-person button to set a wing’s tandem default for existing flights and future Leaf uploads. Manual solo or tandem choices are kept. Turning off Enable tandem only hides these controls.</p>}
-    {wings.length > 0 && <p className="mt-3 text-xs text-gray-500">Hide retired wings with the eye button to remove them from flight selections. Existing flights and wing hours are kept. Future IGC uploads use the wing name recorded in their file.</p>}
-  </Card>;
+    <div className="mt-4 space-y-2 text-xs leading-relaxed text-gray-500">
+      <p>Wings in your flight logs and IGC files will show up here. To add a new wing, edit the flight details of a logbook entry, or add a new glider profile on your Leaf vario.</p>
+      <p>Use the eye button in the list above to remove a wing from future flight selections. Existing flights and wing hours are kept.</p>
+      <p>Future IGC uploads always default to the wing name recorded in the IGC file. Make sure your Leaf vario is set to the proper glider profile, or use Leaf Log to change a flight&apos;s glider afterward.</p>
+    </div>
+    <div className="mt-5 flex justify-end">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+        <input type="checkbox" role="switch" checked={tandemEnabled} disabled={saving} onChange={() => void toggleTandem()} className="h-4 w-4 accent-brand-blue" />Enable tandem
+      </label>
+    </div>
+  </div>;
+
+  if (collapsible) {
+    return (
+      <CollapsibleSettingsCard title="My Wings" icon={<WingIcon aria-hidden="true" className="h-8 w-8" />}>
+        {editor}
+      </CollapsibleSettingsCard>
+    );
+  }
+
+  return <Card className="p-6">{editor}</Card>;
 }

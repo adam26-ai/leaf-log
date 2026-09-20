@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AccentBar } from "@/components/ui/accent-bar";
 import { LeafLogLogo } from "@/components/brand/leaf-log-logo";
+import { SunnyCloudIcon } from "@/components/icons/sunny-cloud-icon";
 
 export default function Home() {
   return (
@@ -9,7 +10,7 @@ export default function Home() {
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
         <Link href="/" aria-label="Leaf Log home"><LeafLogLogo /></Link>
         <Button asChild variant="ghost" size="sm">
-          <Link href="/sign-in">Sign in</Link>
+          <Link href="/sign-in"><SunnyCloudIcon aria-hidden="true" className="h-6 w-6 shrink-0" />Sign in</Link>
         </Button>
       </header>
 
@@ -30,7 +31,7 @@ export default function Home() {
               <Link href="/sign-in">Start your logbook</Link>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/sign-in">Sign in</Link>
+              <Link href="/sign-in"><SunnyCloudIcon aria-hidden="true" className="h-6 w-6 shrink-0" />Sign in</Link>
             </Button>
           </div>
         </div>

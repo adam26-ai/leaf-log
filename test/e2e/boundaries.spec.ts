@@ -194,7 +194,7 @@ test("draw a boundary from site management without binding the current flight, t
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
   const unmatchedFlightUrl = page.url();
-  await page.goto("/settings/sites");
+  await page.goto("/sites");
   await page.getByRole("button", { name: new RegExp(siteName) }).click();
   await expect(page.getByText("My spots")).not.toBeVisible();
   await page.getByRole("button", { name: "Edit site", exact: true }).click();

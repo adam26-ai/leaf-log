@@ -22,6 +22,7 @@ export type SiteManagerResult<T = undefined> =
   | { ok: false; error: string };
 
 function refreshSitePages() {
+  revalidatePath("/sites");
   revalidatePath("/settings/sites");
   revalidatePath("/logbook");
   revalidatePath("/feed");

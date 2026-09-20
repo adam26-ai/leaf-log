@@ -17,7 +17,7 @@ export function MapDefaultsFields({ units, customUnits, defaults, onChange }: { 
     </div>;
   }
   return <fieldset className="flex flex-col gap-3">
-    <legend className="font-condensed text-sm font-bold tracking-wide text-ink">Map defaults</legend>
+    <legend className="font-condensed text-sm font-bold tracking-wide text-ink">Map and playback defaults</legend>
     <p className="text-xs text-gray-500">Starting settings for flight replay on every device. Click an icon to cycle its options.</p>
     <input type="hidden" name="map_defaults" value={JSON.stringify(value)} />
     <UnitsFields defaultUnits={units} customUnits={customUnits} />

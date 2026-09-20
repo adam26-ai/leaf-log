@@ -32,13 +32,29 @@ export default async function FriendsPage() {
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+      <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <SectionHeading as="h1">Friends</SectionHeading>
         <p className="mt-3 mb-8 text-gray-600">
           Manage requests and the pilots you fly with.
         </p>
 
-        <div className="flex flex-col gap-6">
+        <div className="grid items-start gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
+          <Card className="min-w-0 p-6">
+            <h2 className="font-condensed text-lg font-bold text-ink">Friends</h2>
+            <p className="mt-1 text-sm text-gray-600">Click a friend to see their flights.</p>
+            {friends.length === 0 ? (
+              <p className="mt-4 text-sm text-gray-600">No friends yet.</p>
+            ) : (
+              <ul className="mt-4 flex flex-col divide-y divide-gray-100">
+                {friends.map((friend) => (
+                  <li key={friend.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <ProfileLink profile={friend} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+          <div className="flex min-w-0 flex-col gap-6">
           <Card className="p-6">
             <FriendSearch />
           </Card>
@@ -54,7 +70,7 @@ export default async function FriendsPage() {
                 {incoming.map((req) => (
                   <li
                     key={`${req.requesterId}:${req.addresseeId}`}
-                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                    className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <ProfileLink profile={req.requester} />
                     <div className="ml-auto flex items-center gap-2">
@@ -96,7 +112,7 @@ export default async function FriendsPage() {
                 {outgoing.map((req) => (
                   <li
                     key={`${req.requesterId}:${req.addresseeId}`}
-                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
+                    className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <ProfileLink profile={req.addressee} />
                     <form
@@ -116,25 +132,7 @@ export default async function FriendsPage() {
             )}
           </Card>
 
-          <Card className="p-6">
-            <h2 className="font-condensed text-lg font-bold text-ink">
-              Friends
-            </h2>
-            {friends.length === 0 ? (
-              <p className="mt-4 text-sm text-gray-600">No friends yet.</p>
-            ) : (
-              <ul className="mt-4 flex flex-col divide-y divide-gray-100">
-                {friends.map((friend) => (
-                  <li
-                    key={friend.id}
-                    className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
-                  >
-                    <ProfileLink profile={friend} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          </div>
         </div>
       </main>
     </div>

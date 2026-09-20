@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
+import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -37,6 +37,7 @@ test("tandem wing controls preserve flight overrides and expose the merged defau
     const manual = await db.flight.create({ data: { ...base, occupancy: "solo", tandemOverride: false } });
     await db.flight.create({ data: { ...base, glider: "Solo Test Wing" } });
     await page.goto("/settings");
+    await openSettingsCard(page, "My Wings");
     const enable = page.getByRole("switch", { name: "Enable tandem" });
     await expect(enable).not.toBeChecked();
     await expect(page.getByRole("switch", { name: "Tandem wing: Tandem Test Wing" })).toHaveCount(0);
@@ -53,7 +54,7 @@ test("tandem wing controls preserve flight overrides and expose the merged defau
     await page.getByLabel("Merged wing name:").fill("Merged Wing");
     await page.screenshot({ path: "test-results/tandem-wings-desktop.png", fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole("heading", { name: "Wings", exact: true }).scrollIntoViewIfNeeded();
+    await page.getByRole("button", { name: "Collapse My Wings settings", exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: "test-results/tandem-wings-mobile.png", fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole("switch", { name: "Merged wing is tandem" }).uncheck();
@@ -65,6 +66,7 @@ test("tandem wing controls preserve flight overrides and expose the merged defau
     await enable.click();
     await expect(enable).not.toBeChecked();
     await page.reload();
+    await openSettingsCard(page, "My Wings");
     await expect(enable).not.toBeChecked();
     expect((await db.profile.findUniqueOrThrow({ where: { id: owner.id } })).tandemWings).toEqual(["Merged Wing"]);
     expect(await db.flight.findUniqueOrThrow({ where: { id: manual.id } })).toMatchObject({ occupancy: "solo", tandemOverride: false });
@@ -87,7 +89,7 @@ test("site management separates linked flights from matching names and counts ea
     const linked = await db.flight.create({ data: { ...base, flightDate: new Date("2026-07-11"), takeoffSiteId: site.id, landingSiteId: site.id } });
     const named = await db.flight.create({ data: { ...base, flightDate: new Date("2012-02-11"), takeoffSiteName: site.name, landingSiteName: site.name, takeoffSiteAssignment: "custom_name", landingSiteAssignment: "custom_name", landingLat: site.lat, landingLon: site.lon } });
     const otherLink = await db.flight.create({ data: { ...base, flightDate: new Date("2011-07-17"), takeoffSiteId: different.id, takeoffSiteName: different.name } });
-    await page.goto("/settings/sites");
+    await page.goto("/sites");
     const siteRow = page.getByRole("region", { name: "Sites list", exact: true }).getByRole("button")
       .filter({ hasText: "Ed Levin 1750", has: page.getByLabel("Private", { exact: true }) });
     await expect(siteRow).toBeVisible();
@@ -220,7 +222,7 @@ test("CSV site names use the full editor and keep their identity and flight coor
     expect(mapped).toMatchObject({ takeoffLat: null, takeoffLon: null, notes: "Keep this memory" });
     expect(mapped.takeoffSiteId).toBeTruthy();
     await expect(page.getByText("Site location; takeoff position not recorded.")).toBeVisible();
-    await page.goto("/settings/sites");
+    await page.goto("/sites");
     await page.getByRole("button", { name: "Edit site", exact: true }).click();
     await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("Remembered Hill");
     await dialog.getByRole("button", { name: "Draw or edit boundary" }).click();
@@ -296,10 +298,12 @@ test("hidden wings keep their hours and disappear from new and recorded flight s
     const flight = await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "igc", glider: "Retired wing", durationS: 9000 } });
     await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "logbook", glider: "Current wing", durationS: 1800, flightDate: new Date("2020-01-01") } });
     await page.goto("/settings");
+    await openSettingsCard(page, "My Wings");
     await expect(page.getByText(/1 flight.*2.5 h/)).toBeVisible();
     await page.getByRole("button", { name: "Hide Retired wing in flight selections" }).click();
     await expect(page.getByRole("button", { name: "Show Retired wing in flight selections" })).toBeVisible();
     await page.reload();
+    await openSettingsCard(page, "My Wings");
     await expect(page.getByRole("button", { name: "Show Retired wing in flight selections" })).toBeVisible();
     await page.screenshot({ path: "test-results/settings-wings.png", fullPage: true });
     await page.goto(`/flights/${flight.id}/edit`);

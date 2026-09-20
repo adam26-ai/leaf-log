@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { claimPairing } from "@/lib/devices/pairing-repo";
-import { revokeDeviceToken } from "@/lib/devices/repo";
+import { deleteRevokedDeviceToken, revokeDeviceToken } from "@/lib/devices/repo";
 import { requireProfile } from "@/lib/profile";
 
 export type ClaimDeviceActionState = { error?: string; ok?: boolean };
@@ -28,6 +28,7 @@ export async function claimDeviceAction(
     return { error: "That pairing code is invalid or expired." };
   }
 
+  revalidatePath("/settings");
   revalidatePath("/settings/devices");
   return { ok: true };
 }
@@ -37,6 +38,17 @@ export async function revokeDeviceKeyAction(
 ): Promise<RevokeDeviceKeyState> {
   const profile = await requireProfile();
   const revoked = await revokeDeviceToken(id, profile.id);
+  revalidatePath("/settings");
   revalidatePath("/settings/devices");
   return revoked ? { ok: true } : { error: "Device key not found." };
+}
+
+export async function deleteRevokedDeviceKeyAction(
+  id: string,
+): Promise<RevokeDeviceKeyState> {
+  const profile = await requireProfile();
+  const deleted = await deleteRevokedDeviceToken(id, profile.id);
+  revalidatePath("/settings");
+  revalidatePath("/settings/devices");
+  return deleted ? { ok: true } : { error: "Revoked device not found." };
 }
