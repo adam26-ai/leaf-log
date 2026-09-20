@@ -1,5 +1,6 @@
 import { flightXcResults, isLogbookEntry, type RecordingFields } from "./recording";
 import { analysisState, METRICS_VERSION } from "./analysis-state";
+import { peakGainAboveLaunchM } from "./altitude-metrics";
 
 export type TrophyCategory = "duration" | "altitude" | "launch-gain" | "open" | "fai-triangle" | "free-triangle";
 export interface FlightTrophy { category: TrophyCategory; rank: 1 | 2 | 3; value: number; approximate: boolean; provisional?: boolean; reported?: boolean }
@@ -23,7 +24,7 @@ export function flightTrophies(flights: TrophyFlight[]): Record<string, FlightTr
       let value: number | null | undefined, approximate = false, reported = isLogbookEntry(f);
       if (category === "duration") value = f.durationS;
       else if (category === "altitude") value = f.maxAltM;
-      else if (category === "launch-gain") value = f.maxAltM != null && f.launchAltM != null ? f.maxAltM - f.launchAltM : null;
+      else if (category === "launch-gain") value = peakGainAboveLaunchM(f);
       else {
         const route = flightXcResults(f).find(route => route.shape === category);
         value = route?.distanceM; approximate = route?.approximate ?? false; reported = route?.reported ?? false;

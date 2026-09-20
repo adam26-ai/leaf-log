@@ -248,8 +248,8 @@ model Flight {
   recorder              String?
   // derived metrics
   durationS             Int?
-  maxAltM               Int?
-  altGainM              Int?
+  maxAltM               Int?          // highest altitude above MSL during the flight
+  altGainM              Int?          // cumulative ascent: sum of positive climbs, not maxAltM - launchAltM
   maxClimbMs            Float?
   maxSinkMs             Float?
   altSource             String?
