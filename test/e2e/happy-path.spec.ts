@@ -77,6 +77,7 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   // still starting. Let its first frame finish before testing link navigation.
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "path2");
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer-decision", "canary-pass");
   await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" }).getByRole("button")).toHaveCount(3);
   await expect(anonPage.locator('[data-gpu-report="ready"]')).toBeAttached();
   await expect(anonPage.getByText("Device report", { exact: true })).toBeVisible();
@@ -87,6 +88,7 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   expect(depthFallbackResponse?.status()).toBe(200);
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "line-fallback-depth");
+  await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer-decision", "forced-depth-fallback");
   await expect(anonPage.getByRole("group", { name: "Track renderer diagnostic" })).toHaveCount(0);
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
