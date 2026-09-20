@@ -20,3 +20,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Diagnose the first failed assertion using the Playwright report/trace. Do not
   add retries, skips, or longer timeouts to hide deterministic failures.
 - See `docs/testing.md` for database isolation, local setup, and the CI audit.
+
+## Pull request submission
+
+- When the user requests a pull request, push the branch and create or update the
+  pull request without asking for an additional confirmation. Prefer GitHub CLI
+  over browser automation.
