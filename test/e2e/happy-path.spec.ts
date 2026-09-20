@@ -1,4 +1,5 @@
-import { test, expect } from "./fixtures";
+import { test, expect, type Page } from "./fixtures";
+import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
@@ -18,7 +19,7 @@ async function getMagicLink(): Promise<string> {
   throw new Error("magic link file never appeared");
 }
 
-test("sign up → upload → view → share → logged-out view", async ({ page, newContext }) => {
+async function signUp(page: Page) {
   const suffix = `${Date.now()}`;
   const email = `e2e_${suffix}@test.local`;
   const handle = `e2e${suffix}`.slice(0, 18);
@@ -43,6 +44,29 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await page.locator('input[name="display_name"]').fill("E2E Pilot");
   await page.getByRole("button", { name: /create my logbook/i }).click();
   await expect(page).toHaveURL(/\/logbook/, { timeout: 15_000 });
+}
+
+/** Renderer tests arrange a real uploaded public flight without replaying the
+ * upload/share UI journey or mounting an unrelated owner's replay map. */
+async function arrangePublicFlight(page: Page) {
+  await signUp(page);
+  const response = await page.request.post("/api/upload", { multipart: { files: {
+    name: "renderer.igc", mimeType: "text/plain", buffer: readFileSync(IGC_PATH),
+  } } });
+  expect(response.ok()).toBe(true);
+  const { results } = await response.json();
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ status: "ready", deduped: false });
+  const flightId: string = results[0].flightId;
+  const db = new PrismaClient();
+  try {
+    await db.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
+  } finally { await db.$disconnect(); }
+  return `/flights/${flightId}`;
+}
+
+test("sign up → upload → view → share → logged-out view", async ({ page, newContext }) => {
+  await signUp(page);
 
   // 4. Upload a flight.
   await page.goto("/upload", { waitUntil: "networkidle" });
@@ -69,12 +93,25 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   // 7. A logged-out visitor can see the now-public flight.
   const anon = await newContext();
   const anonPage = await anon.newPage();
-  const res = await anonPage.goto(`${flightUrl}?trackDebug=1`);
+  const res = await anonPage.goto(flightUrl);
   expect(res?.status()).toBe(200);
   await expect(anonPage.getByText("Airtime")).toBeVisible();
   await expectSignedOutHeader(anonPage);
   // The server-rendered header can be visible while the replay's WebGL map is
   // still starting. Let its first frame finish before testing link navigation.
+  await waitForMapReady(anonPage.locator(".flight-replay-map"));
+  await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(anonPage).toHaveURL(/\/sign-in/);
+  await anon.close();
+});
+
+test("public replay renders the production track and switches diagnostic renderers", async ({ page, newContext }) => {
+  const flightUrl = await arrangePublicFlight(page);
+  const anon = await newContext();
+  const anonPage = await anon.newPage();
+  const response = await anonPage.goto(`${flightUrl}?trackDebug=1`);
+  expect(response?.status()).toBe(200);
+  await expectSignedOutHeader(anonPage);
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "path2");
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer-decision", "canary-pass");
@@ -84,8 +121,16 @@ test("sign up → upload → view → share → logged-out view", async ({ page,
   await selectTrackDiagnosticRenderer(anonPage, "256-point path", "path256");
   await selectTrackDiagnosticRenderer(anonPage, "Colored segments", "lines");
   await selectTrackDiagnosticRenderer(anonPage, "2-point path", "path2");
+  await anon.close();
+});
+
+test("public replay renders the forced depth fallback without diagnostic controls", async ({ page, newContext }) => {
+  const flightUrl = await arrangePublicFlight(page);
+  const anon = await newContext();
+  const anonPage = await anon.newPage();
   const depthFallbackResponse = await anonPage.goto(`${flightUrl}?trackLineFallbackDepth=1`);
   expect(depthFallbackResponse?.status()).toBe(200);
+  await expectSignedOutHeader(anonPage);
   await waitForMapReady(anonPage.locator(".flight-replay-map"));
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer", "line-fallback-depth");
   await expect(anonPage.locator(".flight-replay-map")).toHaveAttribute("data-track-renderer-decision", "forced-depth-fallback");

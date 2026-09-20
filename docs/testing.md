@@ -1,5 +1,20 @@
 # Testing and CI reliability
 
+## Follow-up: PR 97, September 20, 2026
+
+[Run 35497196270](https://github.com/adam26-ai/leaf-log/actions/runs/35497196270)
+passed 34 browser scenarios but exhausted the happy-path test's 60-second budget.
+The trace and failure snapshot show the public Sign in link present; the final
+click was cancelled as the test timed out, not rejected by a changed selector.
+That scenario also exercised the GPU canary, three diagnostic renderers, and a
+second replay load with forced depth fallback after signup/upload/sharing.
+Renderer diagnostics and forced fallback now have independent scenarios with
+real authenticated IGC ingestion and an arranged public flight. Each uses a fresh
+anonymous context and retains the real WebGL pipeline and all renderer assertions.
+The happy path still covers UI signup, upload, sharing, public replay readiness,
+and Sign in navigation. The fallback scenario also retains its navigation check.
+No retries, skips, or longer deadlines were added.
+
 ## Follow-up: PR 74, September 14, 2026
 
 [Run 34898317777](https://github.com/adam26-ai/leaf-log/actions/runs/34898317777)
