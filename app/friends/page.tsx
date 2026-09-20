@@ -39,7 +39,7 @@ export default async function FriendsPage() {
         </p>
 
         <div className="grid items-start gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-          <Card className="min-w-0 p-6">
+          <Card className="order-2 min-w-0 p-6 md:order-none">
             <h2 className="font-condensed text-lg font-bold text-ink">Friends</h2>
             <p className="mt-1 text-sm text-gray-600">Click a friend to see their flights.</p>
             {friends.length === 0 ? (
@@ -54,12 +54,12 @@ export default async function FriendsPage() {
               </ul>
             )}
           </Card>
-          <div className="flex min-w-0 flex-col gap-6">
-          <Card className="p-6">
+          <div className="contents min-w-0 md:flex md:flex-col md:gap-6">
+          <Card className={`${incoming.length > 0 ? "order-3" : "order-2"} p-6 md:order-none`}>
             <FriendSearch />
           </Card>
 
-          <Card className="p-6">
+          <Card className={`${incoming.length > 0 ? "order-1" : "order-3"} p-6 md:order-none`}>
             <h2 className="font-condensed text-lg font-bold text-ink">
               Incoming requests
             </h2>
@@ -101,7 +101,7 @@ export default async function FriendsPage() {
             )}
           </Card>
 
-          <Card className="p-6">
+          <Card className="order-4 p-6 md:order-none">
             <h2 className="font-condensed text-lg font-bold text-ink">
               Outgoing requests
             </h2>

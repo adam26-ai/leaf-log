@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud, Eye } from "lucide-react";
+import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
-import { WingIcon } from "@/components/icons/wing-icon";
+import { WingPairIcon } from "@/components/icons/wing-icon";
 import { ResponsiveTrophies } from "./responsive-trophies";
 import {
   formatDuration,
   formatAltitude,
   formatLocalDate,
+  formatLocalDateShort,
   formatLocalTime,
 } from "@/lib/flights/format";
 import type { FlightListItem } from "@/lib/flights/repo";
@@ -47,6 +48,7 @@ export function FlightRow({
   trophies,
   showAnalysis = false,
   friendFlightsFound = false,
+  prioritizeSiteOnMobile = false,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -58,6 +60,7 @@ export function FlightRow({
   trophies?: FlightTrophy[];
   showAnalysis?: boolean;
   friendFlightsFound?: boolean;
+  prioritizeSiteOnMobile?: boolean;
 }) {
   const { units } = useUnits();
   const visibility =
@@ -82,8 +85,8 @@ export function FlightRow({
     return (
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}
-        className="grid min-h-[45px] grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 min-[400px]:grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem_auto] sm:grid-cols-[8.5rem_minmax(10rem,1fr)_2.75rem_minmax(2.75rem,1.4fr)_auto] sm:gap-2 sm:px-3 sm:py-1 sm:text-sm">
-        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] font-bold leading-4">{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
+        className={`grid min-h-[45px] items-center gap-1 rounded-md border border-gray-200 px-1 py-1 text-xs transition-colors hover:bg-gray-50 sm:grid-cols-[8.5rem_minmax(10rem,1fr)_2.75rem_minmax(2.75rem,1.4fr)_auto] sm:gap-2 sm:px-3 sm:py-1 sm:text-sm ${prioritizeSiteOnMobile ? "grid-cols-[6rem_minmax(0,1fr)_2rem_1.5rem] min-[480px]:grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem_auto]" : "grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem] min-[400px]:grid-cols-[7.5rem_minmax(0,1fr)_2.75rem_2.75rem_auto]"}`}>
+        <span className="min-w-0 text-gray-600"><span className="block whitespace-nowrap text-[13px] font-bold leading-4"><span className={prioritizeSiteOnMobile ? "sm:hidden" : "hidden"}>{formatLocalDateShort(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className={prioritizeSiteOnMobile ? "hidden sm:inline" : ""}>{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span></span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span></span>
         <span className="flex min-w-0 items-center gap-2">
         <span title={showLanding ? `${site} → ${landing}` : site} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
           <span className="block max-w-full truncate font-condensed text-base font-bold leading-4 text-ink">{site}</span>
@@ -91,12 +94,12 @@ export function FlightRow({
         </span>
           <span title="Maximum altitude" className="hidden shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-brand-blue-strong sm:inline-flex"><Cloud className="h-3.5 w-3.5" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
         </span>
-        <span className="flex h-6 w-11 shrink-0 items-center justify-center">
-          {friendFlightsFound && <span title="Friend flights found" aria-label="Friend flights found" className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-full border border-brand-blue bg-brand-blue px-0.5 text-white"><WingIcon aria-hidden="true" className="h-5 w-5" /><Users aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></span>}
+        <span className="flex h-6 w-full shrink-0 items-center justify-center">
+          {friendFlightsFound && <span title="You flew together" aria-label="You flew together" className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded-full border border-brand-blue bg-brand-blue text-white"><WingPairIcon aria-hidden="true" className="h-6 w-6" /></span>}
         </span>
         <ResponsiveTrophies trophies={trophies ?? []} />
-        <span className="hidden items-center gap-1 min-[400px]:flex sm:gap-3">
-          <span title={`Visibility: ${visibility.label}`} aria-label={`Visibility: ${visibility.label}`} className={`inline-flex h-6 items-center justify-center gap-0.5 rounded-full border px-1.5 ${visibility.className}`}><Eye aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><VisibilityIcon aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></span>
+        <span className={`hidden items-center gap-1 sm:gap-3 ${prioritizeSiteOnMobile ? "min-[480px]:flex" : "min-[400px]:flex"}`}>
+          <span title={`Visibility: ${visibility.label}`} aria-label={`Visibility: ${visibility.label}`} className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${visibility.className}`}><VisibilityIcon aria-hidden="true" className="h-[15px] w-[15px]" /></span>
           <UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source} />
         </span>
       </Link>

@@ -19,6 +19,6 @@ export function ResponsiveTrophies({ trophies }: { trophies: FlightTrophy[] }) {
     return () => observer.disconnect();
   }, []);
   return <span ref={container} className="flex min-w-0 items-center gap-1" aria-label="Flight trophies">
-    {trophyGroups(trophies, slots).map(group => <TrophyPill key={group.map(trophy => trophy.category).join(",")} trophies={group} />)}
+    {trophyGroups(trophies, slots).map(group => <TrophyPill key={group.map(trophy => trophy.category).join(",")} trophies={group} compactOnMobile />)}
   </span>;
 }

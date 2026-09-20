@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { claimPairing } from "@/lib/devices/pairing-repo";
-import { deleteRevokedDeviceToken, revokeDeviceToken } from "@/lib/devices/repo";
+import { deleteRevokedDeviceToken, restoreDeviceToken, revokeDeviceToken } from "@/lib/devices/repo";
 import { requireProfile } from "@/lib/profile";
 
 export type ClaimDeviceActionState = { error?: string; ok?: boolean };
@@ -51,4 +51,14 @@ export async function deleteRevokedDeviceKeyAction(
   revalidatePath("/settings");
   revalidatePath("/settings/devices");
   return deleted ? { ok: true } : { error: "Revoked device not found." };
+}
+
+export async function restoreDeviceKeyAction(
+  id: string,
+): Promise<RevokeDeviceKeyState> {
+  const profile = await requireProfile();
+  const restored = await restoreDeviceToken(id, profile.id);
+  revalidatePath("/settings");
+  revalidatePath("/settings/devices");
+  return restored ? { ok: true } : { error: "Revoked device not found." };
 }

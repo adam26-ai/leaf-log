@@ -107,6 +107,7 @@ const LIST_SELECT = {
   launchAltM: true,
   flightDate: true,
   takeoffAt: true,
+  landingAt: true,
   takeoffSiteName: true,
   takeoffSiteId: true,
   takeoffSiteAssignment: true,
@@ -571,6 +572,59 @@ export async function logbookCompanions(viewerId: string) {
     }
   }
   return result.map(friend => ({ ...friend, flightIds: [...matches.get(friend.key)!] }));
+}
+
+/** IDs from an already-authorized list where the viewer's own recording overlaps
+ * in time and passes the same 5 km route-proximity check as group replay.
+ */
+export async function flightsSharedWithViewer(viewerId: string, flightIds: string[]): Promise<Set<string>> {
+  if (!flightIds.length) return new Set();
+  const flights = await prisma.flight.findMany({
+    where: {
+      id: { in: flightIds },
+      ownerId: { not: viewerId },
+      status: "ready",
+      recordingKind: "igc",
+      takeoffAt: { not: null },
+      landingAt: { not: null },
+    },
+  });
+  if (!flights.length) return new Set();
+
+  const own = await prisma.flight.findMany({
+    where: {
+      ownerId: viewerId,
+      status: "ready",
+      recordingKind: "igc",
+      takeoffAt: { lt: new Date(Math.max(...flights.map(flight => flight.landingAt!.getTime()))) },
+      landingAt: { gt: new Date(Math.min(...flights.map(flight => flight.takeoffAt!.getTime()))) },
+    },
+    orderBy: { takeoffAt: "asc" },
+  });
+  if (!own.length) return new Set();
+
+  const artifacts = new Map<string, Awaited<ReturnType<typeof replayArtifactForFlight>>>();
+  async function artifact(flight: Flight) {
+    if (!artifacts.has(flight.id)) artifacts.set(flight.id, await replayArtifactForFlight(flight));
+    return artifacts.get(flight.id);
+  }
+
+  const shared = new Set<string>();
+  for (const flight of flights) {
+    const candidates = own.filter(candidate => candidate.takeoffAt! < flight.landingAt! && candidate.landingAt! > flight.takeoffAt!);
+    if (!candidates.length) continue;
+    const primary = await artifact(flight);
+    if (!primary) continue;
+    const proximity = routeProximityIndex(primary.matchingPaths);
+    for (const candidate of candidates) {
+      const companion = await artifact(candidate);
+      if (companion && proximity(companion.matchingPaths) !== null) {
+        shared.add(flight.id);
+        break;
+      }
+    }
+  }
+  return shared;
 }
 
 /** Only the launch altitude scalar is needed for personal gain trophies. */

@@ -94,3 +94,15 @@ export function formatLocalDate(d: DateInput, offsetMinutes: number | null): str
     timeZone: "UTC",
   });
 }
+
+export function formatLocalDateShort(d: DateInput, offsetMinutes: number | null): string {
+  const ms = toMs(d);
+  if (ms == null) return "—";
+  const shifted = new Date(ms + (offsetMinutes ?? 0) * 60_000);
+  return shifted.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
