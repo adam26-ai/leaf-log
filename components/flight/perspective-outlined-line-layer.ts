@@ -13,7 +13,8 @@ const perspectiveLineUniforms = {
 
 const CLIP_HELPER = `
 const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;
-const float PERSPECTIVE_LINE_MITER_LIMIT = 2.0;
+const float PERSPECTIVE_LINE_MITER_LIMIT = 1.35;
+const float PERSPECTIVE_LINE_MIN_DIRECTION_PIXELS = 0.5;
 
 bool clipLineSegment(inout vec4 source, inout vec4 target) {
   if (
@@ -40,7 +41,7 @@ bool clipLineSegment(inout vec4 source, inout vec4 target) {
 
 vec2 safeLineDirection(vec2 delta, vec2 fallback) {
   float lengthSquared = dot(delta, delta);
-  return lengthSquared > 0.00000001
+  return lengthSquared >= PERSPECTIVE_LINE_MIN_DIRECTION_PIXELS * PERSPECTIVE_LINE_MIN_DIRECTION_PIXELS
     ? delta * inversesqrt(lengthSquared)
     : fallback;
 }
@@ -49,19 +50,24 @@ vec2 getMiterOffset(
   vec2 previous,
   vec2 current,
   vec2 following,
-  vec2 referenceDirection,
   float side,
   float halfWidthPixels
 ) {
   vec2 incomingDelta = (current - previous) * project.viewportSize;
   vec2 outgoingDelta = (following - current) * project.viewportSize;
-  vec2 incoming = safeLineDirection(incomingDelta, vec2(0.0));
-  vec2 outgoing = safeLineDirection(outgoingDelta, incoming);
-  incoming = safeLineDirection(incomingDelta, outgoing);
+  // At shallow camera angles many samples collapse below one screen pixel.
+  // Their individual directions are unstable, while the two-segment chord
+  // remains a reliable local tangent shared by both neighboring instances.
+  vec2 chord = safeLineDirection(
+    (following - previous) * project.viewportSize,
+    vec2(1.0, 0.0)
+  );
+  vec2 incoming = safeLineDirection(incomingDelta, chord);
+  vec2 outgoing = safeLineDirection(outgoingDelta, chord);
 
-  vec2 tangent = safeLineDirection(incoming + outgoing, referenceDirection);
+  vec2 tangent = safeLineDirection(incoming + outgoing, chord);
   vec2 miter = vec2(-tangent.y, tangent.x);
-  vec2 referenceNormal = vec2(-referenceDirection.y, referenceDirection.x);
+  vec2 referenceNormal = vec2(-incoming.y, incoming.x);
   float alignment = max(abs(dot(miter, referenceNormal)), 1.0 / PERSPECTIVE_LINE_MITER_LIMIT);
   return miter * side * halfWidthPixels / alignment;
 }
@@ -137,7 +143,6 @@ in vec3 instanceTargetNextPositions64Low;`,
           sourcePrevious.xy / sourcePrevious.w,
           source.xy / source.w,
           target.xy / target.w,
-          safeLineDirection((target.xy / target.w - source.xy / source.w) * project.viewportSize, vec2(1.0, 0.0)),
           positions.y,
           widthPixels / 2.0
         )
@@ -145,7 +150,6 @@ in vec3 instanceTargetNextPositions64Low;`,
           source.xy / source.w,
           target.xy / target.w,
           targetNext.xy / targetNext.w,
-          safeLineDirection((target.xy / target.w - source.xy / source.w) * project.viewportSize, vec2(1.0, 0.0)),
           positions.y,
           widthPixels / 2.0
         )`,

@@ -31,7 +31,9 @@ describe("patchPerspectiveLineVertexShader", () => {
     expect(shaders.vs).toContain("instanceSourcePreviousPositions");
     expect(shaders.vs).toContain("instanceTargetNextPositions");
     expect(shaders.vs).toContain("getMiterOffset(");
-    expect(shaders.vs).toContain("PERSPECTIVE_LINE_MITER_LIMIT = 2.0");
+    expect(shaders.vs).toContain("PERSPECTIVE_LINE_MITER_LIMIT = 1.35");
+    expect(shaders.vs).toContain("PERSPECTIVE_LINE_MIN_DIRECTION_PIXELS = 0.5");
+    expect(shaders.vs).toContain("(following - previous) * project.viewportSize");
     expect(shaders.vs).toContain("project_pixel_size_to_clipspace(offset.xy) * p.w");
     expect(shaders.vs).not.toContain("p.w / project.focalDistance");
     expect(shaders.inject["fs:DECKGL_FILTER_COLOR"]).toContain("outlineColorAndRatio");
