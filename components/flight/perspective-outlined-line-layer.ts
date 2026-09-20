@@ -10,6 +10,16 @@ const perspectiveLineUniforms = {
   },
 } as const;
 
+const screenSpaceScatterplotUniforms = {
+  name: "screenSpaceScatterplot",
+  vs: `layout(std140) uniform screenSpaceScatterplotUniforms {
+    float clipSpaceDepthOffset;
+  } screenSpaceScatterplot;`,
+  uniformTypes: {
+    clipSpaceDepthOffset: "f32",
+  },
+} as const;
+
 const CLIP_HELPER = `
 const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;
 
@@ -48,7 +58,9 @@ function replaceShaderSource(source: string, search: RegExp, replacement: string
 /**
  * Bring LineLayer's screen-space extrusion in line with billboarded PathLayer:
  * clip segments at the camera plane, derive direction after perspective divide,
- * and scale pixel offsets by each endpoint's clip-space depth.
+ * and scale pixel offsets by each endpoint's clip-space depth. Retain
+ * project.focalDistance in the pixel conversion to match billboarded
+ * PathLayer's apparent width exactly.
  */
 export function patchPerspectiveLineVertexShader(source: string): string {
   let patched = replaceShaderSource(
@@ -74,7 +86,7 @@ export function patchPerspectiveLineVertexShader(source: string): string {
   return replaceShaderSource(
     patched,
     /gl_Position\s*=\s*p\s*\+\s*vec4\s*\(\s*project_pixel_size_to_clipspace\s*\(\s*offset\.xy\s*\)\s*,\s*0\.0\s*,\s*0\.0\s*\)\s*;/,
-    "gl_Position = p + vec4(project_pixel_size_to_clipspace(offset.xy) * (p.w / project.focalDistance), 0.0, 0.0);",
+    "gl_Position = p + vec4(project_pixel_size_to_clipspace(offset.xy) * p.w, 0.0, 0.0);",
   );
 }
 
@@ -132,22 +144,44 @@ export class PerspectiveOutlinedLineLayer<T> extends LineLayer<T, PerspectiveOut
   }
 }
 
-/** Keep pixel-sized join fillers constant as they approach the camera. */
-export class ScreenSpaceScatterplotLayer<T> extends ScatterplotLayer<T> {
+interface ScreenSpaceScatterplotProps {
+  clipSpaceDepthOffset?: number;
+}
+
+/** Keep pixel-sized join fillers constant as they approach the camera and
+ * optionally nudge coplanar joints without bypassing the depth test. */
+export class ScreenSpaceScatterplotLayer<T> extends ScatterplotLayer<T, ScreenSpaceScatterplotProps> {
   static override layerName = "ScreenSpaceScatterplotLayer";
+  static override defaultProps = {
+    ...ScatterplotLayer.defaultProps,
+    clipSpaceDepthOffset: { type: "number" as const, value: 0 },
+  };
 
   override getShaders() {
     const shaders = super.getShaders();
     return {
       ...shaders,
+      modules: [...shaders.modules, screenSpaceScatterplotUniforms],
       inject: {
         ...shaders.inject,
         "vs:DECKGL_FILTER_SIZE": `
           if (scatterplot.billboard) {
-            size.xy *= gl_Position.w / project.focalDistance;
+            size.xy *= gl_Position.w;
           }
+        `,
+        "vs:DECKGL_FILTER_GL_POSITION": `
+          gl_Position.z += screenSpaceScatterplot.clipSpaceDepthOffset * gl_Position.w;
         `,
       },
     };
+  }
+
+  override draw(options: Parameters<ScatterplotLayer<T>["draw"]>[0]) {
+    this.state.model?.shaderInputs.setProps({
+      screenSpaceScatterplot: {
+        clipSpaceDepthOffset: this.props.clipSpaceDepthOffset ?? 0,
+      },
+    });
+    super.draw(options);
   }
 }
