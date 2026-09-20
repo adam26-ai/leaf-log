@@ -66,7 +66,7 @@ export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDr
       }
       return { id: site.id, name: site.name, updatedAt: site.updatedAt.toISOString() };
     }, { maxWait: 10000, timeout: 30000 });
-    revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed");
+    revalidatePath("/sites"); revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed");
     revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
     return { ok: true, value: result };
   } catch (error) {
@@ -86,5 +86,5 @@ export async function clearFlightSiteAction(value: { flightId: string; endpoint:
     if (!flight || flight[`${input.endpoint}SiteId`] !== input.siteId || (!input.siteId && flight[`${input.endpoint}SiteName`] !== input.name)) throw new Error("The flight's site changed. Reopen its details before removing it.");
     await tx.flight.update({ where: { id: flight.id }, data: { ...await resolveLocationCache(tx, null, null, input.endpoint, ownerId), [`${input.endpoint}SiteAssignment`]: "cleared" } });
   });
-  revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed"); revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
+  revalidatePath("/sites"); revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed"); revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
 }

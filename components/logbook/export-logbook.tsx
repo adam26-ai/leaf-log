@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useHydrated } from "@/lib/use-hydrated";
 
@@ -32,7 +32,7 @@ export function ExportLogbook() {
 
   return <div ref={root} className="relative min-w-0">
     <Button ref={trigger} type="button" variant="outline" className="w-full" aria-label="Export logbook" disabled={!hydrated} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
-      <Download className="h-4 w-4" aria-hidden="true" />Export
+      <Upload className="h-4 w-4" aria-hidden="true" />Export
     </Button>
     {open && <div id={panelId} className="absolute right-0 top-full z-50 mt-2 w-72 max-w-[85vw] rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
       <p className="mb-2 text-xs text-gray-500">Export all your flights, including those hidden by filters.</p>

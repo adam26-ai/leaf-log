@@ -67,6 +67,13 @@ export async function revokeDeviceToken(id: string, ownerId: string): Promise<bo
   return res.count > 0;
 }
 
+export async function deleteRevokedDeviceToken(id: string, ownerId: string): Promise<boolean> {
+  const result = await prisma.deviceToken.deleteMany({
+    where: { id, ownerId, revokedAt: { not: null } },
+  });
+  return result.count > 0;
+}
+
 export async function resolveDeviceTokenOwner(
   plaintext: string,
 ): Promise<{

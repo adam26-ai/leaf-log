@@ -14,7 +14,8 @@ it("requires its dedicated Save and keeps wing edits out of profile autosaving",
   vi.useFakeTimers();
   vi.mocked(saveWingNames).mockResolvedValue({ count: 5 });
   render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null}
-    ratingsTrackingEnabled={false} avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} />} />);
+    ratingsTrackingEnabled={false} avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} collapsible />} />);
+  fireEvent.click(screen.getByRole("button", { name: "Expand My Wings settings" }));
   fireEvent.click(screen.getByRole("checkbox", { name: /Ozone Rush4/ }));
   expect(screen.getByRole("button", { name: "Rename wing" })).toBeDisabled();
   expect(screen.getByText("Rename:")).toHaveClass("text-brand-blue-strong");
@@ -55,7 +56,8 @@ it("enables tandem independently of profile autosave and leaves wing selections 
   vi.useFakeTimers();
   vi.mocked(setTandemEnabled).mockResolvedValue({});
   render(<SettingsForm handle="pilot" displayName="Pilot" bio="" defaultVisibility="private" defaultUnits="metric" mapDefaults={null}
-    ratingsTrackingEnabled={false} avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} />} />);
+    ratingsTrackingEnabled={false} avatarUpdatedAt={null} afterProfile={<WingEditor wings={wings} collapsible />} />);
+  fireEvent.click(screen.getByRole("button", { name: "Expand My Wings settings" }));
   expect(screen.queryByRole("switch", { name: /Tandem wing:/ })).not.toBeInTheDocument();
   await act(async () => fireEvent.click(screen.getByRole("switch", { name: "Enable tandem" })));
   await act(async () => vi.advanceTimersByTimeAsync(1000));

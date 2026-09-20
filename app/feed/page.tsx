@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ThumbsUp } from "lucide-react";
+import { KudosButton } from "@/components/flight/kudos-button";
+import { prisma } from "@/lib/prisma";
 import { Avatar } from "@/components/avatar";
 import { listHighlights } from "@/lib/flights/list-highlights";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
@@ -33,12 +34,17 @@ export default async function FeedPage({
   });
   const { highlightScore, distanceScore } = listHighlights(feed.rows);
   const trophies = await trophiesForVisibleFlights(feed.rows);
+  const ownKudos = await prisma.kudo.findMany({
+    where: { profileId: profile.id, flightId: { in: feed.rows.map(flight => flight.id) } },
+    select: { flightId: true },
+  });
+  const kudoedIds = new Set(ownKudos.map(kudo => kudo.flightId));
 
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
       <XcPendingRefresh pending={feed.rows.some(f => analysisPending(f.xcStatus))} />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
+      <main className="mx-auto w-full max-w-4xl flex-1 px-3 py-10 sm:px-6">
         <SectionHeading as="h1">Feed</SectionHeading>
 
         {feed.rows.length === 0 ? (
@@ -54,17 +60,17 @@ export default async function FeedPage({
           </Card>
         ) : (
           <>
-            <ul className="mt-8 flex flex-col gap-4">
-              {feed.rows.map((flight) => (
+            <ul className="mt-8 flex flex-col gap-2">
+              {feed.rows.map((flight, index) => (
                 <li key={flight.id}>
-                  <div className="mb-1 flex items-center justify-between gap-3 px-1">
-                    <Link href={`/@${flight.owner.handle}`} className="flex min-w-0 items-center gap-2 text-sm text-gray-600 hover:text-ink">
-                      <Avatar handle={flight.owner.handle} displayName={flight.owner.displayName} avatarUpdatedAt={flight.owner.avatarUpdatedAt} className="h-6 w-6 text-xs" />
-                      <span className="truncate">{flight.owner.displayName} <span className="text-xs text-gray-500">@{flight.owner.handle}</span></span>
+                  {(index === 0 || feed.rows[index - 1].owner.handle !== flight.owner.handle) && <div className={`mb-3 px-1 ${index > 0 ? "mt-6" : ""}`}>
+                    <Link href={`/@${flight.owner.handle}`} className="inline-flex min-w-0 max-w-full items-center gap-3 text-gray-600 hover:text-ink">
+                      <Avatar handle={flight.owner.handle} displayName={flight.owner.displayName} avatarUpdatedAt={flight.owner.avatarUpdatedAt} className="h-16 w-16 text-2xl" />
+                      <span className="min-w-0"><span className="block truncate font-condensed text-xl font-bold text-ink">{flight.owner.displayName}</span><span className="block truncate text-sm text-gray-500">@{flight.owner.handle}</span></span>
                     </Link>
-                    <span className="flex items-center gap-1 text-xs text-gray-500" title="Kudos"><ThumbsUp className="h-3.5 w-3.5" />{flight.kudoCount}</span>
-                  </div>
-                  <div className="pb-1">
+                  </div>}
+                  <div className="flex items-center gap-1 sm:gap-3">
+                  <div className="min-w-0 flex-1">
                   <FlightRow
                     flight={flight}
                     compact
@@ -72,6 +78,8 @@ export default async function FeedPage({
                     highlightScore={highlightScore(flight)}
                     distanceScore={distanceScore(flight)}
                   />
+                  </div>
+                  <div className="shrink-0"><KudosButton flightId={flight.id} initialCount={flight.kudoCount} initialKudoed={kudoedIds.has(flight.id)} canToggle={flight.ownerId !== profile.id} /></div>
                   </div>
                 </li>
               ))}

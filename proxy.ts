@@ -14,6 +14,7 @@ const PROTECTED = [
   "/onboarding",
   "/settings",
   "/settings/devices",
+  "/sites",
   "/whats-new",
   "/friends",
 ];

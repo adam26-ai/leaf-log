@@ -3,9 +3,9 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Ban, LoaderCircle } from "lucide-react";
+import { Ban, LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { revokeDeviceKeyAction } from "@/app/settings/devices/actions";
+import { deleteRevokedDeviceKeyAction, revokeDeviceKeyAction } from "@/app/settings/devices/actions";
 import { formatDuration } from "@/lib/flights/format";
 
 export interface DeviceTokenView {
@@ -52,16 +52,30 @@ function flightSummary(flight: NonNullable<DeviceTokenView["lastFlight"]>): stri
 export function DeviceKeys({ tokens }: { tokens: DeviceTokenView[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [changingId, setChangingId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   function revoke(id: string) {
     setError("");
-    setRevokingId(id);
+    setChangingId(id);
     startTransition(() => {
       void (async () => {
         const result = await revokeDeviceKeyAction(id);
-        setRevokingId(null);
+        setChangingId(null);
+        if (result.error) setError(result.error);
+        else router.refresh();
+      })();
+    });
+  }
+
+  function remove(id: string, label: string) {
+    if (!window.confirm(`Delete ${label} from your device list?`)) return;
+    setError("");
+    setChangingId(id);
+    startTransition(() => {
+      void (async () => {
+        const result = await deleteRevokedDeviceKeyAction(id);
+        setChangingId(null);
         if (result.error) setError(result.error);
         else router.refresh();
       })();
@@ -84,7 +98,7 @@ export function DeviceKeys({ tokens }: { tokens: DeviceTokenView[] }) {
         <div className="divide-y divide-gray-200 rounded-md border border-gray-200">
           {tokens.map((token) => {
             const revoked = Boolean(token.revokedAt);
-            const isPending = pending && revokingId === token.id;
+            const isPending = pending && changingId === token.id;
             return (
               <div
                 key={token.id}
@@ -127,20 +141,29 @@ export function DeviceKeys({ tokens }: { tokens: DeviceTokenView[] }) {
                     )}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={revoked || isPending}
-                  onClick={() => revoke(token.id)}
-                >
-                  {isPending ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Ban className="h-4 w-4" />
-                  )}
-                  Revoke
-                </Button>
+                {revoked ? (
+                  <Button
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => remove(token.id, token.label)}
+                  >
+                    {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    Delete
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => revoke(token.id)}
+                  >
+                    {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+                    Revoke
+                  </Button>
+                )}
               </div>
             );
           })}

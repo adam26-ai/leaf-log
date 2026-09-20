@@ -4,6 +4,7 @@ import { Wordmark } from "@/components/brand/wordmark";
 import { AccentBar } from "@/components/ui/accent-bar";
 import { Button } from "@/components/ui/button";
 import { ActivateConfirm } from "./activate-confirm";
+import { SunnyCloudIcon } from "@/components/icons/sunny-cloud-icon";
 
 export const metadata = { title: "Connect your Leaf — Leaf Log" };
 export const dynamic = "force-dynamic";
@@ -54,6 +55,7 @@ export default async function ActivatePage({
                 </p>
                 <Button asChild size="lg">
                   <Link href={`/sign-in?next=${encodeURIComponent(back)}`}>
+                    <SunnyCloudIcon aria-hidden="true" className="h-6 w-6 shrink-0" />
                     Sign in to connect
                   </Link>
                 </Button>

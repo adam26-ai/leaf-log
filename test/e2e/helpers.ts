@@ -1,5 +1,56 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** All header links stay on one row and inside the viewport, including Ratings. */
+export async function expectSingleRowHeader(page: Page) {
+  const header = page.getByRole("banner");
+  const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
+  expect(avatar).not.toBeNull();
+  const center = avatar!.y + avatar!.height / 2;
+  for (const link of await header.getByRole("link").all()) {
+    const box = await link.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.abs(box!.y + box!.height / 2 - center)).toBeLessThan(2);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  }
+}
+
+/** Badge ejection preserves order, avoids overflow, and keeps help height stable. */
+export async function expectResponsiveLegend(page: Page) {
+  const legend = page.getByRole("region", { name: "Logbook legend" });
+  const row = legend.getByLabel("Example logbook entry", { exact: true });
+  const symbols = legend.getByLabel("Legend symbols", { exact: true });
+  const names = ["Explain friend flights", "Explain personal bests", "Explain flight visibility", "Explain log source"];
+  for (const width of [768, 640, 590, 530, 460, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await legend.boundingBox();
+    const ejected = [560, 508, 456, 394].filter(threshold => bounds!.width < threshold).length;
+    await expect(symbols.getByRole("button")).toHaveCount(ejected);
+    for (const [index, name] of names.entries()) {
+      await expect((index < ejected ? symbols : row).getByRole("button", { name, exact: true })).toBeVisible();
+    }
+    expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const initialHeight = (await legend.boundingBox())!.height;
+    await legend.getByRole("button", { name: "Explain log source", exact: true }).hover();
+    await expect(legend.getByRole("status").getByText("Log source", { exact: true })).toBeVisible();
+    expect((await legend.boundingBox())!.height).toBe(initialHeight);
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+}
+
+/** Settings cards load collapsed so the page stays compact. */
+export async function openSettingsCard(page: Page, title: string) {
+  await expect(page.getByRole("banner").getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("href", "/settings");
+  const expand = page.getByRole("button", { name: `Expand ${title} settings`, exact: true });
+  await expect(expand).toBeVisible();
+  await expand.click();
+  const collapse = page.getByRole("button", { name: `Collapse ${title} settings`, exact: true });
+  await expect(collapse).toBeVisible();
+  const contentId = await collapse.getAttribute("aria-controls");
+  if (!contentId) throw new Error(`${title} settings card does not identify its content`);
+  return page.locator(`[id="${contentId}"]`);
+}
+
 /** Public pages expose account entry in the top-right header. */
 export async function expectSignedOutHeader(page: Page) {
   const header = page.getByRole("banner");

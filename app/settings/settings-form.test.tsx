@@ -13,6 +13,7 @@ it("debounces typing and queues newer edits until an in-flight save finishes", a
   let finish!: (value: { ok: boolean }) => void;
   vi.mocked(updateProfile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValue({ ok: true });
   setup();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Profile settings" }));
   fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "First" } });
   fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Second" } });
   await act(async () => { await vi.advanceTimersByTimeAsync(700); });
@@ -29,6 +30,7 @@ it("debounces typing and queues newer edits until an in-flight save finishes", a
 it("saves unit changes and exposes failures instead of claiming success", async () => {
   vi.mocked(updateProfile).mockResolvedValue({ error: "Could not save" });
   setup();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Replay settings" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Units" }), { target: { value: "imperial" } });
   await act(async () => { await vi.advanceTimersByTimeAsync(700); });
   expect(vi.mocked(updateProfile).mock.calls[0][1].get("default_units")).toBe("imperial");
@@ -38,6 +40,7 @@ it("saves unit changes and exposes failures instead of claiming success", async 
 it("expands and autosaves independent custom units, retaining them when choosing a preset", async () => {
   vi.mocked(updateProfile).mockResolvedValue({ ok: true });
   setup();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Replay settings" }));
   const select = screen.getByRole("combobox", { name: "Units" });
   expect(screen.queryByRole("group", { name: "Altitude" })).not.toBeInTheDocument();
   fireEvent.change(select, { target: { value: "custom" } });
@@ -55,4 +58,17 @@ it("expands and autosaves independent custom units, retaining them when choosing
   expect(vi.mocked(updateProfile).mock.calls[1][1].get("custom_units")).toBe(data.get("custom_units"));
   fireEvent.change(select, { target: { value: "custom" } });
   expect(within(screen.getByRole("group", { name: "Speed" })).getByRole("radio", { name: "mph" })).toBeChecked();
+});
+
+it("starts every settings card collapsed and toggles from its title area", () => {
+  setup();
+  for (const title of ["Profile", "Logbook", "Replay"]) {
+    const expand = screen.getByRole("button", { name: `Expand ${title} settings` });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(expand);
+    const collapse = screen.getByRole("button", { name: `Collapse ${title} settings` });
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(collapse);
+    expect(screen.getByRole("button", { name: `Expand ${title} settings` })).toHaveAttribute("aria-expanded", "false");
+  }
 });

@@ -85,7 +85,7 @@ async function signUp(page: Page) {
 test("a standalone site saves its pin and persists public and private visibility", async ({ page }) => {
   const suffix = await signUp(page);
   // A site can be created independently, without borrowing an IGC.
-  await page.goto("/settings/sites");
+  await page.goto("/sites");
   await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
   const editor = page.getByRole('dialog', { name: 'Site details' });
@@ -110,7 +110,7 @@ test("a standalone site saves its pin and persists public and private visibility
 
 test("a site with a nearby namesake can change to takeoff and landing", async ({ page }) => {
   const suffix = await signUp(page);
-  await page.goto("/settings/sites");
+  await page.goto("/sites");
   const name = `Namesake Ridge ${suffix}`;
   const editor = page.getByRole("dialog", { name: "Site details" });
 

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { addEntrySite, uploadFlight } from "./helpers";
+import { addEntrySite, openSettingsCard, uploadFlight } from "./helpers";
 import { PrismaClient } from "@prisma/client";
 
 async function signUp(page: Page) {
@@ -106,7 +106,7 @@ test("site replacement and deletion require confirmation and preserve flight rec
     await db.site.create({ data: { ownerId: other.id, name: "Hidden replacement", normalizedName: "hidden replacement", visibility: "private" } });
     const flight = await db.flight.create({ data: { ownerId: owner.id, recordingKind: "logbook", source: "manual_entry", status: "ready", takeoffSiteId: source.id, landingSiteId: source.id, takeoffLat: 45, takeoffLon: 6, landingLat: 44, landingLon: 5, notes: "Keep my flight" } });
     const stranger = await db.flight.create({ data: { ownerId: other.id, takeoffSiteId: source.id, status: "ready" } });
-    await page.goto("/settings/sites");
+    await page.goto("/sites");
     const list = page.getByRole("region", { name: "Sites list", exact: true });
     await list.getByRole("button", { name: /Original Ridge/ }).click();
     const flights = page.getByRole("region", { name: "Flights at this site (1)", exact: true });
@@ -169,6 +169,7 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     await expect(page.getByText("No flights match these filters.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Export logbook", exact: true })).toHaveCount(0);
     await page.goto("/settings");
+    await openSettingsCard(page, "Logbook");
     await page.getByRole("button", { name: "Export logbook", exact: true }).click();
     const csvDownload = page.waitForEvent("download");
     await page.getByRole("link", { name: /Download CSV/ }).click();
@@ -211,6 +212,7 @@ test("exports the full logbook as CSV and original IGC ZIP from desktop and mobi
     expect(text).toContain(entry.filename);
     await reader.close();
     await page.goto("/settings");
+    await openSettingsCard(page, "Logbook");
     await page.getByRole("button", { name: "Export logbook", exact: true }).click();
     const settingsCsv = page.getByRole("link", { name: /Download CSV/ });
     await expect(settingsCsv).toBeVisible();
@@ -346,6 +348,7 @@ test("CSV name matching, duplicate review, reported trophies, mobile layout and 
   test.setTimeout(120000);
   await signUp(page);
   await page.goto("/settings");
+  await openSettingsCard(page, "Logbook");
   await page.getByRole("link", { name: "Import logbook", exact: true }).click();
   const csv = "date,duration_minutes,wing,site,xc_distance,xc_type\n2001-04-24,60,Rush4,Hill,25,open\n2001-04-24,60,Rush 4,Hill,25,open\n2001-04-25,,Rush4,Hill,30,FAI triangle";
   await expect(page.getByLabel("Choose logbook CSV")).toBeEnabled();
