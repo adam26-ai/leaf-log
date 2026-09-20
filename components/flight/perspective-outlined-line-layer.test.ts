@@ -29,7 +29,8 @@ describe("patchPerspectiveLineVertexShader", () => {
     expect(shaders.vs).not.toMatch(/\bEPSILON\b/);
     expect(shaders.vs).toContain("clipLineSegment(source, target)");
     expect(shaders.vs).toContain("target.xy / target.w - source.xy / source.w");
-    expect(shaders.vs).toContain("p.w / project.focalDistance");
+    expect(shaders.vs).toContain("project_pixel_size_to_clipspace(offset.xy) * p.w");
+    expect(shaders.vs).not.toContain("p.w / project.focalDistance");
     expect(shaders.inject["fs:DECKGL_FILTER_COLOR"]).toContain("outlineColorAndRatio");
   });
 
@@ -39,8 +40,11 @@ describe("patchPerspectiveLineVertexShader", () => {
       defaultShaderModules: [],
     };
 
-    expect(layer.getShaders().inject["vs:DECKGL_FILTER_SIZE"])
-      .toContain("gl_Position.w / project.focalDistance");
+    const shaders = layer.getShaders();
+    expect(shaders.inject["vs:DECKGL_FILTER_SIZE"])
+      .toContain("size.xy *= gl_Position.w;");
+    expect(shaders.inject["vs:DECKGL_FILTER_GL_POSITION"])
+      .toContain("screenSpaceScatterplot.clipSpaceDepthOffset * gl_Position.w");
   });
 
   it("clips camera-plane crossings and keeps pixel width independent of depth", () => {
@@ -51,7 +55,8 @@ describe("patchPerspectiveLineVertexShader", () => {
     expect(shader).toContain("bool clipLineSegment(inout vec4 source, inout vec4 target)");
     expect(shader).toContain("if (!clipLineSegment(source, target))");
     expect(shader).toContain("target.xy / target.w - source.xy / source.w");
-    expect(shader).toContain("offset.xy) * (p.w / project.focalDistance)");
+    expect(shader).toContain("offset.xy) * p.w");
+    expect(shader).not.toContain("p.w / project.focalDistance");
     expect(shader).not.toContain("getExtrusionOffset(target.xy - source.xy");
   });
 

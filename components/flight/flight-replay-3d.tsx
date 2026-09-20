@@ -43,6 +43,10 @@ const LEAF_GREEN: [number, number, number] = [216, 255, 0];
 const TRACK_FALLBACK_OUTLINE: [number, number, number] = [8, 8, 8];
 const TRACK_FALLBACK_OUTER_WIDTH_PX = 6.25;
 const TRACK_FALLBACK_INNER_WIDTH_PX = 3.75;
+const PRIMARY_TRACK_WIDTH_PX = 5.75;
+const PRIMARY_TRACK_INNER_WIDTH_RATIO = 0.513;
+const DEPTH_FALLBACK_INNER_WIDTH_PX = PRIMARY_TRACK_WIDTH_PX * PRIMARY_TRACK_INNER_WIDTH_RATIO;
+const DEPTH_FALLBACK_JOINT_OFFSET = 0.0000005;
 // White-on-black front view of a paraglider: a curved ram-air canopy,
 // suspension lines, and the pilot below it.
 const GLIDER_ICON_WIDTH_PX = 24;
@@ -1425,9 +1429,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       data: displayedTracks,
       getPath: (flight: MultiColorPathDatum) =>
         flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
-      getWidth: 5.75,
+      getWidth: PRIMARY_TRACK_WIDTH_PX,
       widthUnits: "pixels" as const,
-      widthMinPixels: 5.75,
+      widthMinPixels: PRIMARY_TRACK_WIDTH_PX,
       billboard: true,
       parameters: { depthWriteEnabled: true, depthCompare: "less-equal" as const },
       capRounded: true,
@@ -1437,9 +1441,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       getPath: (flight: MultiColorPathDatum) =>
         flight.path.map((p) => [p[0], p[1], zOf(p[2])] as [number, number, number]),
       getColor: LEAF_GREEN,
-      getWidth: 5.75,
+      getWidth: PRIMARY_TRACK_WIDTH_PX,
       widthUnits: "pixels" as const,
-      widthMinPixels: 5.75,
+      widthMinPixels: PRIMARY_TRACK_WIDTH_PX,
       billboard: true,
       parameters: { depthWriteEnabled: false, depthCompare: "always" as const },
       capRounded: true,
@@ -1473,39 +1477,62 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           getSourcePosition: (segment) => linePosition(segment.source),
           getTargetPosition: (segment) => linePosition(segment.target),
           getColor: (segment) => segment.color,
-          getWidth: 5.75,
+          getWidth: PRIMARY_TRACK_WIDTH_PX,
           widthUnits: "pixels",
-          widthMinPixels: 5.75,
+          widthMinPixels: PRIMARY_TRACK_WIDTH_PX,
           parameters: ignoredDepth,
         }),
       ];
     } else if (depthLineFallback) {
       const depthTested = { depthWriteEnabled: true, depthCompare: "less-equal" as const };
       primaryTrackLayers = [
+        // Lay the dark joint silhouette down just behind the segment ribbons.
+        // The small positive depth bias prevents it from making a black seam
+        // across the colored center while still filling the outside of bends.
+        new ScreenSpaceScatterplotLayer<DiagnosticLineVertex>({
+          id: `track-line-fallback-depth-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          data: lineVertices,
+          getPosition: (vertex) => linePosition(vertex.position),
+          getFillColor: TRACK_FALLBACK_OUTLINE,
+          getRadius: PRIMARY_TRACK_WIDTH_PX / 2,
+          radiusUnits: "pixels",
+          radiusMinPixels: PRIMARY_TRACK_WIDTH_PX / 2,
+          billboard: true,
+          stroked: false,
+          clipSpaceDepthOffset: DEPTH_FALLBACK_JOINT_OFFSET,
+          parameters: depthTested,
+        }),
         new PerspectiveOutlinedLineLayer<DiagnosticLineSegment>({
           id: `track-line-fallback-depth-${identities.flightId}-${trackDisplayRef.current}`,
           data: lineSegments,
           getSourcePosition: (segment) => linePosition(segment.source),
           getTargetPosition: (segment) => linePosition(segment.target),
           getColor: (segment) => segment.color,
-          getWidth: TRACK_FALLBACK_OUTER_WIDTH_PX,
+          getWidth: PRIMARY_TRACK_WIDTH_PX,
           widthUnits: "pixels",
-          widthMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX,
+          widthMinPixels: PRIMARY_TRACK_WIDTH_PX,
           outlineColor: TRACK_FALLBACK_OUTLINE,
-          innerWidthRatio: TRACK_FALLBACK_INNER_WIDTH_PX / TRACK_FALLBACK_OUTER_WIDTH_PX,
+          innerWidthRatio: PRIMARY_TRACK_INNER_WIDTH_RATIO,
           parameters: depthTested,
         }),
+        // Fill the center after the segment pass. A tiny camera-facing bias
+        // resolves coplanar depth precision differences on mobile GPUs without
+        // disabling depth testing at genuine track crossings.
         new ScreenSpaceScatterplotLayer<DiagnosticLineVertex>({
           id: `track-line-fallback-depth-joints-${identities.flightId}-${trackDisplayRef.current}`,
           data: lineVertices,
           getPosition: (vertex) => linePosition(vertex.position),
           getFillColor: (vertex) => vertex.color,
-          getRadius: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          getRadius: DEPTH_FALLBACK_INNER_WIDTH_PX / 2,
           radiusUnits: "pixels",
-          radiusMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          radiusMinPixels: DEPTH_FALLBACK_INNER_WIDTH_PX / 2,
           billboard: true,
           stroked: false,
-          parameters: { depthWriteEnabled: false, depthCompare: "less-equal" as const },
+          clipSpaceDepthOffset: -DEPTH_FALLBACK_JOINT_OFFSET,
+          parameters: {
+            depthWriteEnabled: false,
+            depthCompare: "less-equal" as const,
+          },
         }),
       ];
     } else if (lineFallback) {
