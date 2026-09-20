@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   patchPerspectiveLineVertexShader,
   PerspectiveOutlinedLineLayer,
-  ScreenSpaceScatterplotLayer,
 } from "./perspective-outlined-line-layer";
 
 const STOCK_LINE_SHADER = `
+in vec3 instanceTargetPositions64Low;
 vec3 splitLine(vec3 a, vec3 b, float x) {
 }
 void main(void) {
@@ -28,23 +28,13 @@ describe("patchPerspectiveLineVertexShader", () => {
     expect(shaders.vs).toContain("const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;");
     expect(shaders.vs).not.toMatch(/\bEPSILON\b/);
     expect(shaders.vs).toContain("clipLineSegment(source, target)");
-    expect(shaders.vs).toContain("target.xy / target.w - source.xy / source.w");
+    expect(shaders.vs).toContain("instanceSourcePreviousPositions");
+    expect(shaders.vs).toContain("instanceTargetNextPositions");
+    expect(shaders.vs).toContain("getMiterOffset(");
+    expect(shaders.vs).toContain("PERSPECTIVE_LINE_MITER_LIMIT = 2.0");
     expect(shaders.vs).toContain("project_pixel_size_to_clipspace(offset.xy) * p.w");
     expect(shaders.vs).not.toContain("p.w / project.focalDistance");
     expect(shaders.inject["fs:DECKGL_FILTER_COLOR"]).toContain("outlineColorAndRatio");
-  });
-
-  it("keeps joint fillers at a constant screen-space radius", () => {
-    const layer = new ScreenSpaceScatterplotLayer({ id: "test-joints", data: [] });
-    (layer as unknown as { context: { defaultShaderModules: [] } }).context = {
-      defaultShaderModules: [],
-    };
-
-    const shaders = layer.getShaders();
-    expect(shaders.inject["vs:DECKGL_FILTER_SIZE"])
-      .toContain("size.xy *= gl_Position.w;");
-    expect(shaders.inject["vs:DECKGL_FILTER_GL_POSITION"])
-      .toContain("screenSpaceScatterplot.clipSpaceDepthOffset * gl_Position.w");
   });
 
   it("clips camera-plane crossings and keeps pixel width independent of depth", () => {
@@ -54,7 +44,9 @@ describe("patchPerspectiveLineVertexShader", () => {
     expect(shader).not.toMatch(/\bEPSILON\b/);
     expect(shader).toContain("bool clipLineSegment(inout vec4 source, inout vec4 target)");
     expect(shader).toContain("if (!clipLineSegment(source, target))");
-    expect(shader).toContain("target.xy / target.w - source.xy / source.w");
+    expect(shader).toContain("sourcePrevious.xy / sourcePrevious.w");
+    expect(shader).toContain("targetNext.xy / targetNext.w");
+    expect(shader).toContain("widthPixels / 2.0");
     expect(shader).toContain("offset.xy) * p.w");
     expect(shader).not.toContain("p.w / project.focalDistance");
     expect(shader).not.toContain("getExtrusionOffset(target.xy - source.xy");

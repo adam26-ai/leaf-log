@@ -26,7 +26,6 @@ import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
 import { OutlinedPathLayer } from "./outlined-path-layer";
 import {
   PerspectiveOutlinedLineLayer,
-  ScreenSpaceScatterplotLayer,
 } from "./perspective-outlined-line-layer";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
@@ -45,8 +44,6 @@ const TRACK_FALLBACK_OUTER_WIDTH_PX = 6.25;
 const TRACK_FALLBACK_INNER_WIDTH_PX = 3.75;
 const PRIMARY_TRACK_WIDTH_PX = 5.75;
 const PRIMARY_TRACK_INNER_WIDTH_RATIO = 0.513;
-const DEPTH_FALLBACK_INNER_WIDTH_PX = PRIMARY_TRACK_WIDTH_PX * PRIMARY_TRACK_INNER_WIDTH_RATIO;
-const DEPTH_FALLBACK_JOINT_OFFSET = 0.0000005;
 // White-on-black front view of a paraglider: a curved ram-air canopy,
 // suspension lines, and the pilot below it.
 const GLIDER_ICON_WIDTH_PX = 24;
@@ -243,8 +240,10 @@ const TRACK_DIAGNOSTIC_MODES: ReadonlyArray<{ mode: TrackDiagnosticMode; label: 
 ];
 
 interface DiagnosticLineSegment {
+  sourcePrevious: number[];
   source: number[];
   target: number[];
+  targetNext: number[];
   color: PathColor;
 }
 
@@ -310,8 +309,10 @@ function diagnosticLineSegments(tracks: MultiColorPathDatum[]): DiagnosticLineSe
   for (const track of tracks) {
     for (let index = 1; index < track.path.length; index++) {
       segments.push({
+        sourcePrevious: track.path[index - 2] ?? track.path[index - 1],
         source: track.path[index - 1],
         target: track.path[index],
+        targetNext: track.path[index + 1] ?? track.path[index],
         color: track.colors[index],
       });
     }
@@ -1421,7 +1422,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const lineSegments = diagnosticMode === "lines" || segmentedFallback
       ? diagnosticLineSegments(displayedTracks)
       : [];
-    const lineVertices = segmentedFallback
+    const lineVertices = lineFallback
       ? diagnosticLineVertices(displayedTracks)
       : [];
     const primaryTrackProps = {
@@ -1489,8 +1490,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         new PerspectiveOutlinedLineLayer<DiagnosticLineSegment>({
           id: `track-line-fallback-depth-${identities.flightId}-${trackDisplayRef.current}`,
           data: lineSegments,
+          getSourcePreviousPosition: (segment) => linePosition(segment.sourcePrevious),
           getSourcePosition: (segment) => linePosition(segment.source),
           getTargetPosition: (segment) => linePosition(segment.target),
+          getTargetNextPosition: (segment) => linePosition(segment.targetNext),
           getColor: (segment) => segment.color,
           getWidth: PRIMARY_TRACK_WIDTH_PX,
           widthUnits: "pixels",
@@ -1498,25 +1501,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           outlineColor: TRACK_FALLBACK_OUTLINE,
           innerWidthRatio: PRIMARY_TRACK_INNER_WIDTH_RATIO,
           parameters: depthTested,
-        }),
-        // Fill the center after the segment pass. A tiny camera-facing bias
-        // resolves coplanar depth precision differences on mobile GPUs without
-        // disabling depth testing at genuine track crossings.
-        new ScreenSpaceScatterplotLayer<DiagnosticLineVertex>({
-          id: `track-line-fallback-depth-joints-${identities.flightId}-${trackDisplayRef.current}`,
-          data: lineVertices,
-          getPosition: (vertex) => linePosition(vertex.position),
-          getFillColor: (vertex) => vertex.color,
-          getRadius: DEPTH_FALLBACK_INNER_WIDTH_PX / 2,
-          radiusUnits: "pixels",
-          radiusMinPixels: DEPTH_FALLBACK_INNER_WIDTH_PX / 2,
-          billboard: true,
-          stroked: false,
-          clipSpaceDepthOffset: -DEPTH_FALLBACK_JOINT_OFFSET,
-          parameters: {
-            depthWriteEnabled: false,
-            depthCompare: "less-equal" as const,
-          },
         }),
       ];
     } else if (lineFallback) {
