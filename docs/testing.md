@@ -178,6 +178,14 @@ the migration check. Do not run two browser suites simultaneously on port 3100.
 
 ## Browser assertions and diagnostics
 
+For flight-track rendering reports, open a flight with `?trackDebug=1`, expand
+**Device report**, and use **Copy diagnostics**. The report includes the
+production-path canary result, its stock-line control and production pixel
+counts, whether the result came from the live test or session cache, and the
+automatic renderer decision. `?trackLineFallbackDepth=1` forces the fallback;
+`?trackLineFallbackDepth=0` forces production. These overrides skip the canary
+and are intended only for comparison and recovery.
+
 - Shared site creation and visibility interactions live in `test/e2e/helpers.ts`.
   Assert both selected and unselected visibility states. For non-owners, attempt
   the change and check that visibility stays unchanged with the explanation.

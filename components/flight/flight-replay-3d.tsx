@@ -27,6 +27,10 @@ import { OutlinedPathLayer } from "./outlined-path-layer";
 import {
   PerspectiveOutlinedLineLayer,
 } from "./perspective-outlined-line-layer";
+import {
+  runTrackRendererCanary,
+  type TrackRendererCanaryResult,
+} from "./track-renderer-canary";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -233,6 +237,14 @@ interface TimedTrackDatum extends MultiColorPathDatum {
 
 export type TrackDisplayMode = "elapsed" | "full";
 type TrackDiagnosticMode = "path2" | "path256" | "lines";
+type TrackRendererDecision =
+  | "pending"
+  | "canary-pass"
+  | "canary-fail"
+  | "canary-inconclusive"
+  | "forced-production"
+  | "forced-line-fallback"
+  | "forced-depth-fallback";
 const TRACK_DIAGNOSTIC_MODES: ReadonlyArray<{ mode: TrackDiagnosticMode; label: string }> = [
   { mode: "path2", label: "2-point path" },
   { mode: "path256", label: "256-point path" },
@@ -494,6 +506,8 @@ function formatTrackDiagnosticReport(
   stats: TrackDiagnosticStats,
   contextEvents: string[],
   rendererErrors: string[],
+  rendererDecision: TrackRendererDecision,
+  canary: TrackRendererCanaryResult | null,
 ): string {
   const testGeometry = mode === "path2"
     ? "stock PathLayer, 2 extrema per visible path, depth ignored"
@@ -527,11 +541,18 @@ function formatTrackDiagnosticReport(
         `MapLibre GL JS: ${snapshot.mapLibreVersion}`,
       ]
     : ["GPU report: waiting for the first WebGL frame"];
+  const canarySummary = canary
+    ? `${canary.outcome} (${canary.source}; control ${canary.controlPixels} px; production ${canary.productionPixels} px; ${canary.detail})`
+    : rendererDecision.startsWith("forced-")
+      ? "not run (URL override)"
+      : "waiting";
 
   return [
     "Leaf Log flight-track diagnostics",
     `Mode: ${mode}`,
     `Test geometry: ${testGeometry}`,
+    `Automatic renderer decision: ${rendererDecision}`,
+    `Production-path canary: ${canarySummary}`,
     `URL: ${window.location.href}`,
     `Raw samples: ${stats.rawSamples}`,
     `Generated paths/points: ${stats.paths}/${stats.generatedPoints}`,
@@ -658,6 +679,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   const [trackLineFallback, setTrackLineFallback] = useState(false);
   const trackDepthLineFallbackRef = useRef(false);
   const [trackDepthLineFallback, setTrackDepthLineFallback] = useState(false);
+  const [trackRendererDecision, setTrackRendererDecision] = useState<TrackRendererDecision>("pending");
+  const [trackRendererCanary, setTrackRendererCanary] = useState<TrackRendererCanaryResult | null>(null);
   const [trackDiagnosticSnapshot, setTrackDiagnosticSnapshot] = useState<TrackDiagnosticSnapshot | null>(null);
   const [trackDiagnosticContextEvents, setTrackDiagnosticContextEvents] = useState<string[]>([]);
   const [trackDiagnosticErrors, setTrackDiagnosticErrors] = useState<string[]>([]);
@@ -711,30 +734,59 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
 
   const hasData = data.samples.length >= 2;
   useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams(window.location.search);
     const depthLineFallback = params.get("trackLineFallbackDepth") === "1";
+    const forcedProduction = params.get("trackLineFallbackDepth") === "0";
     const lineFallback = !depthLineFallback && params.get("trackLineFallback") === "1";
     trackLineFallbackRef.current = lineFallback;
     setTrackLineFallback(lineFallback);
     trackDepthLineFallbackRef.current = depthLineFallback;
     setTrackDepthLineFallback(depthLineFallback);
-    if (params.get("trackDebug") !== "1") {
-      if (lineFallback || depthLineFallback) {
+    if (depthLineFallback) {
+      setTrackRendererDecision("forced-depth-fallback");
+    } else if (lineFallback) {
+      setTrackRendererDecision("forced-line-fallback");
+    } else if (forcedProduction) {
+      setTrackRendererDecision("forced-production");
+    } else {
+      void runTrackRendererCanary().then((result) => {
+        if (cancelled) return;
+        const useFallback = result.outcome === "fail";
+        trackDepthLineFallbackRef.current = useFallback;
+        setTrackDepthLineFallback(useFallback);
+        setTrackRendererCanary(result);
+        setTrackRendererDecision(
+          result.outcome === "pass"
+            ? "canary-pass"
+            : result.outcome === "fail"
+              ? "canary-fail"
+              : "canary-inconclusive",
+        );
         renderLayers(timeRef.current);
         mapRef.current?.triggerRepaint();
-      }
-      return;
+      });
     }
-    const requestedMode = params.get("trackMode");
-    const mode: TrackDiagnosticMode = requestedMode === "path256" || requestedMode === "lines"
-      ? requestedMode
-      : "path2";
-    trackDiagnosticModeRef.current = mode;
-    setTrackDiagnosticMode(mode);
-    const lumaLog = (globalThis as LumaDiagnosticsGlobal).luma?.log;
-    if (lumaLog) lumaLog.level = Math.max(lumaLog.level, 1);
-    renderLayers(timeRef.current);
-    mapRef.current?.triggerRepaint();
+
+    if (params.get("trackDebug") === "1") {
+      const requestedMode = params.get("trackMode");
+      const mode: TrackDiagnosticMode = requestedMode === "path256" || requestedMode === "lines"
+        ? requestedMode
+        : "path2";
+      trackDiagnosticModeRef.current = mode;
+      setTrackDiagnosticMode(mode);
+      const lumaLog = (globalThis as LumaDiagnosticsGlobal).luma?.log;
+      if (lumaLog) lumaLog.level = Math.max(lumaLog.level, 1);
+    }
+
+    if (lineFallback || depthLineFallback || params.get("trackDebug") === "1") {
+      renderLayers(timeRef.current);
+      mapRef.current?.triggerRepaint();
+    }
+
+    return () => {
+      cancelled = true;
+    };
     // This opt-in diagnostic is selected on page load, not on replay updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1628,6 +1680,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const selectedOwner = all.find((f) => f.id === selectedId)?.owner.id;
     const colors = groupColorsRef.current;
     const translucent = colors.groupTrackAlpha < 1 || colors.groupTrackOutlineAlpha < 1;
+    const depthLineFallback = trackDepthLineFallbackRef.current && !trackDiagnosticModeRef.current;
     for (const flight of all) {
       if (flight.id === selectedId) continue;
       const local = (nowMs - flight.takeoffMs) / 1000;
@@ -1638,10 +1691,29 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         widthUnits: "pixels" as const, billboard: true,
         capRounded: true, jointRounded: true, parameters: { depthCompare: "less-equal" as const, depthWriteEnabled: !translucent },
       };
-      (translucent ? translucentTracks : opaqueTracks).push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
-        getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline),
-        fillAlpha: colors.groupTrackAlpha, outlineAlpha: colors.groupTrackOutlineAlpha,
-        getWidth: 4.75, widthMinPixels: 4.75 }));
+      if (depthLineFallback) {
+        const position = (point: number[]) => [point[0], point[1], zOf(point[2])] as [number, number, number];
+        (translucent ? translucentTracks : opaqueTracks).push(new PerspectiveOutlinedLineLayer<DiagnosticLineSegment>({
+          id: 'companion-ribbon-fallback-' + flight.id,
+          data: diagnosticLineSegments(paths),
+          getSourcePreviousPosition: (segment) => position(segment.sourcePrevious),
+          getSourcePosition: (segment) => position(segment.source),
+          getTargetPosition: (segment) => position(segment.target),
+          getTargetNextPosition: (segment) => position(segment.targetNext),
+          getColor: [...colorRgb(colors.groupTrack), Math.round(colors.groupTrackAlpha * 255)],
+          getWidth: 4.75,
+          widthUnits: "pixels",
+          widthMinPixels: 4.75,
+          outlineColor: colorRgb(colors.groupTrackOutline),
+          innerWidthRatio: PRIMARY_TRACK_INNER_WIDTH_RATIO,
+          parameters: { depthCompare: "less-equal", depthWriteEnabled: !translucent },
+        }));
+      } else {
+        (translucent ? translucentTracks : opaqueTracks).push(new OutlinedPathLayer<MultiColorPathDatum>({ ...pathProps, id: 'companion-ribbon-' + flight.id,
+          getColor: colorRgb(colors.groupTrack), outlineColor: colorRgb(colors.groupTrackOutline),
+          fillAlpha: colors.groupTrackAlpha, outlineAlpha: colors.groupTrackOutlineAlpha,
+          getWidth: 4.75, widthMinPixels: 4.75 }));
+      }
       const pilotFlights = all.filter((f) => f.owner.id === flight.owner.id);
       if (flight.owner.id === selectedOwner || flightForPilot(pilotFlights, nowMs).id !== flight.id) continue;
       const state = replayStateAt(flight.replay, local);
@@ -2438,6 +2510,8 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         diagnosticStats,
         trackDiagnosticContextEvents,
         trackDiagnosticErrors,
+        trackRendererDecision,
+        trackRendererCanary,
       )
     : "";
 
@@ -2451,6 +2525,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           data-track-renderer={trackDiagnosticMode ?? (
             trackDepthLineFallback ? "line-fallback-depth" : trackLineFallback ? "line-fallback" : "production"
           )}
+          data-track-renderer-decision={trackRendererDecision}
           className="flight-replay-map h-[65svh] min-h-[460px] sm:h-[calc(100vh-430px)] sm:min-h-[420px] sm:max-h-[70vh] w-full"
         />
         {children}
