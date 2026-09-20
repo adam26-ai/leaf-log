@@ -63,8 +63,9 @@ export function deriveMetrics(parsed: ParsedIgc): DerivedMetrics | null {
   }
   if (!Number.isFinite(maxAltM)) maxAltM = 0;
 
-  // Sum every ascent in the smoothed series. A per-fix threshold discards
-  // sustained gentle climbs and makes the result depend on recording frequency.
+  // Cumulative ascent: sum every climb in the smoothed series. This is not the
+  // single peak gain above launch (maxAltM - launchAltM). A per-fix threshold
+  // discards sustained gentle climbs and makes the result depend on recording frequency.
   let altGainM = 0;
   for (let i = takeoffIndex + 1; i <= landingIndex; i++) {
     const d = smoothAlt[i] - smoothAlt[i - 1];

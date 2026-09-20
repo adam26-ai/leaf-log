@@ -48,7 +48,9 @@ export interface DerivedMetrics {
   takeoffAtMs: number;
   landingAtMs: number;
   durationS: number;
+  /** Highest GPS altitude above mean sea level during the flight window. */
   maxAltM: number;
+  /** Cumulative ascent: the sum of positive altitude changes, not peak height above launch. */
   altGainM: number;
   maxClimbMs: number;
   maxSinkMs: number;
