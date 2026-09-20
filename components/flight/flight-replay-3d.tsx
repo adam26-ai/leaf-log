@@ -1486,22 +1486,6 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     } else if (depthLineFallback) {
       const depthTested = { depthWriteEnabled: true, depthCompare: "less-equal" as const };
       primaryTrackLayers = [
-        // Lay the dark joint silhouette down just behind the segment ribbons.
-        // The small positive depth bias prevents it from making a black seam
-        // across the colored center while still filling the outside of bends.
-        new ScreenSpaceScatterplotLayer<DiagnosticLineVertex>({
-          id: `track-line-fallback-depth-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
-          data: lineVertices,
-          getPosition: (vertex) => linePosition(vertex.position),
-          getFillColor: TRACK_FALLBACK_OUTLINE,
-          getRadius: PRIMARY_TRACK_WIDTH_PX / 2,
-          radiusUnits: "pixels",
-          radiusMinPixels: PRIMARY_TRACK_WIDTH_PX / 2,
-          billboard: true,
-          stroked: false,
-          clipSpaceDepthOffset: DEPTH_FALLBACK_JOINT_OFFSET,
-          parameters: depthTested,
-        }),
         new PerspectiveOutlinedLineLayer<DiagnosticLineSegment>({
           id: `track-line-fallback-depth-${identities.flightId}-${trackDisplayRef.current}`,
           data: lineSegments,
