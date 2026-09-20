@@ -6,7 +6,7 @@ import { listHighlights } from "@/lib/flights/list-highlights";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { requireProfile } from "@/lib/profile";
-import { listFeedForViewer, trophiesForVisibleFlights } from "@/lib/flights/repo";
+import { flightsSharedWithViewer, listFeedForViewer, trophiesForVisibleFlights } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { Button } from "@/components/ui/button";
@@ -33,11 +33,14 @@ export default async function FeedPage({
     cursor: firstParam(cursor),
   });
   const { highlightScore, distanceScore } = listHighlights(feed.rows);
-  const trophies = await trophiesForVisibleFlights(feed.rows);
-  const ownKudos = await prisma.kudo.findMany({
-    where: { profileId: profile.id, flightId: { in: feed.rows.map(flight => flight.id) } },
-    select: { flightId: true },
-  });
+  const [trophies, sharedFlightIds, ownKudos] = await Promise.all([
+    trophiesForVisibleFlights(feed.rows),
+    flightsSharedWithViewer(profile.id, feed.rows.map(flight => flight.id)),
+    prisma.kudo.findMany({
+      where: { profileId: profile.id, flightId: { in: feed.rows.map(flight => flight.id) } },
+      select: { flightId: true },
+    }),
+  ]);
   const kudoedIds = new Set(ownKudos.map(kudo => kudo.flightId));
 
   return (
@@ -77,6 +80,8 @@ export default async function FeedPage({
                     trophies={trophies[flight.id]}
                     highlightScore={highlightScore(flight)}
                     distanceScore={distanceScore(flight)}
+                    friendFlightsFound={sharedFlightIds.has(flight.id)}
+                    prioritizeSiteOnMobile
                   />
                   </div>
                   <div className="shrink-0"><KudosButton flightId={flight.id} initialCount={flight.kudoCount} initialKudoed={kudoedIds.has(flight.id)} canToggle={flight.ownerId !== profile.id} /></div>

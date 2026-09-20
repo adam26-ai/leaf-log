@@ -44,18 +44,18 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between gap-1 border-b border-gray-200 bg-paper px-2 py-3 sm:gap-2 sm:px-4 sm:py-4 xl:px-10">
       <div className="flex shrink-0 items-center gap-1 sm:gap-3 xl:gap-6">
-        <Link href="/logbook" className="shrink-0 [&_img]:w-16 min-[360px]:[&_img]:w-[84px] sm:[&_img]:w-[112px]">
+        <Link href="/logbook" className="shrink-0 [&_img]:w-[52px] min-[360px]:[&_img]:w-[76px] sm:[&_img]:w-[112px]">
           <LeafLogLogo />
         </Link>
-        <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-0 text-sm sm:gap-1 xl:gap-2">
+        <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-0.5 text-sm min-[400px]:gap-1 min-[480px]:gap-1.5 xl:gap-2">
           {navItems.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
               href={href}
               title={label}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 p-0 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] sm:h-[38px] sm:w-[38px] xl:w-auto xl:px-4"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 p-0 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] min-[360px]:h-[34px] min-[360px]:w-[34px] min-[400px]:h-[38px] min-[400px]:w-[38px] min-[480px]:h-10 min-[480px]:w-10 xl:w-auto xl:px-4"
             >
-              <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-[#0099FF]" />
+              <Icon aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-[#0099FF]" />
               <span className="sr-only xl:not-sr-only">{label}</span>
             </Link>
           ))}
