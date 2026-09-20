@@ -24,6 +24,10 @@ import { VERSION as DECK_VERSION, type Layer } from "@deck.gl/core";
 import { GROUP_REPLAY_COLORS, GROUP_REPLAY_ALPHAS, readGroupReplayColors, colorRgb, REPLAY_PALETTE_EVENT } from "./group-replay-colors";
 import { ScreenSpaceIconLayer } from "./screen-space-icon-layer";
 import { OutlinedPathLayer } from "./outlined-path-layer";
+import {
+  PerspectiveOutlinedLineLayer,
+  ScreenSpaceScatterplotLayer,
+} from "./perspective-outlined-line-layer";
 
 // Camera icon for photo pins (rendered as a billboarded deck.gl IconLayer).
 const CAMERA_SVG =
@@ -1475,19 +1479,42 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
           parameters: ignoredDepth,
         }),
       ];
-    } else if (segmentedFallback) {
-      const outerDepth = depthLineFallback
-        ? { depthWriteEnabled: true, depthCompare: "less-equal" as const }
-        : ignoredDepth;
-      const innerDepth = depthLineFallback
-        ? { depthWriteEnabled: false, depthCompare: "less-equal" as const }
-        : ignoredDepth;
+    } else if (depthLineFallback) {
+      const depthTested = { depthWriteEnabled: true, depthCompare: "less-equal" as const };
+      primaryTrackLayers = [
+        new PerspectiveOutlinedLineLayer<DiagnosticLineSegment>({
+          id: `track-line-fallback-depth-${identities.flightId}-${trackDisplayRef.current}`,
+          data: lineSegments,
+          getSourcePosition: (segment) => linePosition(segment.source),
+          getTargetPosition: (segment) => linePosition(segment.target),
+          getColor: (segment) => segment.color,
+          getWidth: TRACK_FALLBACK_OUTER_WIDTH_PX,
+          widthUnits: "pixels",
+          widthMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX,
+          outlineColor: TRACK_FALLBACK_OUTLINE,
+          innerWidthRatio: TRACK_FALLBACK_INNER_WIDTH_PX / TRACK_FALLBACK_OUTER_WIDTH_PX,
+          parameters: depthTested,
+        }),
+        new ScreenSpaceScatterplotLayer<DiagnosticLineVertex>({
+          id: `track-line-fallback-depth-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          data: lineVertices,
+          getPosition: (vertex) => linePosition(vertex.position),
+          getFillColor: (vertex) => vertex.color,
+          getRadius: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          radiusUnits: "pixels",
+          radiusMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
+          billboard: true,
+          stroked: false,
+          parameters: { depthWriteEnabled: false, depthCompare: "less-equal" as const },
+        }),
+      ];
+    } else if (lineFallback) {
       const outerStroke = {
         data: lineSegments,
         getSourcePosition: (segment: DiagnosticLineSegment) => linePosition(segment.source),
         getTargetPosition: (segment: DiagnosticLineSegment) => linePosition(segment.target),
         widthUnits: "pixels" as const,
-        parameters: outerDepth,
+        parameters: ignoredDepth,
       };
       const jointPositions = {
         data: lineVertices,
@@ -1496,38 +1523,37 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         billboard: true,
         stroked: false,
       };
-      const fallbackId = depthLineFallback ? "track-line-fallback-depth" : "track-line-fallback";
       primaryTrackLayers = [
         new LineLayer<DiagnosticLineSegment>({
           ...outerStroke,
-          id: `${fallbackId}-outline-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `track-line-fallback-outline-${identities.flightId}-${trackDisplayRef.current}`,
           getColor: TRACK_FALLBACK_OUTLINE,
           getWidth: TRACK_FALLBACK_OUTER_WIDTH_PX,
           widthMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX,
         }),
         new ScatterplotLayer<DiagnosticLineVertex>({
           ...jointPositions,
-          id: `${fallbackId}-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `track-line-fallback-outline-joints-${identities.flightId}-${trackDisplayRef.current}`,
           getFillColor: TRACK_FALLBACK_OUTLINE,
           getRadius: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
           radiusMinPixels: TRACK_FALLBACK_OUTER_WIDTH_PX / 2,
-          parameters: outerDepth,
+          parameters: ignoredDepth,
         }),
         new LineLayer<DiagnosticLineSegment>({
           ...outerStroke,
-          id: `${fallbackId}-color-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `track-line-fallback-color-${identities.flightId}-${trackDisplayRef.current}`,
           getColor: (segment) => segment.color,
           getWidth: TRACK_FALLBACK_INNER_WIDTH_PX,
           widthMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX,
-          parameters: innerDepth,
+          parameters: ignoredDepth,
         }),
         new ScatterplotLayer<DiagnosticLineVertex>({
           ...jointPositions,
-          id: `${fallbackId}-color-joints-${identities.flightId}-${trackDisplayRef.current}`,
+          id: `track-line-fallback-color-joints-${identities.flightId}-${trackDisplayRef.current}`,
           getFillColor: (vertex) => vertex.color,
           getRadius: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
           radiusMinPixels: TRACK_FALLBACK_INNER_WIDTH_PX / 2,
-          parameters: innerDepth,
+          parameters: ignoredDepth,
         }),
       ];
     } else {
