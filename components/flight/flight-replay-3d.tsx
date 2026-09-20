@@ -2090,6 +2090,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         interleaved: true,
         layers: [],
         onAfterRender: ({ gl }) => {
+          // A completed deck.gl frame is the renderer-ready boundary used by
+          // browser tests. MapLibre's later `idle` event also waits for every
+          // terrain tile and can lag far behind an already interactive map.
+          if (!disposed && mapRef.current === map) container.dataset.renderReady = "true";
           if (!trackDiagnosticModeRef.current || trackDiagnosticSnapshotPendingRef.current) return;
           trackDiagnosticSnapshotPendingRef.current = true;
           void captureTrackDiagnosticSnapshot(gl, overlay.getCanvas() ?? mapCanvas)
