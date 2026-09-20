@@ -25,6 +25,8 @@ describe("patchPerspectiveLineVertexShader", () => {
     };
 
     const shaders = layer.getShaders();
+    expect(shaders.vs).toContain("const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;");
+    expect(shaders.vs).not.toMatch(/\bEPSILON\b/);
     expect(shaders.vs).toContain("clipLineSegment(source, target)");
     expect(shaders.vs).toContain("target.xy / target.w - source.xy / source.w");
     expect(shaders.vs).toContain("p.w / project.focalDistance");
@@ -44,6 +46,8 @@ describe("patchPerspectiveLineVertexShader", () => {
   it("clips camera-plane crossings and keeps pixel width independent of depth", () => {
     const shader = patchPerspectiveLineVertexShader(STOCK_LINE_SHADER);
 
+    expect(shader).toContain("const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;");
+    expect(shader).not.toMatch(/\bEPSILON\b/);
     expect(shader).toContain("bool clipLineSegment(inout vec4 source, inout vec4 target)");
     expect(shader).toContain("if (!clipLineSegment(source, target))");
     expect(shader).toContain("target.xy / target.w - source.xy / source.w");

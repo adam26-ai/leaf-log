@@ -11,19 +11,26 @@ const perspectiveLineUniforms = {
 } as const;
 
 const CLIP_HELPER = `
+const float PERSPECTIVE_LINE_CLIP_EPSILON = 0.000001;
+
 bool clipLineSegment(inout vec4 source, inout vec4 target) {
-  if (source.w < EPSILON && target.w < EPSILON) {
+  if (
+    source.w < PERSPECTIVE_LINE_CLIP_EPSILON &&
+    target.w < PERSPECTIVE_LINE_CLIP_EPSILON
+  ) {
     return false;
   }
 
   vec4 originalSource = source;
   vec4 originalTarget = target;
-  if (source.w < EPSILON) {
-    float ratio = (EPSILON - originalSource.w) / (originalTarget.w - originalSource.w);
+  if (source.w < PERSPECTIVE_LINE_CLIP_EPSILON) {
+    float ratio = (PERSPECTIVE_LINE_CLIP_EPSILON - originalSource.w) /
+      (originalTarget.w - originalSource.w);
     source = mix(originalSource, originalTarget, ratio);
   }
-  if (target.w < EPSILON) {
-    float ratio = (EPSILON - originalTarget.w) / (originalSource.w - originalTarget.w);
+  if (target.w < PERSPECTIVE_LINE_CLIP_EPSILON) {
+    float ratio = (PERSPECTIVE_LINE_CLIP_EPSILON - originalTarget.w) /
+      (originalSource.w - originalTarget.w);
     target = mix(originalTarget, originalSource, ratio);
   }
   return true;
