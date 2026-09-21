@@ -1,6 +1,6 @@
 import { haversineM } from "@/lib/geo/distance";
 import { kindMatches, locationMatches, radiusForKind } from "./geo";
-import { foldName, normalizeName, validateSiteName } from "./name";
+import { normalizeName, validateSiteName } from "./name";
 import { hasSitePoint, newSiteDraft, type SiteDraft, type SitePoint } from "./model";
 
 export type SiteCandidate = {
@@ -62,27 +62,26 @@ export function planSites(inputs: EndpointInput[], candidates: SiteCandidate[], 
       resolutions.push({ ...base, name: selected.name, siteId: selected.id, outcome: conflict ? "review" : "existing", reason: conflict ? "The flight position is outside the selected site's area. Your selection is preserved." : null });
       continue;
     }
-    const matches = hasSitePoint(input) ? candidates.filter(site => hasSitePoint(site) && kindMatches(site.kind, input.endpoint) && locationMatches(site, input.lat, input.lon, radiusForKind(input.endpoint)).matched) : [];
-    if (matches.length === 1 && (!name || matches[0].normalizedName === foldName(name))) {
-      resolutions.push({ ...base, name: matches[0].name, siteId: matches[0].id, outcome: "existing" });
+    const compatible = candidates.filter(site => kindMatches(site.kind, input.endpoint));
+    const sameName = valid.ok ? compatible.filter(site => site.normalizedName === valid.normalizedName) : [];
+    const matches = hasSitePoint(input) ? compatible.filter(site => hasSitePoint(site) && locationMatches(site, input.lat, input.lon, radiusForKind(input.endpoint)).matched) : [];
+    const namedMatches = valid.ok ? matches.filter(site => site.normalizedName === valid.normalizedName) : [];
+    const match = matches.length === 1 ? matches[0]
+      : namedMatches.length === 1 ? namedMatches[0]
+      : !hasSitePoint(input) && sameName.length === 1 ? sameName[0]
+      : null;
+    if (match) {
+      resolutions.push({ ...base, name: match.name, siteId: match.id, outcome: "existing" });
       continue;
     }
     let reason = !hasSitePoint(input) && (input.lat !== null || input.lon !== null) ? "The stored coordinates are incomplete or invalid. Review this location." : matches.length > 1 ? "More than one site covers this position. Choose the intended site."
-      : matches.length ? "A nearby site has a different name. Review whether it is the same place." : null;
+      : !hasSitePoint(input) && sameName.length > 1 ? "Several available sites have this name. Choose the intended site." : null;
     if (!valid.ok) {
       if (name && valid.error !== "reserved") reason = "Review the imported site name; the original text is retained.";
       resolutions.push({ ...base, name: valid.error === "reserved" ? null : base.name, outcome: reason ? "review" : "none", reason });
       continue;
     }
     const point = hasSitePoint(input) ? { lat: input.lat, lon: input.lon } : null;
-    if (!point && !reason) {
-      const sameName = candidates.filter(site => site.ownerId === ownerId && !hasSitePoint(site) && site.normalizedName === valid.normalizedName && kindMatches(site.kind, input.endpoint));
-      if (sameName.length === 1) {
-        resolutions.push({ ...base, name: sameName[0].name, siteId: sameName[0].id, outcome: "existing" });
-        continue;
-      }
-      if (sameName.length > 1) reason = "Several of your unmapped sites have this name. Choose the intended site.";
-    }
     const review = reason !== null;
     let group = groups.find(group => group.normalized === valid.normalizedName && group.endpoint === input.endpoint && group.review === review
       && Boolean(group.points.length) === Boolean(point)

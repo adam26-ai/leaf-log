@@ -27,11 +27,17 @@ describe("shared site resolution", () => {
   it("treats takeoff and landing names as separate evidence", () => {
     expect(planSites([input("1"), input("2", { endpoint: "landing" })], [], "pilot").groups).toHaveLength(2);
   });
-  it("reuses one unambiguous site only when the supplied name agrees", () => {
+  it("reuses one unambiguous coordinate match even when the imported label differs", () => {
     expect(planSites([input("1")], [site("a")], "pilot").resolutions[0].siteId).toBe("a");
-    const review = planSites([input("1", { name: "Other Ridge" })], [site("a")], "pilot");
-    expect(review.resolutions[0].outcome).toBe("review");
-    expect(review.groups[0].draft.lat).toBeNull();
+    expect(planSites([input("1", { name: "Other Ridge" })], [site("a")], "pilot").resolutions[0]).toMatchObject({ siteId: "a", name: "North Ridge", outcome: "existing" });
+  });
+  it("reuses one exact visible name without coordinates", () => {
+    const publicSite = site("public", { visibility: "public", ownerId: "other" });
+    expect(planSites([input("1", { lat: null, lon: null })], [publicSite], "pilot").resolutions[0]).toMatchObject({ siteId: "public", name: "North Ridge", outcome: "existing" });
+  });
+  it("uses an exact name to disambiguate overlapping coordinate matches", () => {
+    const plan = planSites([input("1")], [site("a"), site("b", { name: "South Ridge", normalizedName: "south ridge", visibility: "public", ownerId: "other" })], "pilot");
+    expect(plan.resolutions[0]).toMatchObject({ siteId: "a", outcome: "existing" });
   });
   it("does not choose among overlapping public and private sites", () => {
     const plan = planSites([input("1")], [site("a"), site("b", { visibility: "public", ownerId: "other" })], "pilot");
