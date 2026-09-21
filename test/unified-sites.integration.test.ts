@@ -46,6 +46,18 @@ it("saves name-only entries as reusable private sites and adds a pin to the same
   expect((await prisma.flight.findUniqueOrThrow({ where: { id: second.id } })).takeoffSiteId).toBe(site.id);
 });
 
+it("matches a name-only CSV location to one exact public site", async () => {
+  const curator = await pilot(), owner = await pilot();
+  const publicSite = await prisma.$transaction(tx => saveSiteDraft(tx, curator, { ...newSiteDraft("Public Ridge", "takeoff", { lat: 30, lon: 20 }), visibility: "public" }));
+  const request = imported("date,site\n2000-01-02,Public Ridge");
+  const preview = await previewLogbookImport(owner, request);
+  expect(preview.sites).toEqual([]);
+  expect(preview.rows[0].warnings).toContain("Use Public Ridge");
+  const batch = await commitLogbookImport(owner, { ...request, sitePlanSignature: preview.sitePlanSignature });
+  expect(await prisma.flight.findFirstOrThrow({ where: { logbookImportId: batch.id } })).toMatchObject({ takeoffSiteId: publicSite.id, takeoffSiteAssignment: "auto_matched", takeoffSiteName: "Public Ridge" });
+  expect(await prisma.site.count({ where: { ownerId: owner } })).toBe(0);
+});
+
 it("stages site edits atomically with a flight edit and rejects stale drafts", async () => {
   const owner = await pilot(); const original = await flight(owner, { takeoffSiteName: "Old Ridge" });
   const site = await prisma.site.findUniqueOrThrow({ where: { id: original.takeoffSiteId! } });

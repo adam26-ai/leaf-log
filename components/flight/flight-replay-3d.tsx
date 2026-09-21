@@ -2115,7 +2115,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       zoom: 12,
       pitch: 62,
       bearing: -20,
-      maxPitch: 85,
+      maxPitch: 80,
       dragPan: false,
       dragRotate: false,
       scrollZoom: false,
