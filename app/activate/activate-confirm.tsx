@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState, useTransition } from "react";
-import Link from "next/link";
 import { Cable, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SuccessMark } from "@/components/ui/success-status";
@@ -18,6 +17,12 @@ export function ActivateConfirm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
+  const [showCloseHelp, setShowCloseHelp] = useState(false);
+
+  function closePage() {
+    window.close();
+    setShowCloseHelp(true);
+  }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,18 +41,27 @@ export function ActivateConfirm({
     return (
       <div className="flex flex-col items-center gap-4 text-center">
         <SuccessMark size="lg" />
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-3">
           <p className="font-condensed text-lg font-bold text-ink">
-            Your Leaf is connected
+            Your Leaf is linked
           </p>
           <p className="text-sm text-gray-600">
-            Your device screen will show &ldquo;Connected&rdquo; in a moment. New
-            flights will upload to your logbook automatically.
+            Flight logs will upload automatically when your Leaf is charging and
+            connected to a known Wi&#8209;Fi network.
+          </p>
+          <p className="text-sm text-gray-600">
+            You should see confirmation of your linked account in the Leaf Log
+            section of the Leaf Web App.
           </p>
         </div>
-        <Button asChild size="lg" variant="outline">
-          <Link href="/logbook">Go to my logbook</Link>
+        <Button type="button" size="lg" variant="outline" onClick={closePage}>
+          Close this page
         </Button>
+        {showCloseHelp && (
+          <p role="status" className="text-sm text-gray-600">
+            If this tab stays open, close it in your browser.
+          </p>
+        )}
       </div>
     );
   }
