@@ -5,6 +5,7 @@ import { AccentBar } from "@/components/ui/accent-bar";
 import { Button } from "@/components/ui/button";
 import { ActivateConfirm } from "./activate-confirm";
 import { SunnyCloudIcon } from "@/components/icons/sunny-cloud-icon";
+import { leafWebAppUrl } from "@/lib/leaf-web-app-url";
 
 export const metadata = { title: "Connect your Leaf — Leaf Log" };
 export const dynamic = "force-dynamic";
@@ -18,13 +19,23 @@ export const dynamic = "force-dynamic";
 export default async function ActivatePage({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string }>;
+  searchParams: Promise<{
+    code?: string | string[];
+    returnTo?: string | string[];
+  }>;
 }) {
-  const { code } = await searchParams;
+  const query = await searchParams;
+  const code = Array.isArray(query.code) ? query.code[0] : query.code;
+  const rawReturnTo = Array.isArray(query.returnTo)
+    ? query.returnTo[0]
+    : query.returnTo;
+  const returnTo = leafWebAppUrl(rawReturnTo);
   const userId = await getCurrentUserId();
   const profile = userId ? await getCurrentProfile() : null;
 
-  const back = `/activate?code=${encodeURIComponent(code ?? "")}`;
+  const backParams = new URLSearchParams({ code: code ?? "" });
+  if (returnTo) backParams.set("returnTo", returnTo);
+  const back = `/activate?${backParams.toString()}`;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -71,7 +82,11 @@ export default async function ActivatePage({
                 </Button>
               </div>
             ) : (
-              <ActivateConfirm code={code} displayName={profile.displayName} />
+              <ActivateConfirm
+                code={code}
+                displayName={profile.displayName}
+                returnTo={returnTo}
+              />
             )}
           </div>
         </div>

@@ -19,6 +19,9 @@ export default function CheckEmailPage() {
           <p className="text-gray-600">
             We sent you a magic sign-in link. Open it on this device to continue.
           </p>
+          <p className="text-gray-600">
+            After opening the sign-in link, you can close this tab.
+          </p>
         </div>
       </main>
     </div>
