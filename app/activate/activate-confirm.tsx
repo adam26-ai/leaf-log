@@ -10,19 +10,15 @@ import { claimDeviceAction } from "@/app/settings/devices/actions";
 export function ActivateConfirm({
   code,
   displayName,
+  returnTo,
 }: {
   code: string;
   displayName: string;
+  returnTo: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
-  const [showCloseHelp, setShowCloseHelp] = useState(false);
-
-  function closePage() {
-    window.close();
-    setShowCloseHelp(true);
-  }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,18 +45,30 @@ export function ActivateConfirm({
             Flight logs will upload automatically when your Leaf is charging and
             connected to a known Wi&#8209;Fi network.
           </p>
-          <p className="text-sm text-gray-600">
-            You should see confirmation of your linked account in the Leaf Log
-            section of the Leaf Web App.
-          </p>
+          {returnTo ? (
+            <p className="text-sm text-gray-600">
+              You can now return to the Leaf Web App. You should see confirmation
+              of your linked account in the Leaf Log section.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600">
+                You should see confirmation of your linked account in the Leaf Log
+                section of the Leaf Web App, as well as in the &quot;Devices&quot;
+                settings on the Leaf Log website.
+              </p>
+              <p className="text-sm text-gray-600">
+                You can now close this tab.
+              </p>
+            </>
+          )}
         </div>
-        <Button type="button" size="lg" variant="outline" onClick={closePage}>
-          Close this page
-        </Button>
-        {showCloseHelp && (
-          <p role="status" className="text-sm text-gray-600">
-            If this tab stays open, close it in your browser.
-          </p>
+        {returnTo && (
+          <Button asChild size="lg" variant="outline">
+            <a href={returnTo} rel="noreferrer">
+              Return to Leaf Web App
+            </a>
+          </Button>
         )}
       </div>
     );
