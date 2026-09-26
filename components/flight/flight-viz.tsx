@@ -44,6 +44,7 @@ import { photoUrl, type FlightPhoto } from "./photos";
 import { uploadPhotoFiles } from "./photo-upload-client";
 import { BASEMAPS, hasMapTiler, type BasemapId } from "./basemaps";
 import { InstrumentReadout, type InstrumentRanges } from "./instrument-readout";
+import { varioReplayScale } from "./replay-palette";
 import { instrumentAt, smoothedSpeedKmh } from "@/lib/flights/instruments";
 import { useUnits } from "@/lib/flights/use-units";
 import { Card, CardBody } from "@/components/ui/card";
@@ -588,6 +589,12 @@ export function FlightViz({
       speedMaxKmh: Number.isFinite(speedMaxKmh) ? speedMaxKmh : 0,
     };
   }, [selectedReplay]);
+  const instrumentVarioScale = useMemo(
+    () => selectedReplay
+      ? varioReplayScale(selectedReplay.vario, selectedReplay)
+      : undefined,
+    [selectedReplay],
+  );
 
   const displayedStatistics = selected?.statistics ?? (!selected || selected.id === flightId ? primaryStatistics : undefined);
   const statisticsOwnerId = selected?.owner.id ?? primaryPilot.id;
@@ -691,7 +698,7 @@ export function FlightViz({
               }} />
             {/* Live instrument panel, overlaid on the map (top-centre). */}
             <div className="pointer-events-none absolute left-12 right-[5.5rem] top-2 flex flex-col items-center gap-1 px-1 sm:right-[165px] sm:top-3 sm:px-2">
-              <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} />
+              <InstrumentReadout reading={reading} units={units} ranges={instrumentRanges} varioScale={instrumentVarioScale} />
             </div>
             {/* Keep Leaf's map controls centered separately from MapLibre's upper-left nav stack. */}
             <div className="absolute left-[10px] top-[136px] z-20 flex flex-col gap-1 sm:top-1/2 sm:-translate-y-1/2">

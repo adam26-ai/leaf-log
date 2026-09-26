@@ -1,6 +1,6 @@
 import type { InstrumentReading } from "@/lib/flights/instruments";
 import { formatAltitude, formatVario, formatSpeed, type UnitSystem } from "@/lib/flights/format";
-import { rangedReplayColor, replayColorCss, varioReplayColor } from "./replay-palette";
+import { rangedReplayColor, replayColorCss, varioReplayColor, type VarioReplayScale } from "./replay-palette";
 
 export interface InstrumentRanges {
   altMinM: number;
@@ -59,10 +59,12 @@ export function InstrumentReadout({
   reading,
   units = "metric",
   ranges,
+  varioScale,
 }: {
   reading: InstrumentReading | null;
   units?: UnitSystem;
   ranges?: InstrumentRanges | null;
+  varioScale?: VarioReplayScale;
 }) {
   if (!reading) return <div className="grid w-48 max-w-full grid-cols-3 items-center rounded-2xl bg-ink/85 px-1.5 py-2 shadow-lg backdrop-blur-sm sm:w-80 sm:px-4 sm:py-2.5">
     <Cell label="Altitude MSL" value="—" color="#b0b0b0" />
@@ -76,7 +78,7 @@ export function InstrumentReadout({
   const altColor = replayColorCss(
     rangedReplayColor(reading.altM, ranges?.altMinM ?? 0, ranges?.altMaxM ?? 0),
   );
-  const varioColor = replayColorCss(varioReplayColor(v));
+  const varioColor = replayColorCss(varioReplayColor(v, varioScale));
   const speedColor = replayColorCss(
     rangedReplayColor(
       reading.speedKmh,

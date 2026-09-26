@@ -19,6 +19,9 @@ export interface ReplayPath {
   samples: [number, number, number, number][];
   /** Per-sample vertical speed (m/s) for climb/sink coloring. */
   vario: number[];
+  /** Full-resolution flight peaks used to scale climb/sink colors. */
+  maxClimbMs?: number;
+  maxSinkMs?: number;
   bounds: [number, number, number, number];
   durationS: number;
   altSource: "baro" | "gps";
@@ -91,6 +94,8 @@ export function buildReplayPath(
   return {
     samples,
     vario,
+    maxClimbMs: metrics.maxClimbMs,
+    maxSinkMs: metrics.maxSinkMs,
     bounds: [west, south, east, north],
     durationS: metrics.durationS,
     altSource: src,

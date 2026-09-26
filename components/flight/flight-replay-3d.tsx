@@ -16,7 +16,7 @@ import { formatAltitude, type UnitSystem } from "@/lib/flights/format";
 import type { TerrainProfilePoint } from "@/lib/flights/terrain-profile";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 import { syncXcMapRoute, XC_SOURCE } from "./xc-map-route";
-import { varioReplayColor } from "./replay-palette";
+import { varioReplayColor, varioReplayScale, type VarioReplayScale } from "./replay-palette";
 import { replayPositionAt, replayStateAt, splitReplaySamples, flightForPilot } from "@/lib/flights/group-replay";
 import type { ReplayResponse } from "@/lib/igc/replay";
 import type { LoadedReplayFlight } from "./use-group-replay";
@@ -170,6 +170,7 @@ const CURTAIN_WINDOW_S = 18;
 const CURTAIN_VERTICAL_BANDS = 12;
 const MAX_TERRAIN_PROFILE_POINTS = 1_000;
 const altitudeRanges = new WeakMap<ReplayResponse, [number, number]>();
+const varioScales = new WeakMap<ReplayResponse, VarioReplayScale>();
 function altitudeRangeFor(replay: ReplayResponse): [number, number] {
   let range = altitudeRanges.get(replay);
   if (!range) {
@@ -257,6 +258,14 @@ interface DiagnosticLineSegment {
   target: number[];
   targetNext: number[];
   color: PathColor;
+}
+function varioScaleFor(replay: ReplayResponse): VarioReplayScale {
+  let scale = varioScales.get(replay);
+  if (!scale) {
+    scale = varioReplayScale(replay.vario, replay);
+    varioScales.set(replay, scale);
+  }
+  return scale;
 }
 
 interface DiagnosticLineVertex {
@@ -827,8 +836,9 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const cached = preparedTracks.current.get(d);
     if (cached) return cached;
     let index = 0;
+    const scale = varioScaleFor(d);
     const tracks = splitReplaySamples(d).map((samples) => {
-      const colors = samples.map(() => varioReplayColor(d.vario[index++] ?? 0));
+      const colors = samples.map(() => varioReplayColor(d.vario[index++] ?? 0, scale));
       return splineTrack(samples, colors);
     });
     preparedTracks.current.set(d, tracks);
@@ -1308,7 +1318,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         const b = curtainSamples[index];
         if (b.time - a.time > 2) continue;
         const temporal = Math.pow((a.recency + b.recency) / 2, 1.35);
-        const [red, green, blue] = varioReplayColor(varioAt((a.time + b.time) / 2));
+        const [red, green, blue] = varioReplayColor(
+          varioAt((a.time + b.time) / 2),
+          varioScaleFor(d),
+        );
         for (let band = 0; band < CURTAIN_VERTICAL_BANDS; band++) {
           const lower = band / CURTAIN_VERTICAL_BANDS;
           const upper = (band + 1) / CURTAIN_VERTICAL_BANDS;
