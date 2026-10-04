@@ -1,7 +1,8 @@
-import { createSiteFromFlight, setSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
+import { openSitesPage, createSiteFromFlight, setSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
+import { PrismaClient } from "@prisma/client";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -82,10 +83,57 @@ async function signUp(page: Page) {
   return suffix;
 }
 
+test("site map browses public and owned sites, selects the list, and stays visible after reload", async ({ page, context }) => {
+  const suffix = await signUp(page);
+  const db = new PrismaClient();
+  const siteIds: string[] = [];
+  const owner = await db.profile.findUniqueOrThrow({ where: { handle: `se2e${suffix}`.slice(0, 18) } });
+  try {
+    const create = async (name: string, visibility: string, lat: number, lon: number, ownerId: string | null = null) => {
+      const site = await db.site.create({ data: { name: `${name} ${suffix}`, normalizedName: `${name} ${suffix}`.toLowerCase(), visibility, lat, lon, ownerId } });
+      siteIds.push(site.id);
+      return site;
+    };
+    const own = await create("Own launch", "private", 35, 15, owner.id);
+    const publicSite = await create("Public lookout", "public", 35.02, 15.02);
+    const hidden = await create("Hidden launch", "private", 35.01, 15.01);
+    const nearLocation = await create("Location launch", "public", 36, 16);
+    const flight = await db.flight.create({ data: { ownerId: owner.id, status: "ready", recordingKind: "igc", takeoffLat: 35, takeoffLon: 15 } });
+    await openSitesPage(page);
+    const map = page.getByRole("region", { name: "Site map", exact: true });
+    await expect(map.getByRole("button", { name: "Use my location", exact: true })).toHaveAttribute("title", "Center map on my location");
+    await expect(map.getByRole("button", { name: `Select ${own.name}`, exact: true })).toBeVisible();
+    await expect(map.getByRole("button", { name: `Select ${hidden.name}`, exact: true })).toHaveCount(0);
+    const list = page.getByRole("region", { name: "Sites list" });
+    await expect(list.getByRole("button", { name: new RegExp(publicSite.name) })).toHaveCount(0);
+    await map.getByRole("button", { name: `Select ${publicSite.name}`, exact: true }).click();
+    await expect(list.getByRole("button", { name: new RegExp(publicSite.name) })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("heading", { name: publicSite.name, exact: true })).toBeVisible();
+    expect((await db.flight.findUniqueOrThrow({ where: { id: flight.id } })).takeoffSiteId).toBeNull();
+    // The retired collapse preference must not hide the always-visible map.
+    await page.evaluate(key => localStorage.setItem(key, "collapsed"), `leaf-log:site-map:${owner.id}`);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Site map", exact: true })).toHaveCount(0);
+    await expect(map.getByRole("button", { name: `Select ${own.name}`, exact: true })).toBeVisible();
+    await context.setGeolocation({ latitude: 36, longitude: 16 });
+    await context.grantPermissions(["geolocation"]);
+    await page.reload();
+    await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: "test-results/site-map-mobile.png", fullPage: true });
+  } finally {
+    await db.user.delete({ where: { id: owner.id } });
+    await db.site.deleteMany({ where: { id: { in: siteIds } } });
+    await db.$disconnect();
+  }
+});
+
 test("a standalone site saves its pin and persists public and private visibility", async ({ page }) => {
   const suffix = await signUp(page);
   // A site can be created independently, without borrowing an IGC.
-  await page.goto("/sites");
+  await openSitesPage(page);
   await expect(page.getByRole("heading", { level: 1, name: "Sites" })).toBeVisible();
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
   const editor = page.getByRole('dialog', { name: 'Site details' });
@@ -110,7 +158,7 @@ test("a standalone site saves its pin and persists public and private visibility
 
 test("a site with a nearby namesake can change to takeoff and landing", async ({ page }) => {
   const suffix = await signUp(page);
-  await page.goto("/sites");
+  await openSitesPage(page);
   const name = `Namesake Ridge ${suffix}`;
   const editor = page.getByRole("dialog", { name: "Site details" });
 

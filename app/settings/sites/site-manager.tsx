@@ -8,24 +8,26 @@ import { PersistedSiteEditor } from "@/components/flight/persisted-site-editor";
 import { siteLinkLabel } from "@/lib/sites/display";
 import { hasSitePoint } from "@/lib/sites/model";
 import { Globe, Lock } from "lucide-react";
-import { SiteAreaMap } from "@/components/flight/site-area-map";
-import { radiusForKind, type Boundary } from "@/lib/sites/geo";
+import type { Boundary } from "@/lib/sites/geo";
 import { previewSiteFlightsAction, assignSiteFlightsAction } from "./actions";
 import type { SiteFlightCandidate } from "@/lib/sites/manage";
 import { SiteFlightList, SiteFlightSummary } from "./site-flight-list";
 import { DeleteSiteDialog, ReplaceSiteDialog } from "./site-management-dialogs";
+import { SiteMapPanel } from "@/components/sites/site-map-panel";
+import type { SitePoint } from "@/lib/sites/model";
 
 type ManagedSiteView = { id: string; name: string; kind: "takeoff" | "landing" | "both"; visibility: string;
-  lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number; canDelete?: boolean };
+  lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number; canDelete?: boolean; inLogbook?: boolean };
 const candidateKey = (row: SiteFlightCandidate) => row.id + ":" + row.endpoint;
 
-export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
+export function SiteManager({ sites, initialPoint = null, includePublicSites = false }: { sites: ManagedSiteView[]; initialPoint?: SitePoint | null; includePublicSites?: boolean }) {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string | null>(sites[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(sites.find(site => site.inLogbook !== false)?.id ?? null);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState("all");
   const [location, setLocation] = useState("all");
-  const filteredSites = sites.filter(site => site.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
+  const listedSites = sites.filter(site => includePublicSites || site.inLogbook !== false || site.id === selectedId);
+  const filteredSites = listedSites.filter(site => site.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
     && (visibility === "all" || site.visibility === visibility)
     && (location === "all" || (location === "mapped" ? hasSitePoint(site) : !hasSitePoint(site))));
   const selected = filteredSites.find(site => site.id === selectedId) ?? filteredSites[0] ?? null;
@@ -70,10 +72,11 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
   const shownFlights = candidateFlights.slice(page * 25, (page + 1) * 25);
   const shownKeys = shownFlights.flat().map(candidateKey);
   const selectedFlightCount = new Set((candidates ?? []).filter(row => checked.has(candidateKey(row))).map(row => row.id)).size;
-  return <div className="grid items-start gap-5 lg:grid-cols-[minmax(20rem,0.9fr)_minmax(0,1.3fr)]">
+  return <>
+    <div className="grid items-start gap-5 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
     <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
       <Button type="button" onClick={() => setEditor("create")}>Create a site</Button>
-      <Card className="overflow-hidden p-3"><h2 className="pb-3 font-condensed text-xl font-bold">Sites in your logbook</h2>
+      <Card className="overflow-hidden p-3"><h2 className="pb-3 font-condensed text-xl font-bold">{includePublicSites ? "Your sites and public sites" : "Sites in your logbook"}</h2>
         <input type="search" disabled={pending} aria-label="Search sites" placeholder="Search sites" value={search} onChange={e => { setSearch(e.target.value); setCandidates(null); setChecked(new Set()); }} className="mb-2 h-9 w-full rounded-md border border-gray-300 px-2 text-sm" />
         <div className="mb-3 grid grid-cols-2 gap-2">
           <select disabled={pending} aria-label="Filter site visibility" value={visibility} onChange={e => { setVisibility(e.target.value); setCandidates(null); setChecked(new Set()); }} className="h-9 min-w-0 rounded-md border border-gray-300 px-2 text-xs"><option value="all">All visibility</option><option value="public">Public</option><option value="private">Private</option></select>
@@ -83,26 +86,29 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
         <div role="region" aria-label="Sites list" tabIndex={0} className="max-h-[45dvh] overflow-y-auto overscroll-contain lg:max-h-[calc(100dvh-23rem)]">
           {filteredSites.map(site => <button key={site.id} type="button" disabled={pending} onClick={() => choose(site.id)} aria-pressed={site.id === selected?.id}
             className={`grid w-full grid-cols-[minmax(0,1fr)_2rem_3rem] items-center gap-2 rounded-md border-l-4 px-2 py-2 text-left text-sm ${site.id === selected?.id ? "border-brand-blue bg-brand-blue/15 text-brand-blue-strong" : "border-transparent hover:bg-gray-100"}`}>
-            <span className="flex min-w-0 items-baseline gap-2"><span title={site.name} className="truncate font-semibold">{site.name}</span>{!hasSitePoint(site) && <span className="shrink-0 text-[11px] font-medium text-orange-700">Not mapped</span>}</span>
+            <span className="flex min-w-0 items-baseline gap-2"><span title={site.name} className="truncate font-semibold">{site.name}</span>{site.inLogbook === false && <span className="shrink-0 text-[11px] font-medium text-gray-500">From map</span>}{!hasSitePoint(site) && <span className="shrink-0 text-[11px] font-medium text-orange-700">Not mapped</span>}</span>
             <span className="justify-self-center" title={site.visibility === "public" ? "Public" : "Private"} aria-label={site.visibility === "public" ? "Public" : "Private"}>{site.visibility === "public" ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}</span>
             <span className="text-right tabular-nums" aria-label={`${site.ownFlightCount} flights`}>{site.ownFlightCount}</span>
           </button>)}
-          {!filteredSites.length && <p className="p-2 text-sm text-gray-600">{sites.length ? "No sites match these filters." : "Create a site or import your logbook to get started."}</p>}
+          {!filteredSites.length && <p className="p-2 text-sm text-gray-600">{listedSites.length ? "No sites match these filters." : "Select a site on the map, create a site or import your logbook to get started."}</p>}
         </div>
-        <p className="pt-2 text-xs text-gray-500">{filteredSites.length} of {sites.length} sites</p>
+        <p className="pt-2 text-xs text-gray-500">{filteredSites.length} of {listedSites.length} sites</p>
       </Card>
     </div>
-    <div className="flex flex-col gap-5">
+    <div id="site-details" className="flex min-w-0 scroll-mt-24 flex-col gap-5 lg:w-[70%]">
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       {message && <p role="status" className="text-sm text-green-800">{message}</p>}
+      <SiteMapPanel sites={sites} selectedId={selected?.id ?? null} initialPoint={initialPoint} heading={selected?.name ?? "Site map"}
+        onSelect={id => { if (pending) return; setSearch(""); setVisibility("all"); setLocation("all"); choose(id); }}
+        actions={selected && <div className="flex flex-wrap gap-2"><Button type="button" onClick={() => setEditor("edit")}>Edit site</Button>
+          <Button type="button" variant="ghost" disabled={!selected.canDelete} title={!selected.canDelete ? "Only the site owner or a public-site admin can delete this site." : undefined} className="text-red-700 hover:bg-red-50" onClick={() => setManagement({ kind: "delete", site: selected })}>Delete site</Button>
+        </div>}>
+        {selected ? <>
+          {!selected.canDelete && <p className="px-5 pb-3 text-xs text-gray-500">Only the site owner or a public-site admin can delete this site.</p>}
+          {!hasSitePoint(selected) && <p className="px-5 pb-3 text-sm text-orange-700">Not mapped. Edit this site to add a map location.</p>}
+        </> : <p className="px-5 pb-4 text-sm text-gray-600">Select a site on the map or in your logbook to view its details.</p>}
+      </SiteMapPanel>
       {selected && <>
-        <Card className="p-5"><h2 className="font-condensed text-2xl font-bold">{selected.name}</h2>
-          <div className="my-3">{hasSitePoint(selected) ? <SiteAreaMap key={selected.id + selected.updatedAt} anchor={{ lat: selected.lat, lon: selected.lon }} boundary={selected.boundary ?? null} radiusM={radiusForKind(selected.kind === "landing" ? "landing" : "takeoff")} flightPoint={null} /> : <div className="rounded-md bg-orange-50 px-3 py-6 text-sm text-orange-700">Not mapped. Edit this site to add a map location.</div>}</div>
-          <div className="flex flex-wrap gap-3"><Button type="button" onClick={() => setEditor("edit")}>Edit site</Button>
-            <Button type="button" variant="ghost" disabled={!selected.canDelete} className="text-red-700 hover:bg-red-50" onClick={() => setManagement({ kind: "delete", site: selected })}>Delete site</Button>
-          </div>
-          {!selected.canDelete && <p className="mt-2 text-xs text-gray-500">Only the site owner can delete this site.</p>}
-        </Card>
         <SiteFlightList key={selected.id + ":" + revision} siteId={selected.id} count={selected.ownFlightCount} revision={revision} onReplace={() => setManagement({ kind: "replace", site: selected })} />
         <Card className="p-5">
             <section aria-labelledby="review-flights-heading">
@@ -159,5 +165,5 @@ export function SiteManager({ sites }: { sites: ManagedSiteView[] }) {
       setSearch(""); setVisibility("all"); setLocation("all"); choose(target.id);
       setManagement(null); setRevision(n => n + 1); setMessage(`Replaced ${name} with ${target.name} in ${count} flight${count === 1 ? "" : "s"}. Flight coordinates were preserved.`); router.refresh();
     }} />}
-  </div>;
+  </div></>;
 }

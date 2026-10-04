@@ -11,6 +11,7 @@ import {
   boundingBox,
   withinRadius,
   compareSiteCandidates,
+  hasConfidentNearestTakeoff,
   boundaryContains,
   pointOnRingEdge,
   boundaryBoundingBox,
@@ -21,6 +22,28 @@ import {
   type Boundary,
   type Ring,
 } from "./geo";
+
+describe("confident nearest takeoff", () => {
+  it.each([
+    [134, 1474, true],
+    [200, 600, true], // inclusive radius and ratio
+    [100, 300, true], // inclusive margin and ratio
+    [201, 1000, false], // not close enough
+    [150, 449, false], // margin passes, ratio fails
+    [50, 249, false], // ratio passes, margin fails
+    [0, 200, true],
+    [0, 199, false],
+    [0, 0, false], // duplicate pins are ambiguous
+    [100, 100, false],
+  ])("distances %s m and %s m: %s", (first, second, expected) => {
+    expect(hasConfidentNearestTakeoff([{ distanceM: first }, { distanceM: second }])).toBe(expected);
+  });
+
+  it("does not decide empty or single-candidate lookups", () => {
+    expect(hasConfidentNearestTakeoff([])).toBe(false);
+    expect(hasConfidentNearestTakeoff([{ distanceM: 100 }])).toBe(false);
+  });
+});
 
 // SPRINT-006 test fixtures. A base point away from (0,0)/antimeridian
 // special cases, with a simple equirectangular approximation for building

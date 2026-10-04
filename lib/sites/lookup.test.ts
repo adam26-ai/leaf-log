@@ -9,6 +9,8 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 import { findLocation, findLocationDecision } from "./lookup";
 import { validateBoundary, boundaryColumns } from "./boundary";
+import edLevin from "@/test/fixtures/sites/ed-levin.json";
+import { kindMatches, locationMatches } from "./geo";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required for site lookup integration tests.");
@@ -742,6 +744,62 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(decision).toEqual({ match: null, ambiguous: true });
     expect(nearCircleSite.id).not.toBe(farBoundarySite.id);
   });
+
+  it("auto-matches the recorded Ed Levin start to the nearby launch despite a broad competing site", async () => {
+    const owner = await createPilot("confident-edlevin");
+    const point = edLevin.takeoff;
+    const sites = [];
+    for (const definition of edLevin.sites) {
+      const validated = validateBoundary(definition.boundary, "site", definition);
+      if (!validated.ok) throw new Error(`Ed Levin fixture: ${validated.error}`);
+      const site = await prisma.site.create({ data: {
+        name: definition.name, normalizedName: definition.name.toLowerCase(),
+        lat: definition.lat, lon: definition.lon, kind: definition.kind,
+        visibility: "public", ownerId: owner, source: "user",
+        ...boundaryColumns(validated.boundary, owner),
+        boundary: validated.boundary,
+      } });
+      siteIds.push(site.id);
+      sites.push(site);
+    }
+    // These are the two actual eligible polygons, not the five suggestions.
+    expect(sites.filter(site => kindMatches(site.kind, "takeoff")
+      && locationMatches(site, point.lat, point.lon, 600).matched).map(site => site.name).sort())
+      .toEqual(["Ed Levin", "Ed Levin 1750"]);
+    const launch = sites.find(site => site.name === "Ed Levin 1750")!;
+    const decision = await findLocationDecision(prisma, { ...point, kind: "takeoff", viewerId: owner });
+    expect(decision.ambiguous).toBe(false);
+    expect(decision.match?.site.id).toBe(launch.id);
+    expect(decision.match?.site.distanceM).toBeCloseTo(134, 0);
+  });
+
+  it.each(["takeoff", "landing"] as const)("resolves dominant circle pins only for takeoff (%s)", async kind => {
+    await createSite({ lat: 39, lon: 39, kind: "both", visibility: "public", ownerId: null });
+    const near = await createSite({ lat: 39 + 400 / 111_320, lon: 39, kind: "both", visibility: "public", ownerId: null });
+    const decision = await findLocationDecision(prisma, {
+      lat: 39 + 450 / 111_320, lon: 39, kind, viewerId: null,
+    });
+    if (kind === "takeoff") {
+      expect(decision.ambiguous).toBe(false);
+      expect(decision.match?.site.id).toBe(near.id);
+    } else expect(decision).toEqual({ match: null, ambiguous: true });
+  });
+
+  it.each(["boundary", "private", "landing", "archived"] as const)(
+    "does not resolve competing sites using an ineligible nearby pin (%s)", async exclusion => {
+      const owner = await createPilot(`confident-${exclusion}`);
+      const point = { lat: 41, lon: 41 };
+      const near = await createSite({ lat: 41 + 50 / 111_320, lon: 41,
+        kind: exclusion === "landing" ? "landing" : "takeoff",
+        visibility: exclusion === "private" ? "private" : "public", ownerId: owner,
+        boundaryHalfSizeM: exclusion === "boundary" ? 10 : undefined });
+      if (exclusion === "archived") await prisma.site.update({ where: { id: near.id }, data: { archivedAt: new Date() } });
+      for (const meters of [400, 450]) await createSite({ lat: 41 + meters / 111_320, lon: 41,
+        kind: "takeoff", visibility: "public", ownerId: null });
+      expect(await findLocationDecision(prisma, { ...point, kind: "takeoff", viewerId: null }))
+        .toEqual({ match: null, ambiguous: true });
+    },
+  );
 
   it("a PRIVATE boundary-bearing site never matches a stranger's ingest", async () => {
     const owner = await createPilot("b6-private-owner");

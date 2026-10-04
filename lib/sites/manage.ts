@@ -1,3 +1,4 @@
+import { isSiteAdmin } from "@/lib/admin";
 import { hasSitePoint } from "./model";
 import type { Site } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -21,6 +22,7 @@ export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon
   ownFlightCount: number;
   hasLocationEvidence?: boolean;
   canDelete: boolean;
+  inLogbook: boolean;
 };
 
 function validCoordinate(lat: number, lon: number): boolean {
@@ -31,9 +33,10 @@ function validKind(kind: string): kind is "takeoff" | "landing" | "both" {
   return kind === "takeoff" || kind === "landing" || kind === "both";
 }
 
-export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> {
+export async function listManagedSites(ownerId: string, includePublic = false): Promise<ManagedSite[]> {
+  const admin = await isSiteAdmin(ownerId);
   const rows = await prisma.site.findMany({
-    where: { OR: [{ ownerId }, { visibility: "public", OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] }] },
+    where: { archivedAt: null, OR: [{ ownerId }, { visibility: "public", ...(!includePublic ? { OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] } : {}) }] },
     select: {
       id: true, name: true, kind: true, visibility: true, lat: true, lon: true, ownerId: true,
       updatedAt: true, boundaryMinLat: true, boundary: true,
@@ -67,7 +70,8 @@ export async function listManagedSites(ownerId: string): Promise<ManagedSite[]> 
     hasBoundary: row.boundaryMinLat !== null,
     hasLocationEvidence: row._count.takeoffFlights > 0 || row._count.landingFlights > 0,
     ownFlightCount: counts.get(row.id) ?? 0,
-    canDelete: row.ownerId === ownerId,
+    canDelete: row.ownerId === ownerId || (admin && row.visibility === "public"),
+    inLogbook: row.ownerId === ownerId || (counts.get(row.id) ?? 0) > 0,
   }));
 }
 
@@ -289,6 +293,23 @@ export async function assignFlightsToSite(ownerId: string, siteId: string, selec
     }
     return updated.size;
   });
+}
+
+/** Prefer the latest uploaded recording, not the most recently edited log entry. */
+export async function siteMapInitialPoint(ownerId: string) {
+  const flight = await prisma.flight.findFirst({
+    where: { ownerId, recordingKind: "igc", status: "ready" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { takeoffLat: true, takeoffLon: true, takeoffSite: {
+      select: { lat: true, lon: true, visibility: true, ownerId: true, archivedAt: true },
+    } },
+  });
+  const site = flight?.takeoffSite;
+  if (site && !site.archivedAt && (site.visibility === "public" || site.ownerId === ownerId) && hasSitePoint(site)) {
+    return { lat: site.lat, lon: site.lon };
+  }
+  const point = { lat: flight?.takeoffLat ?? null, lon: flight?.takeoffLon ?? null };
+  return hasSitePoint(point) ? point : null;
 }
 
 export type ReplacementSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon">;

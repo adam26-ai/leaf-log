@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { BookOpen, GraduationCap, MapPin, Rss, Plus, Users } from "lucide-react";
+import { BookOpen, GraduationCap, MapPin, Rss, Plus, Users, Shield } from "lucide-react";
+import { isMainAdmin } from "@/lib/admin";
 import { LeafLogLogo } from "@/components/brand/leaf-log-logo";
 import { HeaderAccount } from "@/components/header-account";
 import { SunnyCloudIcon } from "@/components/icons/sunny-cloud-icon";
@@ -19,7 +20,7 @@ const UPLOAD_NAV_ITEM = { href: "/upload", label: "Add flight", icon: Plus };
  * viewer (this header also renders on pages anonymous/other-pilot viewers
  * can reach, like a flight or a public profile) gets a sign-in link.
  */
-export function AppHeader({ profile }: { profile: Profile | null }) {
+export async function AppHeader({ profile }: { profile: Profile | null }) {
   if (!profile) {
     return (
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-paper px-2 py-3 sm:py-4 sm:px-10">
@@ -34,17 +35,19 @@ export function AppHeader({ profile }: { profile: Profile | null }) {
     );
   }
 
+  const mainAdmin = await isMainAdmin(profile.id);
   const navItems = [
     ...BASE_NAV_ITEMS,
     ...(profile.ratingsTrackingEnabled ? [RATINGS_NAV_ITEM] : []),
     SITES_NAV_ITEM,
+    ...(mainAdmin ? [{ href: "/admin", label: "Admin", icon: Shield }] : []),
     UPLOAD_NAV_ITEM,
   ];
 
   return (
     <header className="sticky top-0 z-40 flex items-center justify-between gap-1 border-b border-gray-200 bg-paper px-2 py-3 sm:gap-2 sm:px-4 sm:py-4 xl:px-10">
       <div className="flex shrink-0 items-center gap-1 sm:gap-3 xl:gap-6">
-        <Link href="/logbook" className="shrink-0 [&_img]:w-[52px] min-[360px]:[&_img]:w-[76px] sm:[&_img]:w-[112px]">
+        <Link href="/logbook" className={`shrink-0 [&_img]:w-[52px] min-[360px]:[&_img]:w-[76px] sm:[&_img]:w-[112px] ${mainAdmin ? "max-[479px]:hidden" : ""}`}>
           <LeafLogLogo />
         </Link>
         <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-0.5 text-sm min-[400px]:gap-1 min-[480px]:gap-1.5 xl:gap-2">

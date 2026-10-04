@@ -173,6 +173,28 @@ build with private-network access; the running app uses the same private
 `DATABASE_URL`. Keep a public database URL only for clients outside Railway,
 not as a web-service variable.
 
+## Site administrators
+
+The verified `leafvario@gmail.com` account is the production main admin. Sign in
+through the normal email-link flow and complete onboarding; no separate password
+or admin signup is required. Only this account sees **Admin** in the navigation
+and can search users and grant site-admin access. Delegated admins cannot manage
+other admins. Revoke keeps a disabled entry available for re-enabling; Delete is
+allowed only after revocation and removes the grant, never the user's account.
+
+For local testing, set `LOCAL_MAIN_ADMIN_USER_ID` in `.env.local` to locallenny's
+immutable `User.id`. The override is ignored in production and for non-loopback
+databases. Do not configure this variable in production. Restart the local server
+after changing it. The schema migration runs through the normal deployment flow.
+
+Active admins can browse all public sites and delete them even when another pilot
+created or uses them. The confirmation counts affected flights across logbooks;
+flights and recorded coordinates remain, with site names retained as historical
+fallbacks. Site zones are deleted with the site. Existing community editing and
+owner-only visibility changes remain unchanged, and admin access does not expose
+other pilots' private sites or flights. Permissions are checked against the
+database on each request, so revocation does not require signing out.
+
 ## Project structure
 
 ```

@@ -21,6 +21,15 @@ model User {
   accounts      Account[]
   sessions      Session[]
   profile       Profile?
+  siteAdmin     SiteAdmin?
+}
+
+// A revoked grant remains visible until the main admin explicitly removes it.
+model SiteAdmin {
+  userId    String    @id
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
 }
 
 model Account {

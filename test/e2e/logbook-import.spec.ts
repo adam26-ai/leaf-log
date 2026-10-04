@@ -2,7 +2,7 @@ import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 import { makeRealisticFlight } from "../igc/make-igc";
-import { addEntrySite, openSettingsCard, uploadFlight } from "./helpers";
+import { openSitesPage, addEntrySite, openSettingsCard, uploadFlight } from "./helpers";
 import { PrismaClient } from "@prisma/client";
 
 async function signUp(page: Page) {
@@ -106,7 +106,7 @@ test("site replacement and deletion require confirmation and preserve flight rec
     await db.site.create({ data: { ownerId: other.id, name: "Hidden replacement", normalizedName: "hidden replacement", visibility: "private" } });
     const flight = await db.flight.create({ data: { ownerId: owner.id, recordingKind: "logbook", source: "manual_entry", status: "ready", takeoffSiteId: source.id, landingSiteId: source.id, takeoffLat: 45, takeoffLon: 6, landingLat: 44, landingLon: 5, notes: "Keep my flight" } });
     const stranger = await db.flight.create({ data: { ownerId: other.id, takeoffSiteId: source.id, status: "ready" } });
-    await page.goto("/sites");
+    await openSitesPage(page);
     const list = page.getByRole("region", { name: "Sites list", exact: true });
     await list.getByRole("button", { name: /Original Ridge/ }).click();
     const flights = page.getByRole("region", { name: "Flights at this site (1)", exact: true });

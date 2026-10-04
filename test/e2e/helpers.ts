@@ -1,12 +1,13 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
-/** All header links stay on one row and inside the viewport, including Ratings. */
+/** All visible header links fit one row, including Ratings and main-admin tools. */
 export async function expectSingleRowHeader(page: Page) {
   const header = page.getByRole("banner");
   const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
   expect(avatar).not.toBeNull();
   const center = avatar!.y + avatar!.height / 2;
   for (const link of await header.getByRole("link").all()) {
+    if (!await link.isVisible()) continue;
     const box = await link.boundingBox();
     expect(box).not.toBeNull();
     expect(Math.abs(box!.y + box!.height / 2 - center)).toBeLessThan(2);
@@ -54,6 +55,7 @@ export async function openSettingsCard(page: Page, title: string) {
 /** Public pages expose account entry in the top-right header. */
 export async function expectSignedOutHeader(page: Page) {
   const header = page.getByRole("banner");
+  await expect(header.getByRole("link", { name: "Admin", exact: true })).toHaveCount(0);
   await expect(header.getByRole("img", { name: "Leaf Log" })).toBeVisible();
   await expect(header.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/sign-in");
 }
@@ -75,6 +77,15 @@ export async function waitForMapReady(map: Locator) {
   if (await shaderError.isVisible()) {
     throw new Error(await shaderError.textContent() ?? "WebGL shader compilation failed");
   }
+}
+
+/** Site management always displays one shared overview map. */
+export async function openSitesPage(page: Page) {
+  await page.goto("/sites");
+  await expect(page.getByTestId("site-area-map")).toHaveCount(0);
+  await expect(page.getByTestId("site-browser-map")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Site map", exact: true })).toHaveCount(0);
+  await waitForMapReady(page.getByTestId("site-browser-map"));
 }
 
 /** Exercise one isolated path mechanism without changing the flight/view. */

@@ -1,4 +1,4 @@
-import { createSiteFromFlight, uploadFlight, waitForMapReady } from "./helpers";
+import { openSitesPage, createSiteFromFlight, uploadFlight, waitForMapReady } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -208,7 +208,7 @@ test("re-opening and managing an already-named site never shows zones or spots",
   await expect(page.getByRole("button", { name: "Create site", exact: true })).toBeVisible();
   const chooserText = await dialog.innerText();
   expect(chooserText.match(/\b(spot|zone)\b/gi) ?? []).toEqual([]);
-  await page.goto("/sites");
+  await openSitesPage(page);
   await page.getByRole("button", { name: "Edit site", exact: true }).click();
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
   const managerText = await dialog.innerText();
