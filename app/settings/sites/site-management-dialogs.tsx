@@ -113,8 +113,8 @@ export function DeleteSiteDialog({ site, onClose, onDeleted }: { site: SiteChoic
     {!loaded && <p role="status" className="text-sm text-gray-500">Checking site usage…</p>}
     {loaded && !loaded.ok && <p role="alert" className="text-sm text-red-700">{loaded.error}</p>}
     {loaded?.ok && <>
-      <p className="text-sm text-gray-700">This permanently deletes the reusable site{loaded.value.flightCount ? ` and removes its connection to ${flightLabel(loaded.value.flightCount)} in your logbook` : ""}.</p>
-      <p className="text-sm text-gray-600">Your flights and their recorded coordinates will be kept. To use another site on those flights, choose Replace site instead.</p>
+      <p className="text-sm text-gray-700">This permanently deletes the reusable site{loaded.value.flightCount ? ` and removes its connection to ${flightLabel(loaded.value.flightCount)} ${loaded.value.affectsOtherPilots ? "across pilots' logbooks" : "in your logbook"}` : ""}.</p>
+      <p className="text-sm text-gray-600">All flights and their recorded coordinates will be kept. To use another site on those flights, choose Replace site instead.</p>
       {loaded.value.zoneCount > 0 && <p className="text-sm text-gray-600">The site’s {loaded.value.zoneCount} saved zone{loaded.value.zoneCount === 1 ? "" : "s"} will also be deleted.</p>}
       <p className="text-sm font-medium text-gray-700">This cannot be undone.</p>
     </>}

@@ -1,3 +1,4 @@
+import { isSiteAdmin } from "@/lib/admin";
 import { hasSitePoint } from "./model";
 import { Prisma, type Site, type Zone } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -469,7 +470,7 @@ async function siteHasOtherOwnedZone(
 }
 
 /**
- * Delete a site the caller owns. `onDelete: SetNull` on
+ * Delete an owned site, or any public site as an active site admin. `onDelete: SetNull` on
  * Flight.takeoffSiteId/landingSiteId nulls the id on every referencing
  * flight automatically; the cached *SiteName columns are deliberately left
  * untouched — that's the historical fallback the read path relies on.
@@ -487,7 +488,7 @@ async function siteHasOtherOwnedZone(
  * Raw `prisma.site.delete` is forbidden everywhere else in the app; this is
  * the one sanctioned path.
  *
- * Always guarded: once another pilot's flight depends on this site, OR
+ * For non-admins, guarded: once another pilot's flight depends on this site, OR
  * another pilot owns a zone under it (referenced by a flight or not), OR
  * (SPRINT-007) another pilot has made a real community edit to it, it's
  * community property and can no longer be deleted this way. Endorsements
@@ -500,11 +501,14 @@ export async function deleteSite(siteId: string, ownerId: string, expectedRevisi
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
     await lockSiteRows(tx, [siteId]);
-    const existing = await tx.site.findFirst({ where: { id: siteId, ownerId } });
-    if (!existing) throw notFoundOrNotOwned();
-    if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
-    if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
-    if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
+    const existing = await tx.site.findUnique({ where: { id: siteId } });
+    const admin = existing?.visibility === "public" && await isSiteAdmin(ownerId, tx);
+    if (!existing || (existing.ownerId !== ownerId && !admin)) throw notFoundOrNotOwned();
+    if (!admin) {
+      if (await referencedByOthers(tx, siteId, ownerId)) throw stillReferenced();
+      if (await siteHasOtherOwnedZone(tx, siteId, ownerId)) throw stillReferenced();
+      if (await hasCommunityFootprint(tx, "site", siteId, ownerId)) throw communityFootprintExists();
+    }
 
     if (expectedRevision && (await siteDeletionPreview(tx, siteId, ownerId)).revision !== expectedRevision) {
       throw new Error("This site or its flights changed. Review the deletion again before confirming.");
@@ -532,20 +536,21 @@ export async function deleteSite(siteId: string, ownerId: string, expectedRevisi
   });
 }
 
-export type SiteDeletionPreview = { id: string; name: string; flightCount: number; zoneCount: number; revision: string };
+export type SiteDeletionPreview = { id: string; name: string; flightCount: number; zoneCount: number; revision: string; affectsOtherPilots?: boolean };
 
-async function siteDeletionPreview(db: Pick<typeof prisma, "site" | "flight" | "zone" | "locationAuditEntry">, siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
-  const site = await db.site.findFirst({ where: { id: siteId, ownerId } });
-  if (!site) throw new Error("Only the site owner can delete this site.");
-  if (await referencedByOthers(db, siteId, ownerId) || await siteHasOtherOwnedZone(db, siteId, ownerId)) {
+async function siteDeletionPreview(db: Pick<typeof prisma, "site" | "flight" | "zone" | "locationAuditEntry" | "user" | "siteAdmin">, siteId: string, ownerId: string): Promise<SiteDeletionPreview> {
+  const site = await db.site.findUnique({ where: { id: siteId } });
+  const admin = site?.visibility === "public" && await isSiteAdmin(ownerId, db);
+  if (!site || (site.ownerId !== ownerId && !admin)) throw new Error("Only the site owner or a public-site admin can delete this site.");
+  if (!admin && (await referencedByOthers(db, siteId, ownerId) || await siteHasOtherOwnedZone(db, siteId, ownerId))) {
     throw new Error("Other pilots use this site or own locations within it, so it cannot be deleted. You can replace it in your own logbook instead.");
   }
-  if (await hasCommunityFootprint(db, "site", siteId, ownerId)) {
+  if (!admin && await hasCommunityFootprint(db, "site", siteId, ownerId)) {
     throw new Error("Other pilots have contributed to this site, so it cannot be deleted. You can replace it in your own logbook instead.");
   }
-  const flights = await db.flight.findMany({ where: { ownerId, OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }] }, select: { id: true, takeoffSiteId: true, landingSiteId: true }, orderBy: { id: "asc" } });
+  const flights = await db.flight.findMany({ where: { OR: [{ takeoffSiteId: siteId }, { landingSiteId: siteId }, { takeoffZone: { siteId } }, { landingZone: { siteId } }] }, select: { id: true, ownerId: true, takeoffSiteId: true, landingSiteId: true, takeoffZoneId: true, landingZoneId: true }, orderBy: { id: "asc" } });
   const zones = await db.zone.findMany({ where: { siteId }, select: { id: true, updatedAt: true }, orderBy: { id: "asc" } });
-  return { id: site.id, name: site.name, flightCount: flights.length, zoneCount: zones.length,
+  return { id: site.id, name: site.name, flightCount: flights.length, zoneCount: zones.length, affectsOtherPilots: flights.some(flight => flight.ownerId !== ownerId),
     revision: createHash("sha256").update(JSON.stringify([site.id, site.updatedAt, flights, zones])).digest("hex") };
 }
 

@@ -20,13 +20,13 @@ type ManagedSiteView = { id: string; name: string; kind: "takeoff" | "landing" |
   lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number; canDelete?: boolean; inLogbook?: boolean };
 const candidateKey = (row: SiteFlightCandidate) => row.id + ":" + row.endpoint;
 
-export function SiteManager({ sites, initialPoint = null }: { sites: ManagedSiteView[]; initialPoint?: SitePoint | null }) {
+export function SiteManager({ sites, initialPoint = null, includePublicSites = false }: { sites: ManagedSiteView[]; initialPoint?: SitePoint | null; includePublicSites?: boolean }) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(sites.find(site => site.inLogbook !== false)?.id ?? null);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState("all");
   const [location, setLocation] = useState("all");
-  const listedSites = sites.filter(site => site.inLogbook !== false || site.id === selectedId);
+  const listedSites = sites.filter(site => includePublicSites || site.inLogbook !== false || site.id === selectedId);
   const filteredSites = listedSites.filter(site => site.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
     && (visibility === "all" || site.visibility === visibility)
     && (location === "all" || (location === "mapped" ? hasSitePoint(site) : !hasSitePoint(site))));
@@ -76,7 +76,7 @@ export function SiteManager({ sites, initialPoint = null }: { sites: ManagedSite
     <div className="grid items-start gap-5 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
     <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
       <Button type="button" onClick={() => setEditor("create")}>Create a site</Button>
-      <Card className="overflow-hidden p-3"><h2 className="pb-3 font-condensed text-xl font-bold">Sites in your logbook</h2>
+      <Card className="overflow-hidden p-3"><h2 className="pb-3 font-condensed text-xl font-bold">{includePublicSites ? "Your sites and public sites" : "Sites in your logbook"}</h2>
         <input type="search" disabled={pending} aria-label="Search sites" placeholder="Search sites" value={search} onChange={e => { setSearch(e.target.value); setCandidates(null); setChecked(new Set()); }} className="mb-2 h-9 w-full rounded-md border border-gray-300 px-2 text-sm" />
         <div className="mb-3 grid grid-cols-2 gap-2">
           <select disabled={pending} aria-label="Filter site visibility" value={visibility} onChange={e => { setVisibility(e.target.value); setCandidates(null); setChecked(new Set()); }} className="h-9 min-w-0 rounded-md border border-gray-300 px-2 text-xs"><option value="all">All visibility</option><option value="public">Public</option><option value="private">Private</option></select>
@@ -101,10 +101,10 @@ export function SiteManager({ sites, initialPoint = null }: { sites: ManagedSite
       <SiteMapPanel sites={sites} selectedId={selected?.id ?? null} initialPoint={initialPoint} heading={selected?.name ?? "Site map"}
         onSelect={id => { if (pending) return; setSearch(""); setVisibility("all"); setLocation("all"); choose(id); }}
         actions={selected && <div className="flex flex-wrap gap-2"><Button type="button" onClick={() => setEditor("edit")}>Edit site</Button>
-          <Button type="button" variant="ghost" disabled={!selected.canDelete} title={!selected.canDelete ? "Only the site owner can delete this site." : undefined} className="text-red-700 hover:bg-red-50" onClick={() => setManagement({ kind: "delete", site: selected })}>Delete site</Button>
+          <Button type="button" variant="ghost" disabled={!selected.canDelete} title={!selected.canDelete ? "Only the site owner or a public-site admin can delete this site." : undefined} className="text-red-700 hover:bg-red-50" onClick={() => setManagement({ kind: "delete", site: selected })}>Delete site</Button>
         </div>}>
         {selected ? <>
-          {!selected.canDelete && <p className="px-5 pb-3 text-xs text-gray-500">Only the site owner can delete this site.</p>}
+          {!selected.canDelete && <p className="px-5 pb-3 text-xs text-gray-500">Only the site owner or a public-site admin can delete this site.</p>}
           {!hasSitePoint(selected) && <p className="px-5 pb-3 text-sm text-orange-700">Not mapped. Edit this site to add a map location.</p>}
         </> : <p className="px-5 pb-4 text-sm text-gray-600">Select a site on the map or in your logbook to view its details.</p>}
       </SiteMapPanel>

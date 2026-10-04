@@ -8,6 +8,7 @@ const { auth } = NextAuth(authConfig);
 // Routes requiring a signed-in pilot. Public flight pages (/flights/[id]) and
 // public profiles (/@handle) stay open — visibility is decided server-side.
 const PROTECTED = [
+  "/admin",
   "/upload",
   "/logbook",
   "/feed",

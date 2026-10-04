@@ -12,6 +12,12 @@ const sites = [
   { id: "a", name: "Alpine", kind: "both" as const, visibility: "public", lat: 45, lon: 6, updatedAt: "today", hasBoundary: false, ownFlightCount: 12 },
   { id: "b", name: "Valley", kind: "both" as const, visibility: "private", lat: null, lon: null, updatedAt: "today", hasBoundary: false, ownFlightCount: 2 },
 ];
+it("lists public sites outside the logbook for an admin and enables authorized deletion", () => {
+  render(<SiteManager includePublicSites sites={[{ ...sites[0], inLogbook: false, canDelete: true }]} />);
+  expect(screen.getByRole("heading", { name: "Your sites and public sites" })).toBeVisible();
+  expect(within(screen.getByRole("region", { name: "Sites list" })).getByRole("button", { name: /Alpine/ })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Delete site" })).toBeEnabled();
+});
 it("highlights the selected row and filters visibility, mapping and name together", () => {
   render(<SiteManager sites={sites} />);
   const list = within(screen.getByRole("region", { name: "Sites list" }));

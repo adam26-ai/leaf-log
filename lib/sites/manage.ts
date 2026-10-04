@@ -1,3 +1,4 @@
+import { isSiteAdmin } from "@/lib/admin";
 import { hasSitePoint } from "./model";
 import type { Site } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -33,6 +34,7 @@ function validKind(kind: string): kind is "takeoff" | "landing" | "both" {
 }
 
 export async function listManagedSites(ownerId: string, includePublic = false): Promise<ManagedSite[]> {
+  const admin = await isSiteAdmin(ownerId);
   const rows = await prisma.site.findMany({
     where: { archivedAt: null, OR: [{ ownerId }, { visibility: "public", ...(!includePublic ? { OR: [{ takeoffFlights: { some: { ownerId } } }, { landingFlights: { some: { ownerId } } }] } : {}) }] },
     select: {
@@ -68,7 +70,7 @@ export async function listManagedSites(ownerId: string, includePublic = false): 
     hasBoundary: row.boundaryMinLat !== null,
     hasLocationEvidence: row._count.takeoffFlights > 0 || row._count.landingFlights > 0,
     ownFlightCount: counts.get(row.id) ?? 0,
-    canDelete: row.ownerId === ownerId,
+    canDelete: row.ownerId === ownerId || (admin && row.visibility === "public"),
     inLogbook: row.ownerId === ownerId || (counts.get(row.id) ?? 0) > 0,
   }));
 }
