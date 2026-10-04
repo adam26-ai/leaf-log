@@ -77,6 +77,15 @@ export async function waitForMapReady(map: Locator) {
   }
 }
 
+/** Site management always displays one shared overview map. */
+export async function openSitesPage(page: Page) {
+  await page.goto("/sites");
+  await expect(page.getByTestId("site-area-map")).toHaveCount(0);
+  await expect(page.getByTestId("site-browser-map")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Site map", exact: true })).toHaveCount(0);
+  await waitForMapReady(page.getByTestId("site-browser-map"));
+}
+
 /** Exercise one isolated path mechanism without changing the flight/view. */
 export async function selectTrackDiagnosticRenderer(
   page: Page,

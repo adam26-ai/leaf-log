@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { listManagedSites, listFlightsAtSite, previewFlightsForSite, assignFlightsToSite, previewSiteReplacement, replaceLogbookSite, listReplacementSites } from "@/lib/sites/manage";
+import { listManagedSites, siteMapInitialPoint, listFlightsAtSite, previewFlightsForSite, assignFlightsToSite, previewSiteReplacement, replaceLogbookSite, listReplacementSites } from "@/lib/sites/manage";
 import { deleteSite, previewSiteDeletion } from "@/lib/sites/associate";
 import { listSiteFlightsAction, replaceSiteAction, deleteSiteAction } from "@/app/settings/sites/actions";
 import { getCurrentUserId } from "@/lib/profile";
@@ -131,6 +131,30 @@ describe("site flight management", () => {
     expect((await listManagedSites(owner)).find(row => row.id === a.id)?.ownFlightCount).toBe(2);
     expect((await listFlightsAtSite(owner, a.id)).total).toBe(2);
     expect((await previewFlightsForSite(owner, a.id)).some(row => row.id === both.id || row.id === takeoff.id)).toBe(false);
+  });
+
+  it("browses all public and owned sites without leaking other private or archived sites", async () => {
+    const publicSite = await site({ ownerId: other, visibility: "public" });
+    const own = await site({ lat: null, lon: null });
+    const hidden = await site({ ownerId: other, visibility: "private" });
+    const archived = await site({ visibility: "public", archivedAt: new Date() });
+    expect((await listManagedSites(owner)).map(row => row.id)).not.toContain(publicSite.id);
+    const all = await listManagedSites(owner, true);
+    expect(all).toContainEqual(expect.objectContaining({ id: publicSite.id, inLogbook: false, ownFlightCount: 0, canDelete: false }));
+    expect(all).toContainEqual(expect.objectContaining({ id: own.id, inLogbook: true }));
+    expect(all.map(row => row.id)).not.toEqual(expect.arrayContaining([hidden.id]));
+    expect(all.map(row => row.id)).not.toEqual(expect.arrayContaining([archived.id]));
+  });
+
+  it("centers on the latest uploaded flight's visible site, with GPS fallback for inaccessible sites", async () => {
+    const visible = await site({ visibility: "public", lat: 46, lon: 7 });
+    const hidden = await site({ ownerId: other, visibility: "private", lat: -10, lon: -20 });
+    await flight({ recordingKind: "igc", takeoffSiteId: visible.id, createdAt: new Date("2030-01-01") });
+    await flight({ recordingKind: "logbook", takeoffSiteId: hidden.id, createdAt: new Date("2030-02-01") });
+    await flight({ recordingKind: "igc", ownerId: other, takeoffSiteId: hidden.id, createdAt: new Date("2030-03-01") });
+    expect(await siteMapInitialPoint(owner)).toEqual({ lat: 46, lon: 7 });
+    await flight({ recordingKind: "igc", takeoffSiteId: hidden.id, takeoffLat: 45, takeoffLon: 6, createdAt: new Date("2030-04-01") });
+    expect(await siteMapInitialPoint(owner)).toEqual({ lat: 45, lon: 6 });
   });
 
   it("replaces all linked endpoints beyond a page or selection limit while preserving sites, other pilots and flight evidence", async () => {

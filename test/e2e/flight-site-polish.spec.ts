@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -89,7 +89,7 @@ test("site management separates linked flights from matching names and counts ea
     const linked = await db.flight.create({ data: { ...base, flightDate: new Date("2026-07-11"), takeoffSiteId: site.id, landingSiteId: site.id } });
     const named = await db.flight.create({ data: { ...base, flightDate: new Date("2012-02-11"), takeoffSiteName: site.name, landingSiteName: site.name, takeoffSiteAssignment: "custom_name", landingSiteAssignment: "custom_name", landingLat: site.lat, landingLon: site.lon } });
     const otherLink = await db.flight.create({ data: { ...base, flightDate: new Date("2011-07-17"), takeoffSiteId: different.id, takeoffSiteName: different.name } });
-    await page.goto("/sites");
+    await openSitesPage(page);
     const siteRow = page.getByRole("region", { name: "Sites list", exact: true }).getByRole("button")
       .filter({ hasText: "Ed Levin 1750", has: page.getByLabel("Private", { exact: true }) });
     await expect(siteRow).toBeVisible();
@@ -222,7 +222,7 @@ test("CSV site names use the full editor and keep their identity and flight coor
     expect(mapped).toMatchObject({ takeoffLat: null, takeoffLon: null, notes: "Keep this memory" });
     expect(mapped.takeoffSiteId).toBeTruthy();
     await expect(page.getByText("Site location; takeoff position not recorded.")).toBeVisible();
-    await page.goto("/sites");
+    await openSitesPage(page);
     await page.getByRole("button", { name: "Edit site", exact: true }).click();
     await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("Remembered Hill");
     await dialog.getByRole("button", { name: "Draw or edit boundary" }).click();
