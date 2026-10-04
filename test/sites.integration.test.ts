@@ -240,6 +240,28 @@ describe("sites: read-path firewall", () => {
     delete process.env.ZONES_ENABLED;
   });
 
+  it.each(["web_upload", "device_push"] as const)("persists a confident takeoff match from %s", async source => {
+    const { ingestFlight } = await import("@/lib/ingest/ingest-flight");
+    const { makeIgc } = await import("./igc/make-igc");
+    const owner = await createPilot(`confident-${source}`);
+    const lat = source === "web_upload" ? -42 : -43;
+    const near = await createSite({ lat, lon: -100, visibility: "public", ownerId: owner });
+    await createSite({ lat: lat + 400 / 111_320, lon: -100, visibility: "public", ownerId: owner });
+    // Start 50 m south of the closer pin; move away from both sites.
+    const bytes = Buffer.from(makeIgc({ fixes: Array.from({ length: 20 }, (_, i) => ({
+      tSec: 36000 + i, lat: lat - (50 + i * 10) / 111_320, lon: -100, gps: 500 - i,
+    })) }));
+    const result = await ingestFlight({ ownerId: owner, bytes, source });
+    flightIds.push(result.flightId);
+    const stored = await prisma.flight.findUniqueOrThrow({ where: { id: result.flightId } });
+    expect(stored.status).toBe("ready");
+    expect(stored.takeoffSiteId).toBe(near.id);
+    expect(stored.takeoffSiteAssignment).toBe("auto_matched");
+    expect(stored.takeoffSiteName).toBe(near.name);
+    expect(stored.landingSiteId).toBeNull();
+    expect(stored.takeoffLat).toBeCloseTo(lat - 50 / 111_320, 4);
+  });
+
   // ---------------------------------------------------------------------
   // Matrix: owner / friend / stranger / anonymous × private / public site
   // × flight private / friends / public × takeoff + landing

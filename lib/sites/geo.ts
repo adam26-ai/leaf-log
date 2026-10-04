@@ -397,6 +397,17 @@ export interface RankableSite {
   license?: string | null;
 }
 
+/** Only resolves competing eligible takeoff sites; never expands their geometry. */
+export function hasConfidentNearestTakeoff(
+  ranked: readonly { distanceM: number }[],
+): boolean {
+  const [nearest, runnerUp] = ranked;
+  if (!nearest || !runnerUp) return false;
+  return nearest.distanceM <= 200
+    && runnerUp.distanceM >= nearest.distanceM * 3
+    && runnerUp.distanceM - nearest.distanceM >= 200;
+}
+
 /**
  * Deterministic ordering: nearest first, curated sites break distance ties
  * ahead of user-created ones, `id` breaks any remaining tie. Matters most for

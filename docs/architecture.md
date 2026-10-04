@@ -104,6 +104,15 @@ SPRINT-005, to `Zone` (a specific launch/landing spot *within* a site, e.g.
   "name this site" flow bind within `public ∪ the owner's own private`
   rows, at both levels; display always re-scopes to whoever is actually
   looking.
+- Automatic takeoff matching resolves overlapping eligible sites only when the
+  nearest pin is within 200 m, the runner-up is at least three times farther
+  away, and the distance gap is at least 200 m (all limits inclusive).
+  Eligibility still requires the endpoint kind, visibility, active status, and
+  containment in the site's polygon or default radius. A nearby pin never
+  overrides an excluding polygon. Otherwise overlapping sites need review.
+  This confidence rule applies only when no legacy spot matches; landing and
+  spot conflicts retain their conservative review behavior. Manual suggestions
+  use a wider search and are not the automatic match candidate set.
 - Matching is zone-first at a tighter radius (300 m takeoff / 400 m landing,
   vs. the site radius's 600 m / 900 m) with the site pass **always** running
   as a fallback — whether or not the winning site has zones. A bare site (no
