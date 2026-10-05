@@ -6,7 +6,9 @@ export async function expectCurrentHeaderLink(page: Page, name: string) {
   const current = header.getByRole("link").and(header.locator('[aria-current="page"]'));
   await expect(current).toHaveCount(1);
   await expect(current).toHaveAccessibleName(name);
-  if (name !== "Settings") {
+  if (name === "Leaf Log — your logbook") {
+    await expect(current).toHaveCSS("--tw-ring-color", "#007dcc");
+  } else if (name !== "Settings") {
     await expect(current).toHaveCSS("background-color", "rgb(0, 125, 204)");
     await expect(current).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(current.locator("svg")).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -56,6 +58,17 @@ export async function expectFlightHeaderScrollOrder(page: Page) {
 /** All visible header links fit one row, including Ratings and main-admin tools. */
 export async function expectSingleRowHeader(page: Page) {
   const header = page.getByRole("banner");
+  const logo = header.getByRole("link", { name: "Leaf Log — your logbook", exact: true });
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("href", "/logbook");
+  await expect(logo).toHaveAttribute("title", "Your logbook");
+  await expect(header.locator('a[href="/logbook"]')).toHaveCount(1);
+  const logoBox = (await logo.boundingBox())!;
+  for (const link of await header.getByRole("navigation").getByRole("link").all()) {
+    const box = (await link.boundingBox())!;
+    expect(logoBox.height).toBeGreaterThanOrEqual(box.height);
+    expect(box.x).toBeGreaterThanOrEqual(logoBox.x + logoBox.width);
+  }
   const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
   expect(avatar).not.toBeNull();
   const center = avatar!.y + avatar!.height / 2;
