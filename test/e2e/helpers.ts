@@ -51,7 +51,20 @@ export async function expectReplayDragOwnership(page: Page, origin: "map" | "pro
   await expect(timeline).toHaveAttribute("aria-valuenow", released!);
 }
 
-/** Exactly one header destination marks the current page for sighted and screen-reader users. */
+/** Counts remain readable without changing the navigation link names. */
+export async function expectNavigationCount(page: Page, name: "Feed" | "Friends", count: number) {
+  const link = page.getByRole("banner").getByRole("link", { name, exact: true });
+  const badge = link.getByRole("status");
+  if (count === 0) await expect(badge).toHaveCount(0);
+  else {
+    await expect(badge).toHaveText(count > 99 ? "99+" : String(count));
+    await expect(badge).toHaveCSS("background-color", "rgb(216, 255, 0)");
+    await expect(badge).toHaveCSS("border-top-color", "rgb(0, 125, 204)");
+    await expect(badge).toHaveCSS("color", "rgb(0, 90, 153)");
+  }
+  await expect(link).toHaveAccessibleName(name);
+}
+
 export async function expectCurrentHeaderLink(page: Page, name: string) {
   const header = page.getByRole("banner");
   const current = header.getByRole("link").and(header.locator('[aria-current="page"]'));

@@ -27,6 +27,7 @@ export default async function FeedPage({
   searchParams: Promise<{ cursor?: string | string[] }>;
 }) {
   const profile = await requireProfile();
+  const feedSeenThrough = new Date().toISOString();
   const { cursor } = await searchParams;
   const feed = await listFeedForViewer(profile.id, {
     limit: 20,
@@ -45,7 +46,7 @@ export default async function FeedPage({
 
   return (
     <div className="flex flex-1 flex-col">
-      <AppHeader profile={profile} />
+      <AppHeader profile={profile} feedSeenThrough={feedSeenThrough} />
       <XcPendingRefresh pending={feed.rows.some(f => analysisPending(f.xcStatus))} />
       <main className="mx-auto w-full max-w-4xl flex-1 px-3 py-10 sm:px-6">
         <SectionHeading as="h1">Feed</SectionHeading>

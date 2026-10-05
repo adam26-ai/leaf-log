@@ -73,7 +73,8 @@ model Profile {
   displayName        String
   bio                String?
   // Default visibility applied to newly ingested flights (private | friends | public).
-  defaultVisibility  String        @default("private")
+  defaultVisibility  String        @default("friends")
+  feedLastSeenAt     DateTime?
   defaultUnits       String        @default("metric")
   hiddenWings        String[]      @default([])
   // UI opt-in only; saved wing defaults remain active when controls are hidden.

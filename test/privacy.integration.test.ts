@@ -83,7 +83,6 @@ describe("privacy invariant (app-layer repo)", () => {
               create: {
                 handle: `fdef${suffix}`,
                 displayName: "Friends Default",
-                defaultVisibility: "friends",
               },
             },
           },

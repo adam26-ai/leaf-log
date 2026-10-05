@@ -1,0 +1,1 @@
+ALTER TABLE "Profile" ADD COLUMN "feedLastSeenAt" TIMESTAMP(3);
