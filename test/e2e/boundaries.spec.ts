@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
 import { PrismaClient } from "@prisma/client";
 import { foldName } from "@/lib/sites/name";
+import { boundaryColumns } from "@/lib/sites/boundary";
 
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
 
@@ -85,6 +86,7 @@ async function arrangeBoundFlight(page: Page, siteName: string, buffer: Buffer) 
     } });
   } finally { await db.$disconnect(); }
   await page.goto(`/flights/${flightId}`);
+  return flightId;
 }
 
 /** Standard Web Mercator projection (tile size 512, doubling per zoom) —
@@ -202,18 +204,19 @@ test("draw a boundary from site management without binding the current flight, t
 
   const mapLocator = page.getByTestId("boundary-editor-map");
   await mapLocator.waitFor({ timeout: 10_000 });
+  // Frame the large test boundary explicitly; the taller map opens at a closer zoom.
+  const initialView = await readMapView(page);
+  for (let step = 1; step <= 2; step++) {
+    await page.getByRole("dialog", { name: "Site details" }).getByRole("button", { name: "Zoom out", exact: true }).click();
+    await expect.poll(async () => Number(await mapLocator.getAttribute("data-zoom"))).toBeCloseTo(initialView.zoom - step, 1);
+  }
   const box = await mapLocator.boundingBox();
   if (!box) throw new Error("map container has no bounding box");
   const container = { width: box.width, height: box.height };
   const { zoom, center } = await readMapView(page);
 
-  // A rectangle around the anchor, reaching ~800m EAST — past the SITE's
-  // (not a zone's) 600m takeoff circle. Scaled up from the zone-level
-  // version of this test 2x throughout (300m zone circle -> 600m site
-  // circle), since the editor's own fitBounds zooms out further to frame
-  // the larger reference circle, so proportionally more real-world
-  // distance still fits the same fixed 400x360px map container. Four
-  // corners, tapped in order — the editor auto-closes the ring on save.
+  // A rectangle reaching 800m east, well beyond the 200m takeoff circle.
+  // Four corners, tapped in order; the editor closes the ring on save.
   const halfNorthSouthM = 160;
   const westMarginM = 160;
   const eastReachM = 800;
@@ -235,7 +238,7 @@ test("draw a boundary from site management without binding the current flight, t
   await page.goto(unmatchedFlightUrl);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Site not identified");
 
-  // Flight #3: takeoff ~700m EAST of the anchor — outside the site's 600m
+  // Flight #3: takeoff ~700m EAST of the anchor — outside the site's 200m
   // circle, inside the drawn boundary. Must auto-name with ZERO dialog
   // interaction.
   await page.goto("/upload");
@@ -274,7 +277,16 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
 
   // Reach the existing site's editor through its bound flight.
   const siteName = `E2E Excluded Anchor Ridge ${suffix}`;
-  await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
+  const flightId = await arrangeBoundFlight(page, siteName, remoteFlightIgc(runOffset, anchorLat, anchorLon, 1));
+  const db = new PrismaClient();
+  try {
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: flightId } });
+    const refLat = anchorLat + metersToDegLat(100), refLon = anchorLon - metersToDegLon(120, anchorLat);
+    const ring: [number, number][] = [[refLon - 0.0003, refLat - 0.0003], [refLon + 0.0003, refLat - 0.0003], [refLon + 0.0003, refLat + 0.0003], [refLon - 0.0003, refLat + 0.0003], [refLon - 0.0003, refLat - 0.0003]];
+    await db.site.create({ data: { name: "Green reference field", normalizedName: "green reference field", ownerId: flight.ownerId, visibility: "public", kind: "landing", lat: refLat, lon: refLon,
+      ...boundaryColumns({ v: 1, kind: "polygon", geometry: { type: "Polygon", coordinates: [ring] } }, flight.ownerId),
+      boundary: { v: 1, kind: "polygon", geometry: { type: "Polygon", coordinates: [ring] } } } });
+  } finally { await db.$disconnect(); }
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   // Re-opening the dialog on an already-bound site lands on the read-only
@@ -303,7 +315,7 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   }
 
   await expectVertexCount(page, 3, 5000);
-  await expect(page.getByText(/has to include the site's own location/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible({ timeout: 5_000 });
 
   // The boundary editor's own Save is gone in this embedded context —
   // there's one unified Save (bottom row) covering both the name and any
@@ -311,11 +323,40 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   // validation error rather than silently discarding the invalid draft or
   // saving the name anyway.
   await page.getByRole("button", { name: "Save site", exact: true }).click();
-  await expect(page.getByText(/has to include the site's own location/i)).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible({ timeout: 5_000 });
   // Still on the edit screen — the invalid boundary blocked the whole
   // Save, name included, rather than silently saving the name and
   // discarding the in-progress boundary draft.
   await mapLocator.waitFor({ timeout: 2_000 });
+  // Correct the pin with an actual map gesture: the warning must clear without another Save.
+  await page.getByRole("button", { name: "Place or move pin", exact: true }).click();
+  await clickMap(page, pixelFor(anchorLon + metersToDegLon(250, anchorLat), anchorLat + metersToDegLat(80), center, zoom, container));
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toHaveCount(0);
+  await expect(page.getByText(`${siteName} Site pin & boundary`, { exact: true })).toBeVisible();
+  await expect(page.getByText("Other sites", { exact: true })).toBeVisible();
+  await moveOnMap(page, pixelFor(anchorLon - metersToDegLon(120, anchorLat), anchorLat + metersToDegLat(100), center, zoom, container));
+  await expect(page.getByText("Green reference field", { exact: true })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Site details" });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await dialog.screenshot({ path: "test-results/site-editor-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Pin latitude", { exact: true }).fill(String(anchorLat));
+  await page.getByLabel("Pin longitude", { exact: true }).fill(String(anchorLon));
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible();
+  await dialog.evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await dialog.screenshot({ path: "test-results/site-editor-mobile.png" });
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.getByLabel("Pin latitude", { exact: true }).fill(String(anchorLat + metersToDegLat(80)));
+  await page.getByLabel("Pin longitude", { exact: true }).fill(String(anchorLon + metersToDegLon(250, anchorLat)));
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Save site", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await page.locator("h1 button").click();
+  await page.getByRole("button", { name: "Edit this site" }).click();
+  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toHaveCount(0);
+  await page.getByRole("button", { name: "Draw or edit boundary", exact: true }).click();
+  await expectVertexCount(page, 3);
 });
 
 test("re-opening an already-boundary-bearing site shows the saved shape as a dashed reference, not just the live draft", async ({

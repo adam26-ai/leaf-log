@@ -11,9 +11,10 @@ export function SiteMapControls({ value, onChange }: { value: BasemapId; onChang
   </div>;
 }
 
-export function SiteMapLegend({ flightPoint = false }: { flightPoint?: boolean }) {
+export function SiteMapLegend({ flightPoint = false, siteName, otherSites = false }: { flightPoint?: boolean; siteName?: string; otherSites?: boolean }) {
   return <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-    <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-brand-blue" />Site pin &amp; boundary</span>
+    <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-brand-blue" />{siteName ? `${siteName} ` : ""}Site pin &amp; boundary</span>
+    {otherSites && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-600" />Other sites</span>}
     {flightPoint && <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-ink-soft bg-success-accent" />Flight position</span>}
   </div>;
 }

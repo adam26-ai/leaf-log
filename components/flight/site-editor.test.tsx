@@ -1,10 +1,43 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SiteEditor } from "./site-editor";
+import type { Boundary } from "@/lib/sites/geo";
 vi.mock("./boundary-editor", () => ({ BoundaryEditor: () => null }));
 vi.mock("@/components/logbook/entry-map-search", () => ({ EntryMapSearch: () => null }));
+vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));
 afterEach(cleanup);
 const initial = { name: "Ridge", kind: "both" as const, visibility: "private" as const, lat: 45, lon: 6, boundary: null };
+it("updates the boundary warning as the pin moves inside and outside, including after Save", async () => {
+  const boundary: Boundary = { v: 1, kind: "polygon", geometry: { type: "Polygon", coordinates: [[[5.999, 44.999], [6.001, 44.999], [6.001, 45.001], [5.999, 45.001], [5.999, 44.999]]] } };
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  render(<SiteEditor initial={{ ...initial, id: "ridge", lat: 46, boundary }} onSave={onSave} onCancel={vi.fn()} />);
+  expect(screen.getByRole("alert")).toHaveTextContent("Place the site pin inside the boundary");
+  fireEvent.click(screen.getByRole("button", { name: "Save site" }));
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Pin latitude"), { target: { value: "45" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Pin longitude"), { target: { value: "7" } });
+  expect(screen.getByRole("alert")).toHaveTextContent("Place the site pin inside the boundary");
+  fireEvent.change(screen.getByLabelText("Pin longitude"), { target: { value: "6" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save site" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ lat: 45, lon: 6, boundary })));
+});
+
+it("offers Takeoff and Landing independently and keeps at least one selected", () => {
+  render(<SiteEditor initial={{ ...initial, kind: "takeoff" }} onSave={vi.fn()} onCancel={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: "Create site" })).toBeVisible();
+  const takeoff = screen.getByRole("button", { name: "Takeoff" });
+  const landing = screen.getByRole("button", { name: "Landing" });
+  fireEvent.click(takeoff);
+  expect(takeoff).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(landing);
+  expect(takeoff).toHaveAttribute("aria-pressed", "true");
+  expect(landing).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(takeoff);
+  expect(takeoff).toHaveAttribute("aria-pressed", "false");
+  expect(landing).toHaveAttribute("aria-pressed", "true");
+});
 it("highlights the editing tool and selected visibility", () => {
   render(<SiteEditor initial={initial} onSave={vi.fn()} onCancel={vi.fn()} />);
   const pin = screen.getByRole("button", { name: "Place or move pin" });
@@ -28,9 +61,10 @@ it("explains a visibility restriction only when the pilot tries changing it", ()
 it("keeps the draft visible and shows a returned save conflict", async () => {
   const onSave = vi.fn().mockRejectedValue(new Error("This site changed. Reload its details before saving; your draft has not been saved."));
   render(<SiteEditor initial={{ ...initial, kind: "takeoff" }} onSave={onSave} onCancel={vi.fn()} />);
-  fireEvent.change(screen.getByRole("combobox", { name: "Used for" }), { target: { value: "both" } });
+  fireEvent.click(screen.getByRole("button", { name: "Landing" }));
   fireEvent.click(screen.getByRole("button", { name: "Save site" }));
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This site changed"));
-  expect(screen.getByRole("combobox", { name: "Used for" })).toHaveValue("both");
+  expect(screen.getByRole("button", { name: "Takeoff" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Landing" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Save site" })).toBeEnabled();
 });

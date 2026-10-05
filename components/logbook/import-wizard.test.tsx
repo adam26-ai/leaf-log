@@ -46,3 +46,5 @@ it("accepts a dropped CSV and keeps other duplicate warnings after one row is sk
   expect(screen.getByRole("button", { name: "Keep all" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Discard all" })).toBeInTheDocument();
 });
+
+vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));

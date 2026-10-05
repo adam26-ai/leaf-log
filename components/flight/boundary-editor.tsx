@@ -123,6 +123,9 @@ export interface BoundaryEditorContext {
 export type BoundaryActionOutcome = { ok: true } | { ok: false; error: string };
 
 export interface NearbyContextItem {
+  id?: string;
+  name?: string;
+  boundary?: Boundary | null;
   lat: number;
   lon: number;
   radiusM: number;
@@ -189,6 +192,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   initialBoundary: Boundary | null;
   editingMode?: "boundary" | "anchor";
   onAnchorChange?: (point: { lat: number; lon: number }) => void;
+  onDraftChange?: (boundary: unknown) => void;
+  showValidation?: boolean;
+  siteName?: string;
+  showOtherSites?: boolean;
   flightPoint?: { lat: number; lon: number } | null;
   level: BoundaryLevel;
   /** The circle this boundary would replace, drawn as a dashed reference
@@ -226,6 +233,10 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     initialBoundary,
     editingMode = "boundary",
     onAnchorChange,
+    onDraftChange,
+    showValidation = true,
+    siteName,
+    showOtherSites = false,
     flightPoint,
     level,
     referenceRadiusM,
@@ -246,17 +257,19 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   const [basemap, setBasemap] = useState<BasemapId>(hasMapTiler() ? "satellite" : "monochrome");
   const modeRef = useRef(editingMode);
   const anchorChangeRef = useRef(onAnchorChange);
+  const draftChangeRef = useRef(onDraftChange);
+  const nearbyRef = useRef(nearby);
   const anchorMarkerRef = useRef<maplibregl.Marker | null>(null);
   const vertexMarkersRef = useRef<maplibregl.Marker[]>([]);
   const initialRing: Ring | null = initialBoundary ? { coordinates: initialBoundary.geometry.coordinates[0] } : null;
-  const stateRef = useRef<EditorState>(loadEditor(initialRing));
+  const [editorState, setEditorState] = useState<EditorState>(() => loadEditor(initialRing));
+  const stateRef = useRef<EditorState>(editorState);
   // True once the pilot has actually changed the draft since mount (any
   // add/move/undo/clear) — distinguishes "nothing to save" from "the
   // pre-existing saved boundary happens to already satisfy canSave" so an
   // unrelated outer Save (e.g. renaming) never silently re-submits an
   // untouched boundary and writes a spurious audit entry.
   const dirtyRef = useRef(false);
-  const [, forceRender] = useState(0);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -265,9 +278,23 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
   function setState(next: EditorState) {
     stateRef.current = next;
     dirtyRef.current = true;
-    forceRender((n) => n + 1);
+    setEditorState(next);
     syncDrawing();
+    draftChangeRef.current?.(next.vertices.length ? { type: "Polygon", coordinates: [[...next.vertices, next.vertices[0]]] } : null);
   }
+
+  function syncNearby() {
+    const map = mapRef.current;
+    if (!map?.getSource("nearby-context")) return;
+    const data: Parameters<maplibregl.GeoJSONSource["setData"]>[0] = { type: "FeatureCollection", features: nearbyRef.current.flatMap(site => [
+      { ...ringGeoJson(site.boundary?.geometry.coordinates[0] ?? circleRing(site.lat, site.lon, site.radiusM)), properties: { name: site.name ?? "Other site" } },
+      { type: "Feature" as const, properties: { name: site.name ?? "Other site" }, geometry: { type: "Point" as const, coordinates: [site.lon, site.lat] } },
+    ]) };
+    (map.getSource("nearby-context") as maplibregl.GeoJSONSource).setData(data);
+  }
+
+  useEffect(() => { draftChangeRef.current = onDraftChange; }, [onDraftChange]);
+  useEffect(() => { nearbyRef.current = nearby; syncNearby(); }, [nearby]);
 
   /** Push a ring straight to the draft-boundary source with no React
    *  state update and no marker recreation — used to keep the polygon
@@ -442,7 +469,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
           id: "reference-circle-line",
           type: "line",
           source: "reference-circle",
-          paint: { "line-color": "#8a8a8a", "line-width": 2, "line-dasharray": [2, 2] },
+          paint: { "line-color": "#0099ff", "line-width": 2, "line-dasharray": [2, 2] },
         });
       }
 
@@ -463,21 +490,22 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
         }
       }
 
-      if (nearby.length > 0) {
         map.addSource("nearby-context", {
           type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: nearby.map((n) => ringGeoJson(circleRing(n.lat, n.lon, n.radiusM))),
-          },
+          data: { type: "FeatureCollection", features: [] },
         });
+        map.addLayer({ id: "nearby-context-fill", type: "fill", source: "nearby-context", filter: ["==", "$type", "Polygon"],
+          paint: { "fill-color": "#16a34a", "fill-opacity": 0.08 } });
         map.addLayer({
           id: "nearby-context-line",
           type: "line",
           source: "nearby-context",
-          paint: { "line-color": "#b0b0b0", "line-width": 1, "line-dasharray": [1, 3] },
+          filter: ["==", "$type", "Polygon"],
+          paint: { "line-color": "#16a34a", "line-width": 2, "line-dasharray": [2, 2] },
         });
-      }
+        map.addLayer({ id: "nearby-context-pins", type: "circle", source: "nearby-context", filter: ["==", "$type", "Point"],
+          paint: { "circle-color": "#16a34a", "circle-radius": 5, "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 } });
+        syncNearby();
 
       map.addSource("draft-boundary", { type: "geojson", data: ringGeoJson([]) });
       map.addLayer({
@@ -514,6 +542,13 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
         if (bounds) map.fitBounds(bounds, { padding: 56, duration: 0, maxZoom: 17 });
       }
     });
+
+    const referencePopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 8 });
+    map.on("mousemove", "nearby-context-pins", event => {
+      const feature = event.features?.[0];
+      if (feature?.geometry.type === "Point") referencePopup.setLngLat(feature.geometry.coordinates as LngLat).setText(String(feature.properties?.name ?? "Other site")).addTo(map);
+    });
+    map.on("mouseleave", "nearby-context-pins", () => referencePopup.remove());
 
     // A click/drag landing near an existing edge inserts a new vertex right
     // there instead of appending to the end of the list — the vertex only
@@ -585,6 +620,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
       for (const m of vertexMarkersRef.current) m.remove();
       vertexMarkersRef.current = [];
       observer.disconnect();
+      referencePopup.remove();
       map.remove();
       anchorMarkerRef.current = null;
       mapRef.current = null;
@@ -592,8 +628,8 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const live = liveValidate(stateRef.current, level, anchor);
-  const canSave = stateRef.current.vertices.length >= 3 && live.result === null;
+  const live = liveValidate(editorState, level, anchor);
+  const canSave = editorState.vertices.length >= 3 && live.result === null;
   const errorCopy = live.result && !live.result.ok ? ERROR_COPY[live.result.error] ?? "That shape isn't valid." : null;
 
   async function commitDraft(): Promise<BoundaryActionOutcome> {
@@ -644,7 +680,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
     }
   }
 
-  const hasVertices = stateRef.current.vertices.length > 0;
+  const hasVertices = editorState.vertices.length > 0;
 
   return (
     <div className={`flex shrink-0 flex-col ${compact ? "gap-1.5" : "gap-3"}`}>
@@ -653,7 +689,7 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
         <div
           ref={containerRef}
           data-testid="boundary-editor-map"
-          className={`${compact ? "h-[clamp(180px,32dvh,320px)]" : "h-[clamp(260px,45vh,520px)]"} w-full rounded-lg`}
+          className={`${compact ? "h-[clamp(288px,51.2dvh,512px)]" : "h-[clamp(260px,45vh,520px)]"} w-full rounded-lg`}
         />
         {/* On-map control stack, right below MapLibre's own zoom buttons
          *  (top-right) — icons instead of the old below-map text row, which
@@ -708,14 +744,14 @@ export const BoundaryEditor = forwardRef<BoundaryEditorHandle, {
           )}
         </div>}
       </div>
-      <SiteMapLegend flightPoint={Boolean(flightPoint)} />
+      <SiteMapLegend flightPoint={Boolean(flightPoint)} siteName={siteName} otherSites={showOtherSites || nearby.length > 0} />
       {initialBoundary && (
         <p className="text-xs text-neutral-500">
           <span className="inline-block h-0 w-3 border-t-2 border-dashed border-[#3b7dd8] align-middle" /> dashed blue
           — the currently saved boundary
         </p>
       )}
-      {editingMode === "boundary" && errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
+      {showValidation && editingMode === "boundary" && errorCopy && <p className="text-sm font-medium text-red-600">{errorCopy}</p>}
       {actionError && <p className="text-sm text-red-600">{actionError}</p>}
       {showCancel && (
         <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={saving} className="self-start">

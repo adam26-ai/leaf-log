@@ -39,3 +39,5 @@ it("keeps explicit solo intent across other field edits before uploading", async
   expect(upload.getAll("flightFlags")).toEqual(["siv"]);
   expect(upload.get("tandemOverride")).toBe("false");
 });
+
+vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));

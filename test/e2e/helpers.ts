@@ -137,9 +137,22 @@ export async function setSiteVisibility(editor: Locator, visibility: "private" |
 }
 
 export async function setSiteKind(editor: Locator, kind: "takeoff" | "landing" | "both") {
-  const choice = kind === "both" ? "Takeoff and landing" : kind === "takeoff" ? "Takeoff" : "Landing";
-  await editor.getByRole("combobox", { name: "Used for", exact: true }).selectOption({ label: choice });
-  await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue(kind);
+  const group = editor.getByRole("group", { name: "Used for", exact: true });
+  // Select wanted uses before deselecting others: at least one must remain on.
+  for (const selected of [true, false]) for (const use of ["takeoff", "landing"] as const) {
+    const wanted = kind === "both" || kind === use;
+    const button = group.getByRole("button", { name: use === "takeoff" ? "Takeoff" : "Landing", exact: true });
+    if (wanted === selected && await button.getAttribute("aria-pressed") !== String(wanted)) await button.click();
+  }
+  expect(await readSiteKind(editor)).toBe(kind);
+}
+
+export async function readSiteKind(editor: Locator) {
+  const group = editor.getByRole("group", { name: "Used for", exact: true });
+  const takeoff = await group.getByRole("button", { name: "Takeoff", exact: true }).getAttribute("aria-pressed") === "true";
+  const landing = await group.getByRole("button", { name: "Landing", exact: true }).getAttribute("aria-pressed") === "true";
+  expect(takeoff || landing).toBe(true);
+  return takeoff && landing ? "both" : takeoff ? "takeoff" : "landing";
 }
 
 /** When a replay map exists, wait for its first rendered frame before
@@ -162,6 +175,7 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
   const { dialog, name } = await openSiteChooser(page);
   await name.fill(siteName);
   await dialog.getByRole("button", { name: "Create site", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Create site", exact: true })).toBeVisible();
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
   await expectSiteVisibility(dialog, "private");
   if (visibility === "public") await setSiteVisibility(dialog, "public");

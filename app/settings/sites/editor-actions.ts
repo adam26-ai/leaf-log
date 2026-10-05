@@ -8,7 +8,7 @@ import { siteVisibleWhere } from "@/lib/sites/repo";
 import { locationCachePatch, resolveLocationCache } from "@/lib/sites/associate";
 import { flightSiteRevision, saveSiteDraft, SiteEditorExpectedError } from "@/lib/sites/editor";
 import { hasSitePoint, newSiteDraft, siteDraftSchema, type SiteEditorValue } from "@/lib/sites/model";
-import { isValidBoundaryShape } from "@/lib/sites/geo";
+import { isValidBoundaryShape, radiusForKind } from "@/lib/sites/geo";
 import { lockFlightRow } from "@/lib/sites/locks";
 
 const contextSchema = z.object({ siteId: z.string().max(100).optional(), flightId: z.string().max(100).optional(),
@@ -23,6 +23,20 @@ async function requireOwner() {
 export type SiteEditorSaveResult =
   | { ok: true; value: { id: string; name: string; updatedAt: string } }
   | { ok: false; error: string };
+
+/** Reference geometry only; the editor must never receive another pilot's private sites. */
+export async function getSiteMapReferencesAction() {
+  const ownerId = await requireOwner();
+  const sites = await prisma.site.findMany({
+    where: { ...siteVisibleWhere(ownerId), archivedAt: null, lat: { not: null }, lon: { not: null } },
+    select: { id: true, name: true, lat: true, lon: true, kind: true, boundary: true },
+  });
+  return sites.filter(hasSitePoint).map(site => ({
+    id: site.id, name: site.name, lat: site.lat, lon: site.lon,
+    radiusM: radiusForKind(site.kind === "landing" ? "landing" : "takeoff"),
+    boundary: isValidBoundaryShape(site.boundary) ? site.boundary : null,
+  }));
+}
 export async function getSiteEditorAction(value: SiteEditorContext) {
   const ownerId = await requireOwner();
   const context = contextSchema.parse(value);
