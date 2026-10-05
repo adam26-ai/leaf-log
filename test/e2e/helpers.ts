@@ -1,5 +1,18 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Exactly one header destination marks the current page for sighted and screen-reader users. */
+export async function expectCurrentHeaderLink(page: Page, name: string) {
+  const header = page.getByRole("banner");
+  const current = header.getByRole("link").and(header.locator('[aria-current="page"]'));
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAccessibleName(name);
+  if (name !== "Settings") {
+    await expect(current).toHaveCSS("background-color", "rgb(0, 125, 204)");
+    await expect(current).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(current.locator("svg")).toHaveCSS("color", "rgb(255, 255, 255)");
+  }
+}
+
 /** Flight controls scroll behind the sticky navigation, then return below it. */
 export async function expectFlightHeaderScrollOrder(page: Page) {
   const banner = page.getByRole("banner");
@@ -81,6 +94,7 @@ export async function expectResponsiveLegend(page: Page) {
 
 /** Settings cards load collapsed so the page stays compact. */
 export async function openSettingsCard(page: Page, title: string) {
+  await expectCurrentHeaderLink(page, "Settings");
   await expect(page.getByRole("banner").getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("href", "/settings");
   const expand = page.getByRole("button", { name: `Expand ${title} settings`, exact: true });
   await expect(expand).toBeVisible();
@@ -122,6 +136,7 @@ export async function waitForMapReady(map: Locator) {
 /** Site management always displays one shared overview map. */
 export async function openSitesPage(page: Page) {
   await page.goto("/sites");
+  await expectCurrentHeaderLink(page, "Sites");
   await expect(page.getByTestId("site-area-map")).toHaveCount(0);
   await expect(page.getByTestId("site-browser-map")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Site map", exact: true })).toHaveCount(0);

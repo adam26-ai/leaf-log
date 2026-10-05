@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "./fixtures";
-import { expectSingleRowHeader, openSitesPage } from "./helpers";
+import { expectCurrentHeaderLink, expectSingleRowHeader, openSitesPage } from "./helpers";
 import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
@@ -24,11 +24,13 @@ test("main admin can search, grant, revoke, re-enable and separately remove admi
   const pilot = await db.user.create({ data: { email: "grantpilot@test.local", profile: { create: { handle: "grantpilot", displayName: "Grant Pilot" } } } });
   try {
     await signIn(page, "leafvario@gmail.com");
+    await expectCurrentHeaderLink(page, "Logbook");
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Admin", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
     for (const width of [320, 360, 480, 640, 1024, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await expectSingleRowHeader(page);
+      await expectCurrentHeaderLink(page, "Admin");
     }
     await page.getByRole("searchbox", { name: "Search users" }).fill("grantpilot");
     await page.getByRole("button", { name: "Search", exact: true }).click();
