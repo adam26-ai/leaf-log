@@ -3,11 +3,23 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Flight } from "@prisma/client";
 import { FlightHeader } from "./flight-header";
 
-vi.mock("./name-site-dialog", () => ({ SiteNameControl: ({ as, initialSiteName, endpoint }: { as?: string; initialSiteName: string; endpoint: string }) => as === "h1" ? <h1><button data-endpoint={endpoint}>{initialSiteName ?? "Site not recorded"}</button></h1> : <button data-endpoint={endpoint}>{initialSiteName}</button> }));
+vi.mock("./name-site-dialog", () => ({ SiteNameControl: ({ as, initialSiteName, endpoint, needsReview }: { as?: string; initialSiteName: string; endpoint: string; needsReview: boolean }) => as === "h1" ? <h1><button data-endpoint={endpoint}>{initialSiteName ?? "Site not recorded"}</button></h1> : <button data-endpoint={endpoint}>{initialSiteName ?? (needsReview ? "Choose site" : "Site not recorded")}</button> }));
 vi.mock("./replay-trophies", () => ({ ReplayTrophies: () => <span data-testid="trophies" /> }));
 vi.mock("./type-flags", () => ({ FlightTypeBadges: () => null }));
 afterEach(cleanup);
 const flight = { id: "flight", flightDate: new Date("2026-08-01"), takeoffSiteName: "Main Ridge", takeoffSiteId: "main", landingSiteName: "Valley Field", landingSiteId: null, landingLat: null, landingLon: null } as Flight;
+
+it("exposes an unresolved landing next to a named takeoff", () => {
+  render(<FlightHeader flight={{ ...flight, landingSiteName: null, landingSiteAssignment: "needs_review" }} isOwner previousFlightId={null} nextFlightId={null} actions={null} />);
+  expect(screen.getByRole("button", { name: "Choose site" })).toHaveAttribute("data-endpoint", "landing");
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Main Ridge");
+});
+
+it("keeps an unnamed landing without a review request hidden", () => {
+  render(<FlightHeader flight={{ ...flight, landingSiteName: null, landingSiteAssignment: "unassigned" }} isOwner previousFlightId={null} nextFlightId={null} actions={null} />);
+  expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
+  expect(screen.queryByText("Site not recorded")).not.toBeInTheDocument();
+});
 
 it("keeps the site control mounted when a server refresh updates its name", () => {
   const { rerender } = render(<FlightHeader flight={flight} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);

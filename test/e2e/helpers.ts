@@ -144,10 +144,13 @@ export async function setSiteKind(editor: Locator, kind: "takeoff" | "landing" |
 
 /** When a replay map exists, wait for its first rendered frame before
  * interacting with the site header. Manual flights have no replay map. */
-export async function openSiteChooser(page: Page) {
+export async function openSiteChooser(page: Page, endpoint: "primary" | "landing" = "primary") {
   const replayMap = page.locator(".flight-replay-map");
   if (await replayMap.count()) await waitForMapReady(replayMap);
-  await page.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const control = endpoint === "landing"
+    ? page.getByRole("button", { name: "Choose site", exact: true }).and(page.locator("span > button"))
+    : page.getByRole("heading", { level: 1 }).getByRole("button");
+  await control.click();
   const dialog = page.getByRole("dialog", { name: "Site details" });
   const name = dialog.getByPlaceholder("e.g. Sonoma Ridge");
   await expect(name).toBeVisible({ timeout: 15_000 });

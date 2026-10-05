@@ -27,12 +27,15 @@ describe("confident nearest takeoff", () => {
   it.each([
     [134, 1474, true],
     [200, 600, true], // inclusive radius and ratio
-    [100, 300, true], // inclusive margin and ratio
+    [100, 300, true], // inclusive ratio
     [201, 1000, false], // not close enough
-    [150, 449, false], // margin passes, ratio fails
-    [50, 249, false], // ratio passes, margin fails
+    [150, 449, false], // ratio fails
+    [50, 150, true], // no minimum distance gap
+    [50, 149, false],
+    [50, 249, true],
     [0, 200, true],
-    [0, 199, false],
+    [0, 199, true],
+    [0, 1, true],
     [0, 0, false], // duplicate pins are ambiguous
     [100, 100, false],
   ])("distances %s m and %s m: %s", (first, second, expected) => {
@@ -376,12 +379,10 @@ describe("radiusForKind / kindMatches", () => {
   });
 });
 
-describe("zoneRadiusForKind — tighter than the site radius, same asymmetry", () => {
-  it("returns roughly half the site radius for each kind", () => {
+describe("zoneRadiusForKind — independent legacy defaults", () => {
+  it("returns the legacy zone radius for each kind", () => {
     expect(zoneRadiusForKind("takeoff")).toBe(ZONE_TAKEOFF_RADIUS_M);
     expect(zoneRadiusForKind("landing")).toBe(ZONE_LANDING_RADIUS_M);
-    expect(ZONE_TAKEOFF_RADIUS_M).toBeLessThan(TAKEOFF_RADIUS_M);
-    expect(ZONE_LANDING_RADIUS_M).toBeLessThan(LANDING_RADIUS_M);
   });
 
   it("preserves the takeoff/landing asymmetry at the zone level", () => {
@@ -423,7 +424,7 @@ describe("withinRadius — radius boundaries", () => {
   });
 
   it("attaches the same distance withinRadius computes to what haversineM reports directly", () => {
-    const p = { id: "p", ...pointNorth(300) };
+    const p = { id: "p", ...pointNorth(100) };
     const [result] = withinRadius([p], origin.lat, origin.lon, TAKEOFF_RADIUS_M);
     const direct = haversineM(origin.lat, origin.lon, p.lat, p.lon);
     expect(result.distanceM).toBeCloseTo(direct, 6);
@@ -453,13 +454,10 @@ describe("withinRadius — radius boundaries", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("a point between the zone and site radius is excluded from the zone radius but included in the site radius", () => {
-    // Demonstrates the zone-vs-site radius interaction directly: the same
-    // point is a zone-miss and a site-hit, which is exactly the "no dead
-    // ends" fallback lib/sites/lookup.ts's findLocation relies on.
+  it("legacy zones can reach beyond the reduced takeoff site circle", () => {
     const p = { id: "between", ...pointNorth((ZONE_TAKEOFF_RADIUS_M + TAKEOFF_RADIUS_M) / 2) };
-    expect(withinRadius([p], origin.lat, origin.lon, ZONE_TAKEOFF_RADIUS_M)).toHaveLength(0);
-    expect(withinRadius([p], origin.lat, origin.lon, TAKEOFF_RADIUS_M).map((r) => r.id)).toEqual(["between"]);
+    expect(withinRadius([p], origin.lat, origin.lon, ZONE_TAKEOFF_RADIUS_M).map((r) => r.id)).toEqual(["between"]);
+    expect(withinRadius([p], origin.lat, origin.lon, TAKEOFF_RADIUS_M)).toHaveLength(0);
   });
 });
 

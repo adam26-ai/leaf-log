@@ -68,9 +68,12 @@ export function FlightHeader({
   const primaryEndpoint = !flight.takeoffSiteName && flight.landingSiteName ? "landing" : "takeoff";
   const primaryLat = flight[`${primaryEndpoint}Lat`];
   const primaryLon = flight[`${primaryEndpoint}Lon`];
-  const showLanding = primaryEndpoint === "takeoff" && Boolean(flight.landingSiteName) && (
-    flight.landingSiteId !== flight.takeoffSiteId ||
-    flight.landingSiteName !== flight.takeoffSiteName
+  const showLanding = primaryEndpoint === "takeoff" && (
+    flight.landingSiteAssignment === "needs_review" ||
+    Boolean(flight.landingSiteName) && (
+      flight.landingSiteId !== flight.takeoffSiteId ||
+      flight.landingSiteName !== flight.takeoffSiteName
+    )
   );
   // SPRINT-008: a client component can't read process.env directly — the
   // gate's value is computed here (server-side) and threaded down as a

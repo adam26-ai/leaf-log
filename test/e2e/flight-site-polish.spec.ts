@@ -164,6 +164,30 @@ test("site management separates linked flights from matching names and counts ea
   } finally { await db.$disconnect(); }
 });
 
+test("an unresolved landing can be chosen independently and survives reload", async ({ page, newContext }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const site = await db.site.create({ data: { name: "Review landing field", normalizedName: "review landing field", lat: -35, lon: -140, kind: "landing", visibility: "public", source: "user", ownerId: owner.id } });
+    const flight = await db.flight.create({ data: { ownerId: owner.id, status: "ready", visibility: "public", recordingKind: "logbook", source: "manual", flightDate: new Date("2024-07-13"), durationS: 900, takeoffSiteName: "Named launch", landingLat: site.lat, landingLon: site.lon, landingSiteAssignment: "needs_review" } });
+    const visitor = await newContext();
+    const visitorPage = await visitor.newPage();
+    await visitorPage.goto(`/flights/${flight.id}`);
+    await expect(visitorPage.getByText("Choose site", { exact: true })).toBeVisible();
+    await expect(visitorPage.getByRole("button", { name: "Choose site", exact: true })).toHaveCount(0);
+    await page.goto(`/flights/${flight.id}`);
+    const { dialog } = await openSiteChooser(page, "landing");
+    await dialog.getByRole("listitem").filter({ hasText: site.name }).getByRole("button", { name: "Use this site", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: site.name, exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: site.name, exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Named launch");
+    expect(await db.flight.findUniqueOrThrow({ where: { id: flight.id } })).toMatchObject({ landingSiteId: site.id, landingSiteAssignment: "user_selected", takeoffSiteName: "Named launch", takeoffSiteId: null });
+  } finally { await db.$disconnect(); }
+});
+
 test("site naming waits for delayed details before enabling the form", async ({ page }) => {
   const handle = await signUp(page);
   const db = new PrismaClient();
