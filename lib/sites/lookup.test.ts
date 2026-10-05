@@ -10,6 +10,7 @@ config({ path: ".env.local" });
 import { findLocation, findLocationDecision } from "./lookup";
 import { validateBoundary, boundaryColumns } from "./boundary";
 import edLevin from "@/test/fixtures/sites/ed-levin.json";
+import edLevinLanding from "@/test/fixtures/sites/ed-levin-landing.json";
 import { kindMatches, locationMatches } from "./geo";
 
 if (!process.env.DATABASE_URL) {
@@ -608,12 +609,12 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(ownerMatch?.zone).toBeNull();
   });
 
-  it("[gate-on legacy] overlapping sites and zones are ambiguous instead of silently choosing one", async () => {
+  it.each(["takeoff", "landing"] as const)("[gate-on legacy] overlapping sites and zones stay ambiguous for %s", async kind => {
     process.env.ZONES_ENABLED = "true";
     const nearSite = await createSite({
       lat: -65,
       lon: -65,
-      kind: "takeoff",
+      kind,
       visibility: "public",
       ownerId: null,
     });
@@ -622,7 +623,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       // centre, but this test queries from nearSite's centre.
       lat: -65,
       lon: -65 + 290 / (111_320 * Math.cos((-65 * Math.PI) / 180)),
-      kind: "takeoff",
+      kind,
       visibility: "public",
       ownerId: null,
     });
@@ -630,7 +631,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       siteId: farSite.id,
       lat: farSite.lat,
       lon: farSite.lon,
-      kind: "takeoff",
+      kind,
       visibility: "public",
       ownerId: null,
     });
@@ -640,7 +641,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     const decision = await findLocationDecision(prisma, {
       lat: -65 + 50 / 111_320,
       lon: -65,
-      kind: "takeoff",
+      kind,
       viewerId: null,
     });
     expect(decision).toEqual({ match: null, ambiguous: true });
@@ -783,30 +784,67 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(decision.match?.site.distanceM).toBeCloseTo(134, 0);
   });
 
-  it.each(["takeoff", "landing"] as const)("resolves dominant circle pins only for takeoff (%s)", async kind => {
+  it.each(["takeoff", "landing"] as const)("resolves dominant circle pins for %s", async kind => {
     await createSite({ lat: 39, lon: 39, kind: "both", visibility: "public", ownerId: null });
     const near = await createSite({ lat: 39 + 100 / 111_320, lon: 39, kind: "both", visibility: "public", ownerId: null });
     const decision = await findLocationDecision(prisma, {
       lat: 39 + 140 / 111_320, lon: 39, kind, viewerId: null,
     });
-    if (kind === "takeoff") {
-      expect(decision.ambiguous).toBe(false);
-      expect(decision.match?.site.id).toBe(near.id);
-    } else expect(decision).toEqual({ match: null, ambiguous: true });
+    expect(decision.ambiguous).toBe(false);
+    expect(decision.match?.site.id).toBe(near.id);
   });
 
-  it.each(["boundary", "private", "landing", "archived"] as const)(
-    "does not resolve competing sites using an ineligible nearby pin (%s)", async exclusion => {
-      const owner = await createPilot(`confident-${exclusion}`);
+  it.each((["takeoff", "landing"] as const).flatMap(kind =>
+    (["boundary", "private", "wrong kind", "archived"] as const).map(exclusion => ({ kind, exclusion }))))(
+    "$kind does not resolve competing sites using an ineligible nearby pin ($exclusion)", async ({ kind, exclusion }) => {
+      const owner = await createPilot(`tie-${kind[0]}`);
       const point = { lat: 41, lon: 41 };
       const near = await createSite({ lat: 41 + 50 / 111_320, lon: 41,
-        kind: exclusion === "landing" ? "landing" : "takeoff",
+        kind: exclusion === "wrong kind" ? (kind === "takeoff" ? "landing" : "takeoff") : kind,
         visibility: exclusion === "private" ? "private" : "public", ownerId: owner,
         boundaryHalfSizeM: exclusion === "boundary" ? 10 : undefined });
       if (exclusion === "archived") await prisma.site.update({ where: { id: near.id }, data: { archivedAt: new Date() } });
       for (const meters of [150, 180]) await createSite({ lat: 41 + meters / 111_320, lon: 41,
-        kind: "takeoff", visibility: "public", ownerId: null });
-      expect(await findLocationDecision(prisma, { ...point, kind: "takeoff", viewerId: null }))
+        kind, visibility: "public", ownerId: null });
+      expect(await findLocationDecision(prisma, { ...point, kind, viewerId: null }))
+        .toEqual({ match: null, ambiguous: true });
+    },
+  );
+
+  it("selects Ed Levin LZ for the recorded landing inside both the LZ and broad Ed Levin boundaries", async () => {
+    const owner = await createPilot("landing-edlevin");
+    const sites = [];
+    for (const definition of edLevinLanding.sites) {
+      const validated = validateBoundary(definition.boundary, "site", definition);
+      if (!validated.ok) throw new Error(`Ed Levin landing fixture: ${validated.error}`);
+      const site = await prisma.site.create({ data: {
+        name: definition.name, normalizedName: definition.name.toLowerCase(),
+        lat: definition.lat, lon: definition.lon, kind: definition.kind,
+        visibility: "public", ownerId: owner, source: "user",
+        ...boundaryColumns(validated.boundary, owner), boundary: validated.boundary,
+      } });
+      siteIds.push(site.id);
+      sites.push(site);
+    }
+    const point = edLevinLanding.landing;
+    const eligible = sites.filter(site => kindMatches(site.kind, "landing")
+      && locationMatches(site, point.lat, point.lon, 400).matched);
+    expect(eligible.map(site => site.name).sort()).toEqual(["Ed Levin", "Ed Levin LZ"]);
+    const decision = await findLocationDecision(prisma, { ...point, kind: "landing", viewerId: owner });
+    expect(decision.ambiguous).toBe(false);
+    expect(decision.match?.site.id).toBe(sites.find(site => site.name === "Ed Levin LZ")!.id);
+    expect(decision.match?.site.distanceM).toBeCloseTo(31.78, 1);
+  });
+
+  it.each([[150, 350], [250, 1000], [0, 0]])(
+    "keeps overlapping landing boundaries ambiguous when pins at %s / %s m lack a confident winner",
+    async (nearM, farM) => {
+      const owner = await createPilot("landing-ambiguous");
+      for (const meters of [nearM, farM]) await createSite({
+        lat: 43 + meters / 111_320, lon: 43, kind: "landing", visibility: "public", ownerId: owner,
+        boundaryHalfSizeM: 1500,
+      });
+      expect(await findLocationDecision(prisma, { lat: 43, lon: 43, kind: "landing", viewerId: null }))
         .toEqual({ match: null, ambiguous: true });
     },
   );

@@ -6,7 +6,7 @@ import {
   zoneRadiusForKind,
   boundingBox,
   compareSiteCandidates,
-  hasConfidentNearestTakeoff,
+  hasConfidentNearestSite,
   kindMatches,
   locationMatches,
   isValidBoundaryShape,
@@ -299,12 +299,12 @@ export async function findLocationDecision(
     ...zoneRanked.map((zone) => zone.siteId),
   ]);
 
-  // A clearly dominant nearby takeoff pin can resolve overlapping sites.
+  // A clearly dominant nearby site pin can resolve overlapping sites.
   // All candidates have already passed geometry, kind and visibility checks.
-  // Keep landings and legacy spot conflicts conservative: a site's anchor
+  // Keep legacy spot conflicts conservative: a site's anchor
   // is not a substitute for the position of its matching spot.
   if (distinctSiteIds.size > 1 || zoneRanked.length > 1) {
-    if (kind === "takeoff" && zoneRanked.length === 0 && hasConfidentNearestTakeoff(siteRanked)) {
+    if (zoneRanked.length === 0 && hasConfidentNearestSite(siteRanked)) {
       return {
         match: { site: toSiteMatch(siteRanked[0], siteRanked[0].distanceM), zone: null },
         ambiguous: false,
