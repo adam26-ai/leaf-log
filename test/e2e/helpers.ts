@@ -1,5 +1,56 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** A held mouse crossing between the map and profile keeps its original owner. */
+export async function expectReplayDragOwnership(page: Page, origin: "map" | "profile") {
+  const map = page.locator(".flight-replay-map");
+  await waitForMapReady(map);
+  // The fixture seeds the saved preference before navigation, avoiding camera
+  // menu setup and Follow-camera terrain loading during the drag assertions.
+  await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
+  const profile = page.getByTestId("flight-profile");
+  const timeline = page.getByRole("slider", { name: "Flight playback time" });
+  // Scroll directly: Playwright's stability wait can contend with software WebGL
+  // rendering even though the chart's final position is already usable.
+  await profile.evaluate(element => element.scrollIntoView({ block: "end", behavior: "instant" }));
+  await timeline.focus();
+  await timeline.press("Home");
+  await expect(timeline).toHaveAttribute("aria-valuenow", "0");
+  const chart = (await profile.boundingBox())!;
+  const canvas = (await map.locator("canvas").first().boundingBox())!;
+  const mapY = Math.max(canvas.y, 80) + 30;
+  const left = chart.x + chart.width * 0.35;
+  const right = chart.x + chart.width * 0.75;
+  const chartY = chart.y + chart.height / 2;
+
+  if (origin === "map") {
+    await page.mouse.move(left, mapY);
+    await page.mouse.down();
+    try {
+      // Real pointer events on each side of the boundary are sufficient; eight
+      // intermediate rendered frames needlessly exhaust the CI test budget.
+      await page.mouse.move(right, chartY);
+      await expect(timeline).toHaveAttribute("aria-valuenow", "0");
+    } finally {
+      await page.mouse.up();
+    }
+    return;
+  }
+
+  await page.mouse.move(left, chartY);
+  await page.mouse.down();
+  try {
+    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    const start = Number(await timeline.getAttribute("aria-valuenow"));
+    await page.mouse.move(right, mapY);
+    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
+  } finally {
+    await page.mouse.up();
+  }
+  const released = await timeline.getAttribute("aria-valuenow");
+  await page.mouse.move(left, chartY);
+  await expect(timeline).toHaveAttribute("aria-valuenow", released!);
+}
+
 /** Exactly one header destination marks the current page for sighted and screen-reader users. */
 export async function expectCurrentHeaderLink(page: Page, name: string) {
   const header = page.getByRole("banner");

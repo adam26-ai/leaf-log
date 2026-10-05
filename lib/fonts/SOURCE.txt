@@ -1,0 +1,11 @@
+Google Fonts commit: 9710da1eacb3be272583c3224dcb70f9da6eadbb
+
+Unmodified variable TrueType fonts from https://github.com/google/fonts
+at the commit above, renamed locally for simple import paths:
+
+Roboto.ttf: ofl/roboto/Roboto[wdth,wght].ttf
+RobotoCondensed.ttf: ofl/robotocondensed/RobotoCondensed[wght].ttf
+RobotoMono.ttf: ofl/robotomono/RobotoMono[wght].ttf
+
+Each family is distributed under its adjacent *-OFL.txt license.
+The files include the upstream character coverage and variable weight axes.

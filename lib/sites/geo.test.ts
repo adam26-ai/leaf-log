@@ -11,7 +11,7 @@ import {
   boundingBox,
   withinRadius,
   compareSiteCandidates,
-  hasConfidentNearestTakeoff,
+  hasConfidentNearestSite,
   boundaryContains,
   pointOnRingEdge,
   boundaryBoundingBox,
@@ -23,7 +23,7 @@ import {
   type Ring,
 } from "./geo";
 
-describe("confident nearest takeoff", () => {
+describe("confident nearest site", () => {
   it.each([
     [134, 1474, true],
     [200, 600, true], // inclusive radius and ratio
@@ -39,12 +39,12 @@ describe("confident nearest takeoff", () => {
     [0, 0, false], // duplicate pins are ambiguous
     [100, 100, false],
   ])("distances %s m and %s m: %s", (first, second, expected) => {
-    expect(hasConfidentNearestTakeoff([{ distanceM: first }, { distanceM: second }])).toBe(expected);
+    expect(hasConfidentNearestSite([{ distanceM: first }, { distanceM: second }])).toBe(expected);
   });
 
   it("does not decide empty or single-candidate lookups", () => {
-    expect(hasConfidentNearestTakeoff([])).toBe(false);
-    expect(hasConfidentNearestTakeoff([{ distanceM: 100 }])).toBe(false);
+    expect(hasConfidentNearestSite([])).toBe(false);
+    expect(hasConfidentNearestSite([{ distanceM: 100 }])).toBe(false);
   });
 });
 

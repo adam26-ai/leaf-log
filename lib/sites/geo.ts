@@ -388,8 +388,8 @@ export interface RankableSite {
   license?: string | null;
 }
 
-/** Only resolves competing eligible takeoff sites; never expands their geometry. */
-export function hasConfidentNearestTakeoff(
+/** Only resolves competing eligible sites; never expands their geometry. */
+export function hasConfidentNearestSite(
   ranked: readonly { distanceM: number }[],
 ): boolean {
   const [nearest, runnerUp] = ranked;

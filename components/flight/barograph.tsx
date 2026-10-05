@@ -285,6 +285,7 @@ export function Barograph({
 
   return (
     <div
+      data-testid="flight-profile"
       className="relative h-[165px] w-full cursor-ew-resize select-none [&_.recharts-wrapper]:outline-none [&_.recharts-wrapper_*]:outline-none"
       onPointerDown={(event) => {
         if (event.button !== 0) return;
@@ -293,7 +294,10 @@ export function Barograph({
         scrubFromPointer(event);
       }}
       onPointerMove={(event) => {
-        if ((event.buttons & 1) !== 0) scrubFromPointer(event);
+        // Only continue gestures that began here, not map drags crossing the chart.
+        if (event.currentTarget.hasPointerCapture(event.pointerId) && (event.buttons & 1) !== 0) {
+          scrubFromPointer(event);
+        }
       }}
     >
       <div

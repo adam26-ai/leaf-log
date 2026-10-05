@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectFlightHeaderScrollOrder, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
+import { expectFlightHeaderScrollOrder, expectReplayDragOwnership, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -48,7 +48,7 @@ async function signUp(page: Page) {
 
 /** Renderer tests arrange a real uploaded public flight without replaying the
  * upload/share UI journey or mounting an unrelated owner's replay map. */
-async function arrangePublicFlight(page: Page) {
+async function arrangePublicFlight(page: Page, fixedCamera = false) {
   await signUp(page);
   const response = await page.request.post("/api/upload", { multipart: { files: {
     name: "renderer.igc", mimeType: "text/plain", buffer: readFileSync(IGC_PATH),
@@ -60,10 +60,25 @@ async function arrangePublicFlight(page: Page) {
   const flightId: string = results[0].flightId;
   const db = new PrismaClient();
   try {
-    await db.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
+    const flight = await db.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
+    if (fixedCamera) {
+      await db.profile.update({ where: { id: flight.ownerId }, data: { mapDefaults: { camera: "fixed" } } });
+    }
   } finally { await db.$disconnect(); }
   return `/flights/${flightId}`;
 }
+
+test("map drags crossing the profile do not scrub playback", async ({ page }) => {
+  const flightUrl = await arrangePublicFlight(page, true);
+  await page.goto(flightUrl);
+  await expectReplayDragOwnership(page, "map");
+});
+
+test("profile drags continue over the map and stop on release", async ({ page }) => {
+  const flightUrl = await arrangePublicFlight(page, true);
+  await page.goto(flightUrl);
+  await expectReplayDragOwnership(page, "profile");
+});
 
 for (const audience of ["owner", "signed-out"] as const) {
   test(`flight heading stays below navigation while scrolling (${audience})`, async ({ page, newContext }) => {
