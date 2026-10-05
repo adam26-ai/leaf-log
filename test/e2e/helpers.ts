@@ -1,5 +1,45 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Flight controls scroll behind the sticky navigation, then return below it. */
+export async function expectFlightHeaderScrollOrder(page: Page) {
+  const banner = page.getByRole("banner");
+  const heading = page.getByTestId("flight-header");
+  const controls = [
+    heading.getByRole("link", { name: "Previous log", exact: true }),
+    heading.getByText(/\w{3}, \w{3} \d{1,2}, \d{4}/),
+    heading.getByText(/\d{2}:\d{2} – \d{2}:\d{2}/),
+    heading.getByRole("link", { name: "Next log", exact: true }),
+  ];
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 600 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    for (const control of controls) await expect(control).toBeVisible();
+    const initial = await heading.boundingBox();
+    const nav = await banner.boundingBox();
+    expect(initial!.y).toBeGreaterThanOrEqual(nav!.y + nav!.height);
+
+    // Check real hit-testing at each control, not just CSS z-index values.
+    for (const control of controls) {
+      await control.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const header = document.querySelector("header")!.getBoundingClientRect();
+        window.scrollBy(0, bounds.top + bounds.height / 2 - header.height / 2);
+      });
+      await expect.poll(() => control.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const x = bounds.left + bounds.width / 2;
+        const y = bounds.top + bounds.height / 2;
+        return Boolean(document.elementFromPoint(x, y)?.closest("header"));
+      }), "Navigation must cover the scrolled flight controls").toBe(true);
+    }
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => banner.evaluate(element => element.getBoundingClientRect().top)).toBe(0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(async () => (await heading.boundingBox())!.y).toBe(initial!.y);
+    for (const control of controls) await control.click({ trial: true });
+  }
+}
+
 /** All visible header links fit one row, including Ratings and main-admin tools. */
 export async function expectSingleRowHeader(page: Page) {
   const header = page.getByRole("banner");

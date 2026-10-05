@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
+import { expectFlightHeaderScrollOrder, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -63,6 +63,27 @@ async function arrangePublicFlight(page: Page) {
     await db.flight.update({ where: { id: flightId }, data: { visibility: "public" } });
   } finally { await db.$disconnect(); }
   return `/flights/${flightId}`;
+}
+
+for (const audience of ["owner", "signed-out"] as const) {
+  test(`flight heading stays below navigation while scrolling (${audience})`, async ({ page, newContext }) => {
+    const flightUrl = await arrangePublicFlight(page);
+    const db = new PrismaClient();
+    try {
+      const flight = await db.flight.findUniqueOrThrow({ where: { id: flightUrl.split("/").at(-1)! } });
+      expect(flight.flightDate).not.toBeNull();
+      for (const days of [-1, 1]) {
+        await db.flight.create({ data: {
+          ownerId: flight.ownerId, status: "ready", visibility: "public", source: "manual_entry",
+          flightDate: new Date(flight.flightDate!.getTime() + days * 86_400_000),
+        } });
+      }
+    } finally { await db.$disconnect(); }
+    const viewer = audience === "owner" ? page : await (await newContext()).newPage();
+    await viewer.goto(flightUrl);
+    await waitForMapReady(viewer.locator(".flight-replay-map"));
+    await expectFlightHeaderScrollOrder(viewer);
+  });
 }
 
 test("sign up → upload → view → share → logged-out view", async ({ page, newContext }) => {
