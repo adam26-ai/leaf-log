@@ -41,3 +41,5 @@ it("recomputes an inherited flag when editing a flight's wing but preserves an e
   fireEvent.change(screen.getByLabelText("Wing"), { target: { value: "Solo" } });
   expect(screen.getByRole("checkbox", { name: "Tandem" })).toBeChecked();
 });
+
+vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));

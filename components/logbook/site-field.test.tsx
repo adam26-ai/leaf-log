@@ -7,6 +7,7 @@ import { SiteField } from "./site-field";
 
 vi.mock("@/components/flight/boundary-editor", () => ({ BoundaryEditor: () => null }));
 vi.mock("@/components/logbook/entry-map-search", () => ({ EntryMapSearch: () => null }));
+vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));
 afterEach(cleanup);
 
 const sites: EntrySite[] = [

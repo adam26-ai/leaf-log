@@ -87,7 +87,8 @@ export default async function FlightPage({
       <AppHeader profile={viewer} />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-2 pt-3 sm:px-6">
-        <div className="relative z-40 left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
+        {/* Above replay controls (30), below the sticky app navigation (40). */}
+        <div data-testid="flight-header" className="relative z-35 left-1/2 w-[calc(100vw-16px)] sm:w-[92vw] lg:w-[80vw] -translate-x-1/2">
           <FlightHeader
             flight={flight}
             trophies={trophies}

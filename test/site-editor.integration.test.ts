@@ -3,12 +3,34 @@ import { randomUUID } from "node:crypto";
 import { afterAll, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
-import { getSiteEditorAction, saveSiteEditorAction } from "@/app/settings/sites/editor-actions";
+import { getSiteEditorAction, getSiteMapReferencesAction, saveSiteEditorAction } from "@/app/settings/sites/editor-actions";
+import { boundaryColumns } from "@/lib/sites/boundary";
+import type { Boundary } from "@/lib/sites/geo";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/profile", () => ({ getCurrentUserId: vi.fn() }));
 
 const owners: string[] = [];
+it("map references include public and owned geometry but exclude private, archived and unmapped sites", async () => {
+  const { flight: first } = await openEditor();
+  const { flight: second } = await openEditor();
+  const boundary: Boundary = { v: 1, kind: "polygon", geometry: { type: "Polygon", coordinates: [[[5.99, 44.99], [6.01, 44.99], [6.01, 45.01], [5.99, 45.01], [5.99, 44.99]]] } };
+  const create = (name: string, ownerId: string, visibility = "private", extra = {}) => prisma.site.create({ data: { name, normalizedName: name, ownerId, visibility, kind: "takeoff", lat: 45, lon: 6, ...extra } });
+  const owned = await create("owned reference", first.ownerId, "private", boundaryColumns(boundary, first.ownerId));
+  const publicSite = await create("public reference", second.ownerId, "public");
+  const hidden = await create("hidden reference", second.ownerId);
+  const archived = await create("archived reference", first.ownerId, "private", { archivedAt: new Date() });
+  const unmapped = await create("unmapped reference", first.ownerId, "private", { lat: null, lon: null });
+  vi.mocked(getCurrentUserId).mockResolvedValue(first.ownerId);
+  const references = await getSiteMapReferencesAction();
+  expect(references).toContainEqual(expect.objectContaining({ id: owned.id, boundary }));
+  expect(references).toContainEqual(expect.objectContaining({ id: publicSite.id }));
+  expect(references.map(site => site.id)).not.toEqual(expect.arrayContaining([hidden.id]));
+  expect(references.map(site => site.id)).not.toEqual(expect.arrayContaining([archived.id]));
+  expect(references.map(site => site.id)).not.toEqual(expect.arrayContaining([unmapped.id]));
+  vi.mocked(getCurrentUserId).mockResolvedValue(null);
+  await expect(getSiteMapReferencesAction()).rejects.toThrow("Sign in");
+});
 async function saveSite(value: Parameters<typeof saveSiteEditorAction>[0]) {
   const result = await saveSiteEditorAction(value);
   if (!result.ok) throw new Error(result.error);

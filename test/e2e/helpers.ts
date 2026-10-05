@@ -1,8 +1,74 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Exactly one header destination marks the current page for sighted and screen-reader users. */
+export async function expectCurrentHeaderLink(page: Page, name: string) {
+  const header = page.getByRole("banner");
+  const current = header.getByRole("link").and(header.locator('[aria-current="page"]'));
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAccessibleName(name);
+  if (name === "Leaf Log — your logbook") {
+    await expect(current).toHaveCSS("--tw-ring-color", "#007dcc");
+  } else if (name !== "Settings") {
+    await expect(current).toHaveCSS("background-color", "rgb(0, 125, 204)");
+    await expect(current).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(current.locator("svg")).toHaveCSS("color", "rgb(255, 255, 255)");
+  }
+}
+
+/** Flight controls scroll behind the sticky navigation, then return below it. */
+export async function expectFlightHeaderScrollOrder(page: Page) {
+  const banner = page.getByRole("banner");
+  const heading = page.getByTestId("flight-header");
+  const controls = [
+    heading.getByRole("link", { name: "Previous log", exact: true }),
+    heading.getByText(/\w{3}, \w{3} \d{1,2}, \d{4}/),
+    heading.getByText(/\d{2}:\d{2} – \d{2}:\d{2}/),
+    heading.getByRole("link", { name: "Next log", exact: true }),
+  ];
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 600 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    for (const control of controls) await expect(control).toBeVisible();
+    const initial = await heading.boundingBox();
+    const nav = await banner.boundingBox();
+    expect(initial!.y).toBeGreaterThanOrEqual(nav!.y + nav!.height);
+
+    // Check real hit-testing at each control, not just CSS z-index values.
+    for (const control of controls) {
+      await control.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const header = document.querySelector("header")!.getBoundingClientRect();
+        window.scrollBy(0, bounds.top + bounds.height / 2 - header.height / 2);
+      });
+      await expect.poll(() => control.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const x = bounds.left + bounds.width / 2;
+        const y = bounds.top + bounds.height / 2;
+        return Boolean(document.elementFromPoint(x, y)?.closest("header"));
+      }), "Navigation must cover the scrolled flight controls").toBe(true);
+    }
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect.poll(() => banner.evaluate(element => element.getBoundingClientRect().top)).toBe(0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(async () => (await heading.boundingBox())!.y).toBe(initial!.y);
+    for (const control of controls) await control.click({ trial: true });
+  }
+}
+
 /** All visible header links fit one row, including Ratings and main-admin tools. */
 export async function expectSingleRowHeader(page: Page) {
   const header = page.getByRole("banner");
+  const logo = header.getByRole("link", { name: "Leaf Log — your logbook", exact: true });
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveAttribute("href", "/logbook");
+  await expect(logo).toHaveAttribute("title", "Your logbook");
+  await expect(header.locator('a[href="/logbook"]')).toHaveCount(1);
+  const logoBox = (await logo.boundingBox())!;
+  for (const link of await header.getByRole("navigation").getByRole("link").all()) {
+    const box = (await link.boundingBox())!;
+    expect(logoBox.height).toBeGreaterThanOrEqual(box.height);
+    expect(box.x).toBeGreaterThanOrEqual(logoBox.x + logoBox.width);
+  }
   const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
   expect(avatar).not.toBeNull();
   const center = avatar!.y + avatar!.height / 2;
@@ -41,6 +107,7 @@ export async function expectResponsiveLegend(page: Page) {
 
 /** Settings cards load collapsed so the page stays compact. */
 export async function openSettingsCard(page: Page, title: string) {
+  await expectCurrentHeaderLink(page, "Settings");
   await expect(page.getByRole("banner").getByRole("link", { name: "Settings", exact: true })).toHaveAttribute("href", "/settings");
   const expand = page.getByRole("button", { name: `Expand ${title} settings`, exact: true });
   await expect(expand).toBeVisible();
@@ -82,6 +149,7 @@ export async function waitForMapReady(map: Locator) {
 /** Site management always displays one shared overview map. */
 export async function openSitesPage(page: Page) {
   await page.goto("/sites");
+  await expectCurrentHeaderLink(page, "Sites");
   await expect(page.getByTestId("site-area-map")).toHaveCount(0);
   await expect(page.getByTestId("site-browser-map")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Site map", exact: true })).toHaveCount(0);
@@ -137,17 +205,33 @@ export async function setSiteVisibility(editor: Locator, visibility: "private" |
 }
 
 export async function setSiteKind(editor: Locator, kind: "takeoff" | "landing" | "both") {
-  const choice = kind === "both" ? "Takeoff and landing" : kind === "takeoff" ? "Takeoff" : "Landing";
-  await editor.getByRole("combobox", { name: "Used for", exact: true }).selectOption({ label: choice });
-  await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue(kind);
+  const group = editor.getByRole("group", { name: "Used for", exact: true });
+  // Select wanted uses before deselecting others: at least one must remain on.
+  for (const selected of [true, false]) for (const use of ["takeoff", "landing"] as const) {
+    const wanted = kind === "both" || kind === use;
+    const button = group.getByRole("button", { name: use === "takeoff" ? "Takeoff" : "Landing", exact: true });
+    if (wanted === selected && await button.getAttribute("aria-pressed") !== String(wanted)) await button.click();
+  }
+  expect(await readSiteKind(editor)).toBe(kind);
+}
+
+export async function readSiteKind(editor: Locator) {
+  const group = editor.getByRole("group", { name: "Used for", exact: true });
+  const takeoff = await group.getByRole("button", { name: "Takeoff", exact: true }).getAttribute("aria-pressed") === "true";
+  const landing = await group.getByRole("button", { name: "Landing", exact: true }).getAttribute("aria-pressed") === "true";
+  expect(takeoff || landing).toBe(true);
+  return takeoff && landing ? "both" : takeoff ? "takeoff" : "landing";
 }
 
 /** When a replay map exists, wait for its first rendered frame before
  * interacting with the site header. Manual flights have no replay map. */
-export async function openSiteChooser(page: Page) {
+export async function openSiteChooser(page: Page, endpoint: "primary" | "landing" = "primary") {
   const replayMap = page.locator(".flight-replay-map");
   if (await replayMap.count()) await waitForMapReady(replayMap);
-  await page.getByRole("heading", { level: 1 }).getByRole("button").click();
+  const control = endpoint === "landing"
+    ? page.getByRole("button", { name: "Choose site", exact: true }).and(page.locator("span > button"))
+    : page.getByRole("heading", { level: 1 }).getByRole("button");
+  await control.click();
   const dialog = page.getByRole("dialog", { name: "Site details" });
   const name = dialog.getByPlaceholder("e.g. Sonoma Ridge");
   await expect(name).toBeVisible({ timeout: 15_000 });
@@ -159,6 +243,7 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
   const { dialog, name } = await openSiteChooser(page);
   await name.fill(siteName);
   await dialog.getByRole("button", { name: "Create site", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Create site", exact: true })).toBeVisible();
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
   await expectSiteVisibility(dialog, "private");
   if (visibility === "public") await setSiteVisibility(dialog, "public");

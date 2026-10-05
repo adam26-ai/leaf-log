@@ -5,21 +5,12 @@ import { haversineM } from "@/lib/geo/distance";
  * unit-testable in isolation from the repo/DB layer that consumes it.
  */
 
-export const TAKEOFF_RADIUS_M = 600;
-export const LANDING_RADIUS_M = 900;
-// Wider than either match radius on purpose: the "name this site" dialog only
-// opens because findLocation already returned null at the match radius, so by
-// construction nothing visible sits inside 600 m / 900 m. A narrower suggest
-// radius would be a no-op.
+export const TAKEOFF_RADIUS_M = 200;
+export const LANDING_RADIUS_M = 400;
+// The chooser searches more widely than automatic circle matching.
 export const SUGGEST_RADIUS_M = 2000;
 
-// SPRINT-005: the ZONE radius answers "which of these adjacent spots is
-// this?" — tighter than the SITE radius, which answers "which named place is
-// this?" Roughly half the site radius, preserving the same takeoff/landing
-// asymmetry (landings scatter more than launches). The site pass still runs
-// as a fallback whenever the zone pass misses — see lib/sites/lookup.ts's
-// findLocation — so a tighter zone radius never creates a dead end, only a
-// less precise match.
+// Legacy zone radii are independent of the site circle defaults.
 export const ZONE_TAKEOFF_RADIUS_M = 300;
 export const ZONE_LANDING_RADIUS_M = 400;
 
@@ -404,8 +395,9 @@ export function hasConfidentNearestTakeoff(
   const [nearest, runnerUp] = ranked;
   if (!nearest || !runnerUp) return false;
   return nearest.distanceM <= 200
-    && runnerUp.distanceM >= nearest.distanceM * 3
-    && runnerUp.distanceM - nearest.distanceM >= 200;
+    // Two pins at the flight point are tied, even though 0 >= 3 * 0.
+    && runnerUp.distanceM > nearest.distanceM
+    && runnerUp.distanceM >= nearest.distanceM * 3;
 }
 
 /**

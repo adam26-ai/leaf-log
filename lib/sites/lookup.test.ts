@@ -203,10 +203,20 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     expect(match).toBeNull();
   });
 
+  it.each([
+    ["takeoff", 195, true], ["takeoff", 205, false],
+    ["landing", 395, true], ["landing", 405, false],
+  ] as const)("%s circle at %s m matches: %s", async (kind, distance, matched) => {
+    const site = await createSite({ lat: 25, lon: 25, kind, visibility: "public", ownerId: null });
+    const decision = await findLocationDecision(prisma, { lat: 25 + distance / 111_320, lon: 25, kind, viewerId: null });
+    expect(decision.ambiguous).toBe(false);
+    expect(decision.match?.site.id ?? null).toBe(matched ? site.id : null);
+  });
+
   it("respects the tighter takeoff radius", async () => {
     await createSite({ lat: 24.0, lon: 24.0, kind: "takeoff", visibility: "public", ownerId: null });
 
-    // ~3 km north — outside the 600 m takeoff radius.
+    // ~3 km north — outside the 200 m takeoff radius.
     const match = await findLocation(prisma, {
       lat: 24.027,
       lon: 24.0,
@@ -608,8 +618,8 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       ownerId: null,
     });
     const farSite = await createSite({
-      // ~290 m east — within the far site's own 600 m site radius from ITS
-      // own centre, but this test queries from nearSite's centre.
+      // ~290 m east — within the legacy zone radius from its
+      // centre, but this test queries from nearSite's centre.
       lat: -65,
       lon: -65 + 290 / (111_320 * Math.cos((-65 * Math.PI) / 180)),
       kind: "takeoff",
@@ -648,7 +658,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
   it("a point OUTSIDE the site's circle but INSIDE its drawn boundary matches", async () => {
     const owner = await createPilot("b6-outside-circle");
-    // 600m takeoff circle; a 1500m-half-size boundary reaches well past it.
+    // 200m takeoff circle; a 1500m-half-size boundary reaches well past it.
     const site = await createSite({
       lat: 80,
       lon: 80,
@@ -676,13 +686,13 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       kind: "takeoff",
       visibility: "public",
       ownerId: owner,
-      boundaryHalfSizeM: 50, // far tighter than the 600m circle
+      boundaryHalfSizeM: 50, // far tighter than the 200m circle
     });
 
-    // 300m away — inside the 600m circle, outside the 50m-half boundary.
+    // 100m away — inside the 200m circle, outside the 50m-half boundary.
     const match = await findLocation(prisma, {
       lat: 81,
-      lon: 81 + 300 / (111_320 * Math.cos((81 * Math.PI) / 180)),
+      lon: 81 + 100 / (111_320 * Math.cos((81 * Math.PI) / 180)),
       kind: "takeoff",
       viewerId: null,
     });
@@ -700,7 +710,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       kind: "landing",
       visibility: "public",
       ownerId: owner,
-      boundaryHalfSizeM: 1200, // past the 900m landing circle
+      boundaryHalfSizeM: 1200, // past the 400m landing circle
     });
 
     const match = await findLocation(prisma, {
@@ -764,7 +774,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     }
     // These are the two actual eligible polygons, not the five suggestions.
     expect(sites.filter(site => kindMatches(site.kind, "takeoff")
-      && locationMatches(site, point.lat, point.lon, 600).matched).map(site => site.name).sort())
+      && locationMatches(site, point.lat, point.lon, 200).matched).map(site => site.name).sort())
       .toEqual(["Ed Levin", "Ed Levin 1750"]);
     const launch = sites.find(site => site.name === "Ed Levin 1750")!;
     const decision = await findLocationDecision(prisma, { ...point, kind: "takeoff", viewerId: owner });
@@ -775,9 +785,9 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
 
   it.each(["takeoff", "landing"] as const)("resolves dominant circle pins only for takeoff (%s)", async kind => {
     await createSite({ lat: 39, lon: 39, kind: "both", visibility: "public", ownerId: null });
-    const near = await createSite({ lat: 39 + 400 / 111_320, lon: 39, kind: "both", visibility: "public", ownerId: null });
+    const near = await createSite({ lat: 39 + 100 / 111_320, lon: 39, kind: "both", visibility: "public", ownerId: null });
     const decision = await findLocationDecision(prisma, {
-      lat: 39 + 450 / 111_320, lon: 39, kind, viewerId: null,
+      lat: 39 + 140 / 111_320, lon: 39, kind, viewerId: null,
     });
     if (kind === "takeoff") {
       expect(decision.ambiguous).toBe(false);
@@ -794,7 +804,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
         visibility: exclusion === "private" ? "private" : "public", ownerId: owner,
         boundaryHalfSizeM: exclusion === "boundary" ? 10 : undefined });
       if (exclusion === "archived") await prisma.site.update({ where: { id: near.id }, data: { archivedAt: new Date() } });
-      for (const meters of [400, 450]) await createSite({ lat: 41 + meters / 111_320, lon: 41,
+      for (const meters of [150, 180]) await createSite({ lat: 41 + meters / 111_320, lon: 41,
         kind: "takeoff", visibility: "public", ownerId: null });
       expect(await findLocationDecision(prisma, { ...point, kind: "takeoff", viewerId: null }))
         .toEqual({ match: null, ambiguous: true });
@@ -851,7 +861,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
       kind: "takeoff",
       visibility: "public",
       ownerId: owner,
-      boundaryHalfSizeM: 1500, // reaches well past the 600m circle
+      boundaryHalfSizeM: 1500, // reaches well past the 200m circle
     });
 
     const farLon = 86 + 1000 / (111_320 * Math.cos((86 * Math.PI) / 180));
@@ -862,7 +872,7 @@ describe("findLocation (viewer-scoped haversine, zone-first with site fallback)"
     process.env.SITE_BOUNDARY_MATCHING = "off";
     try {
       const withBoundaryOff = await findLocation(prisma, { lat: 86, lon: farLon, kind: "takeoff", viewerId: null });
-      expect(withBoundaryOff).toBeNull(); // circle-only: this point is outside the 600m radius
+      expect(withBoundaryOff).toBeNull(); // circle-only: this point is outside the 200m radius
     } finally {
       delete process.env.SITE_BOUNDARY_MATCHING;
     }

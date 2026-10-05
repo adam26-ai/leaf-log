@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "./fixtures";
-import { expectSingleRowHeader, openSitesPage } from "./helpers";
+import { expectCurrentHeaderLink, expectSingleRowHeader, openSitesPage } from "./helpers";
 import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
@@ -24,12 +24,20 @@ test("main admin can search, grant, revoke, re-enable and separately remove admi
   const pilot = await db.user.create({ data: { email: "grantpilot@test.local", profile: { create: { handle: "grantpilot", displayName: "Grant Pilot" } } } });
   try {
     await signIn(page, "leafvario@gmail.com");
+    await expectCurrentHeaderLink(page, "Leaf Log — your logbook");
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Admin", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
-    for (const width of [320, 360, 480, 640, 1024, 1280]) {
+    for (const width of [320, 360, 390, 400, 480, 640, 1024, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await expectSingleRowHeader(page);
+      await expectCurrentHeaderLink(page, "Admin");
     }
+    await page.setViewportSize({ width: 320, height: 800 });
+    await page.getByRole("link", { name: "Leaf Log — your logbook", exact: true }).click();
+    await expect(page).toHaveURL(/\/logbook/);
+    await expectCurrentHeaderLink(page, "Leaf Log — your logbook");
+    await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Admin", exact: true }).click();
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("searchbox", { name: "Search users" }).fill("grantpilot");
     await page.getByRole("button", { name: "Search", exact: true }).click();
     await page.getByRole("list", { name: "User search results" }).getByRole("button", { name: /Grant Pilot/ }).click();

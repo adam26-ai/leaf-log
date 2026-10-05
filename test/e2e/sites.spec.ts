@@ -1,4 +1,4 @@
-import { openSitesPage, createSiteFromFlight, setSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
+import { openSitesPage, createSiteFromFlight, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -181,13 +181,13 @@ test("a site with a nearby namesake can change to takeoff and landing", async ({
 
   await rows.first().click();
   await page.getByRole("button", { name: "Edit site", exact: true }).click();
-  const firstKind = await editor.getByRole("combobox", { name: "Used for", exact: true }).inputValue();
+  const firstKind = await readSiteKind(editor);
   if (firstKind !== "takeoff") {
     await editor.getByRole("button", { name: "Cancel", exact: true }).click();
     await rows.nth(1).click();
     await page.getByRole("button", { name: "Edit site", exact: true }).click();
   }
-  await expect(editor.getByRole("combobox", { name: "Used for", exact: true })).toHaveValue("takeoff");
+  expect(await readSiteKind(editor)).toBe("takeoff");
   await setSiteKind(editor, "both");
   await editor.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(editor).toHaveCount(0);
@@ -197,7 +197,7 @@ test("a site with a nearby namesake can change to takeoff and landing", async ({
   for (let index = 0; index < 2; index++) {
     await rows.nth(index).click();
     await page.getByRole("button", { name: "Edit site", exact: true }).click();
-    persistedKinds.push(await editor.getByRole("combobox", { name: "Used for", exact: true }).inputValue());
+    persistedKinds.push(await readSiteKind(editor));
     await editor.getByRole("button", { name: "Cancel", exact: true }).click();
   }
   expect(persistedKinds.sort()).toEqual(["both", "landing"]);
