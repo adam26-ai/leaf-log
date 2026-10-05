@@ -1267,8 +1267,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       const f = companions.find((f) => f.id === ph.flightId);
       if (!f) return [];
       const q = ph.tSec != null ? replayPositionAt(f.replay, ph.tSec) : [ph.lon!, ph.lat!, ph.altM ?? 0];
+      const terrain = groundElevationAt(q[0], q[1]);
+      // Keep the existing placement, but prevent photo pins from sitting underground.
+      const altitude = terrain == null ? q[2] : Math.max(q[2], terrain);
       return [{ id: ph.id, flightId: f.id, name: f.owner.displayName, primary: f.owner.id === identities.primaryOwnerId,
-        tSec: ph.tSec ?? -1, position: [q[0], q[1], zOf(q[2])] as [number, number, number] }];
+        tSec: ph.tSec ?? -1, position: [q[0], q[1], zOf(altitude)] as [number, number, number] }];
     });
 
     // The ground elevation directly under the glider's current position.
@@ -2157,6 +2160,13 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     );
     const removeTrackedZoomButtons = installTrackedZoomButtons(map);
     map.on("move", () => renderLayers(timeRef.current));
+    map.on("sourcedata", (event) => {
+      if (event.sourceId !== "dem" || !event.isSourceLoaded) return;
+      // Refresh stationary photo pins after terrain arrives, including after a style swap.
+      map.once("idle", () => {
+        if (mapRef.current === map) renderLayers(timeRef.current);
+      });
+    });
     // Adding terrain/overlay sources makes isStyleLoaded() temporarily false.
     // Initial load and anchoring can both hit that window, especially when
     // paging between cached flights. Retry once the map finishes those updates;
