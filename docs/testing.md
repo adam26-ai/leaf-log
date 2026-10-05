@@ -1,5 +1,22 @@
 # Testing and CI reliability
 
+## Follow-up: PR 105, October 5, 2026
+
+[Run 37275688301](https://github.com/adam26-ai/leaf-log/actions/runs/37275688301)
+failed in two independent places. Type checking, lint, and 970 tests passed;
+the production build failed resolving Roboto Condensed through Turbopack's
+Google-font import mapping (`next/font/google queries have exactly one entry`).
+The app now bundles the three Roboto families with their upstream licenses and
+uses `next/font/local`, so builds do not depend on Google's generated CSS.
+
+Both drag browser scenarios exhausted their deadlines while opening the camera
+menu, before their drag assertions. The trace includes a 12-second hover stability
+wait and then a stalled Fixed-button lookup. Arrange the existing saved Fixed
+camera preference in the isolated database before navigating, and assert that
+the UI loaded it. These tests measure drag ownership; menu interactions belong
+in camera-control coverage. Keep the real renderer, terrain, authentication,
+uploaded flight, and drag assertions. Do not increase deadlines or add retries.
+
 ## Follow-up: PR 97, September 20, 2026
 
 [Run 35497196270](https://github.com/adam26-ai/leaf-log/actions/runs/35497196270)

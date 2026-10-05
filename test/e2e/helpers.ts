@@ -4,10 +4,8 @@ import { expect, type FileChooser, type Locator, type Page } from "@playwright/t
 export async function expectReplayDragOwnership(page: Page, origin: "map" | "profile") {
   const map = page.locator(".flight-replay-map");
   await waitForMapReady(map);
-  // Scrubbing must not trigger a Follow-camera flight across terrain while we
-  // measure pointer ownership. Keep the real map and terrain rendering enabled.
-  await page.getByRole("button", { name: /^Camera:/ }).hover();
-  await page.getByRole("button", { name: "Fixed", exact: true }).click();
+  // The fixture seeds the saved preference before navigation, avoiding camera
+  // menu setup and Follow-camera terrain loading during the drag assertions.
   await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
   const profile = page.getByTestId("flight-profile");
   const timeline = page.getByRole("slider", { name: "Flight playback time" });

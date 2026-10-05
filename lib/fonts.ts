@@ -1,25 +1,31 @@
-import { Roboto, Roboto_Condensed, Roboto_Mono } from "next/font/google";
+import localFont from "next/font/local";
 
+// Bundle fonts so production builds do not depend on Google's CSS responses.
+// Upstream sources and redistribution licenses are recorded in ./fonts/.
 // Body / UI — Roboto (DESIGN.md anchor, matches leafvario.com)
-export const roboto = Roboto({
+export const roboto = localFont({
+  src: "./fonts/Roboto.ttf",
   variable: "--font-roboto",
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: "400 700",
+  style: "normal",
   display: "swap",
 });
 
 // Headings / signage — Roboto Condensed (compact, technical-yet-approachable)
-export const robotoCondensed = Roboto_Condensed({
+export const robotoCondensed = localFont({
+  src: "./fonts/RobotoCondensed.ttf",
   variable: "--font-roboto-condensed",
-  subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: "400 700",
+  style: "normal",
   display: "swap",
 });
 
 // Data / coordinates / IGC details — mono
-export const robotoMono = Roboto_Mono({
+export const robotoMono = localFont({
+  src: "./fonts/RobotoMono.ttf",
   variable: "--font-roboto-mono",
-  subsets: ["latin"],
+  weight: "100 700",
+  style: "normal",
   display: "swap",
 });
 
