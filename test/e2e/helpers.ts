@@ -1,5 +1,46 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** A held mouse crossing between the map and profile keeps its original owner. */
+export async function expectReplayDragOwnership(page: Page) {
+  const map = page.locator(".flight-replay-map");
+  await waitForMapReady(map);
+  const profile = page.getByTestId("flight-profile");
+  const timeline = page.getByRole("slider", { name: "Flight playback time" });
+  await profile.scrollIntoViewIfNeeded();
+  await timeline.focus();
+  await timeline.press("Home");
+  await expect(timeline).toHaveAttribute("aria-valuenow", "0");
+  const chart = (await profile.boundingBox())!;
+  const canvas = (await map.locator("canvas").first().boundingBox())!;
+  const mapY = Math.max(canvas.y, 80) + 30;
+  const left = chart.x + chart.width * 0.35;
+  const right = chart.x + chart.width * 0.75;
+  const chartY = chart.y + chart.height / 2;
+
+  await page.mouse.move(left, mapY);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(right, chartY, { steps: 8 });
+    await expect(timeline).toHaveAttribute("aria-valuenow", "0");
+  } finally {
+    await page.mouse.up();
+  }
+
+  await page.mouse.move(left, chartY);
+  await page.mouse.down();
+  try {
+    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    const start = Number(await timeline.getAttribute("aria-valuenow"));
+    await page.mouse.move(right, mapY, { steps: 8 });
+    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
+  } finally {
+    await page.mouse.up();
+  }
+  const released = await timeline.getAttribute("aria-valuenow");
+  await page.mouse.move(left, chartY);
+  await expect(timeline).toHaveAttribute("aria-valuenow", released!);
+}
+
 /** Exactly one header destination marks the current page for sighted and screen-reader users. */
 export async function expectCurrentHeaderLink(page: Page, name: string) {
   const header = page.getByRole("banner");

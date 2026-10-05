@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectFlightHeaderScrollOrder, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
+import { expectFlightHeaderScrollOrder, expectReplayDragOwnership, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -64,6 +64,12 @@ async function arrangePublicFlight(page: Page) {
   } finally { await db.$disconnect(); }
   return `/flights/${flightId}`;
 }
+
+test("map drags crossing the profile do not scrub playback", async ({ page }) => {
+  const flightUrl = await arrangePublicFlight(page);
+  await page.goto(flightUrl);
+  await expectReplayDragOwnership(page);
+});
 
 for (const audience of ["owner", "signed-out"] as const) {
   test(`flight heading stays below navigation while scrolling (${audience})`, async ({ page, newContext }) => {
