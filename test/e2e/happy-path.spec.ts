@@ -68,7 +68,13 @@ async function arrangePublicFlight(page: Page) {
 test("map drags crossing the profile do not scrub playback", async ({ page }) => {
   const flightUrl = await arrangePublicFlight(page);
   await page.goto(flightUrl);
-  await expectReplayDragOwnership(page);
+  await expectReplayDragOwnership(page, "map");
+});
+
+test("profile drags continue over the map and stop on release", async ({ page }) => {
+  const flightUrl = await arrangePublicFlight(page);
+  await page.goto(flightUrl);
+  await expectReplayDragOwnership(page, "profile");
 });
 
 for (const audience of ["owner", "signed-out"] as const) {
