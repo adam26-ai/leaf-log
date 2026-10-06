@@ -34,6 +34,23 @@ immediately after resizing the Sites page; an isolated follow-up passed. The
 scenario now attaches overflowing-element measurements if it repeats. This
 intermittent assertion remains unresolved; keep its width check intact.
 
+## Follow-up: PR 108, October 6, 2026
+
+[Run 37424828718](https://github.com/adam26-ai/leaf-log/actions/runs/37424828718)
+passed the gates job and 47 browser scenarios, but the replay context-loss
+scenario exhausted its 60-second budget before injecting loss. The trace shows
+31.6 seconds for the initial friend takeoff avatar click and another 7.4 seconds
+confirming selection. The loss helper started at 48.4 seconds, but its map lookup
+stalled and its browser evaluation never ran. No page exceptions were recorded.
+These stalls are consistent with Follow-camera software rendering; the trace
+does not establish a renderer crash or a missing context-loss event.
+
+Arrange the owner's saved Fixed-camera preference before opening the replay,
+and assert it loads. Takeoff avatar clicks still enter Follow; assert that mode
+and the selected friend after restoration. Keep authenticated uploads,
+friends-only visibility, real avatar clicks, actual WebGL loss/restoration and
+the selected-pilot assertions. No retries, skips or longer deadlines are added.
+
 ## Follow-up: PR 106, October 5, 2026
 
 The merged [run 37400970638](https://github.com/adam26-ai/leaf-log/actions/runs/37400970638)

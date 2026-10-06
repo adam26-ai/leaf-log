@@ -85,6 +85,9 @@ test("friend takeoff avatars remain usable during WebGL context loss and restore
   try {
     const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     const friend = await db.profile.findUniqueOrThrow({ where: { handle: friendHandle } });
+    // Avoid initial Follow-camera movement consuming the software renderer's
+    // budget. Real takeoff avatar clicks still enter Follow for pilot selection.
+    await db.profile.update({ where: { id: owner.id }, data: { mapDefaults: { camera: "fixed" } } });
     await db.flight.update({ where: { id: friendFlightId }, data: { visibility: "friends" } });
     await db.friendship.create({ data: { requesterId: owner.id, addresseeId: friend.id, status: "accepted" } });
     await friendPage.close();
@@ -93,6 +96,7 @@ test("friend takeoff avatars remain usable during WebGL context loss and restore
     await page.goto(`/flights/${flightId}`);
     const map = page.locator(".flight-replay-map");
     await waitForMapReady(map);
+    await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
     const avatar = page.locator(`[data-takeoff-flight="${friendFlightId}"]`);
     await expect(avatar).toBeEnabled();
     await avatar.click();
@@ -104,6 +108,7 @@ test("friend takeoff avatars remain usable during WebGL context loss and restore
     await avatar.click();
     await setMapContextLost(map, false);
     await waitForMapReady(map);
+    await expect(page.getByRole("button", { name: /^Camera: Follow/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "Follow Context Friend", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(errors).toEqual([]);
   } finally { await db.$disconnect(); }
