@@ -1,6 +1,6 @@
 /** Give existing Sky Friend examples a mix of zero, one, and two trophies.
  * Local-only: node --import tsx scripts/seed-feed-demo-trophies.ts
- * Metrics and distances are synthetic; recordings and kudos are preserved.
+ * Metrics and distances are synthetic; sites, recordings and kudos are preserved.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parse } from "dotenv";
@@ -21,9 +21,7 @@ async function main() {
     const owner = await db.profile.findUniqueOrThrow({ where: { handle: "uicompanion" } });
     if (owner.id !== "ui-demo-companion-user" || owner.displayName !== "Sky Friend (demo)") throw new Error("Expected demo account.");
     const cases: { id: string; data: Prisma.FlightUpdateInput; zeroTrophies?: boolean; route?: { shape: XcShape; distanceM: number } }[] = [
-      { id: "ui-demo-feed-all-six", data: { maxAltM: 1000, launchAltM: 400,
-        takeoffSiteName: "Mission Peak — Duration and height gain (demo)",
-        landingSiteName: "Mission Peak — Duration and height gain (demo)" } },
+      { id: "ui-demo-feed-all-six", data: { maxAltM: 1000, launchAltM: 400 } },
       { id: "ui-demo-feed-four-silver", data: {}, route: { shape: "open", distanceM: 100000 } },
       { id: "ui-demo-feed-duration", data: { reportedXcType: null, reportedXcDistanceM: null } },
       { id: "ui-demo-feed-mixed-medals", data: { maxAltM: 1000, launchAltM: 300 } },
@@ -41,7 +39,7 @@ async function main() {
     if (!cases.every(c => !c.route || templates.some(route => route.shape === c.route!.shape))) throw new Error("Missing demo route templates.");
     mkdirSync("test-results", { recursive: true });
     writeFileSync(`test-results/demo-trophies-before-${Date.now()}.json`, JSON.stringify(before.map(f => ({
-      id: f.id, maxAltM: f.maxAltM, launchAltM: f.launchAltM, takeoffSiteName: f.takeoffSiteName, landingSiteName: f.landingSiteName,
+      id: f.id, maxAltM: f.maxAltM, launchAltM: f.launchAltM,
       reportedXcType: f.reportedXcType, reportedXcDistanceM: f.reportedXcDistanceM,
       metricsVersion: f.metricsVersion, xcStatus: f.xcStatus, xcScore: f.xcScore,
     })), null, 2));
