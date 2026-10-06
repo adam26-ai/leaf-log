@@ -310,6 +310,28 @@ export async function setNewFlightTypes(page: Page, names: string[]) {
   }
 }
 
+/** Footer actions stay side by side, with blocking errors to their left. */
+export async function expectSiteEditorFooter(editor: Locator) {
+  const section = editor.getByRole("region", { name: "Site editor", exact: true });
+  const cancel = section.getByRole("button", { name: "Cancel", exact: true });
+  const save = section.getByRole("button", { name: "Save site", exact: true });
+  await save.scrollIntoViewIfNeeded();
+  await expect(cancel).toBeVisible();
+  await expect(save).toBeVisible();
+  const cancelBox = (await cancel.boundingBox())!;
+  const saveBox = (await save.boundingBox())!;
+  expect(cancelBox.y).toBeCloseTo(saveBox.y, 0);
+  expect(cancelBox.x + cancelBox.width).toBeLessThanOrEqual(saveBox.x);
+  const error = section.getByRole("alert");
+  if (await error.count()) {
+    await expect(save).toBeDisabled();
+    const errorBox = (await error.boundingBox())!;
+    expect(errorBox.x + errorBox.width).toBeLessThanOrEqual(cancelBox.x);
+  } else {
+    await expect(save).toBeEnabled();
+  }
+}
+
 /** Wait for site details to replace the loading state, then assert the
  * selected visibility and both available choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {

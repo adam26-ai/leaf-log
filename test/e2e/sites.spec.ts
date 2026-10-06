@@ -1,4 +1,4 @@
-import { openSitesPage, createSiteFromFlight, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
+import { openSitesPage, createSiteFromFlight, expectSiteEditorFooter, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -131,6 +131,7 @@ test("site map browses public and owned sites, selects the list, and stays visib
 });
 
 test("a standalone site saves its pin and persists public and private visibility", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
   const suffix = await signUp(page);
   // A site can be created independently, without borrowing an IGC.
   await openSitesPage(page);
@@ -138,7 +139,13 @@ test("a standalone site saves its pin and persists public and private visibility
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
   const editor = page.getByRole('dialog', { name: 'Site details' });
   await page.getByRole('button', { name: 'Create a site', exact: true }).click();
+  await expectSiteEditorFooter(editor);
+  await editor.getByRole('button', { name: 'Save site', exact: true }).click();
+  await expect(editor.getByRole('alert')).toContainText('Enter a site name');
+  await expectSiteEditorFooter(editor);
   await editor.getByLabel('Name', { exact: true }).fill(standaloneName);
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await expectSiteEditorFooter(editor);
   await editor.getByLabel('Pin latitude').fill('35');
   await editor.getByLabel('Pin longitude').fill('15');
   await editor.getByRole('button', { name: 'Save site', exact: true }).click();
@@ -148,6 +155,7 @@ test("a standalone site saves its pin and persists public and private visibility
   for (const visibility of ['public', 'private'] as const) {
     await page.getByRole('button', { name: 'Edit site', exact: true }).click();
     await setSiteVisibility(editor, visibility);
+    await expectSiteEditorFooter(editor);
     await editor.getByRole('button', { name: 'Save site', exact: true }).click();
     await expect(editor).toHaveCount(0);
     await page.reload();
@@ -209,6 +217,7 @@ test("a site with a nearby namesake can change to takeoff and landing", async ({
   await editor.getByLabel("Pin longitude").fill("15");
   await editor.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(editor.getByRole("alert")).toContainText("already has a nearby map pin");
+  await expectSiteEditorFooter(editor);
   await expect(editor.getByLabel("Name", { exact: true })).toHaveValue(name);
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
 });
