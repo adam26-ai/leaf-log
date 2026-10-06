@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -282,7 +282,9 @@ test("IGC upload and editing save multiple flight types without changing an exac
     await expect(page).toHaveURL(/\/flights\/[a-z0-9]+$/);
     const id = page.url().split("/").at(-1)!;
     expect(await db.flight.findUniqueOrThrow({ where: { id } })).toMatchObject({ flightFlags: ["tandem", "siv", "competition", "tow"], occupancy: "tandem", launchTypes: ["ST"] });
+    await waitForMapReady(page.locator(".flight-replay-map"));
     await page.getByRole("link", { name: "Edit flight", exact: true }).click();
+    await expect(page).toHaveURL(`/flights/${id}/edit`);
     for (const name of ["Tandem", "Tow"]) await page.getByRole("checkbox", { name, exact: true }).uncheck();
     await page.getByRole("button", { name: "Save flight type" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();

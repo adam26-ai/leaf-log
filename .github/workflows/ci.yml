@@ -78,6 +78,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Configure software renderer workers
+        run: |
+          browser_directory=$(node -e "console.log(require('node:path').dirname(require('@playwright/test').chromium.executablePath()))")
+          node scripts/configure-swiftshader.mjs "$browser_directory"
       - name: Record browser runner environment
         run: |
           node -e "const os = require('node:os'); console.log({ node: process.version, playwright: require('@playwright/test/package.json').version, cpus: os.availableParallelism(), memoryGiB: Math.round(os.totalmem() / 2 ** 30), browser: 'chromium', webgl: 'swiftshader-webgl' })"
