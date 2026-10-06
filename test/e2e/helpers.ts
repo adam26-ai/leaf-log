@@ -108,7 +108,19 @@ export async function expectCurrentHeaderLink(page: Page, name: string) {
     await expect(logo.locator('img[src="/leaf-log-capsule.png"]')).toBeHidden();
     await expect(logo.locator('img[src="/leaf-log-outline.svg"]')).toBeVisible();
     const capsule = logo.locator("span");
-    await expect(capsule).toHaveCSS("background-color", "oklch(0.968 0.007 247.896)");
+    // Compare pixels because Chromium may serialize the same color as Lab or OKLCH.
+    await expect.poll(() => capsule.evaluate(element => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2;
+      canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = getComputedStyle(element).backgroundColor;
+      context.fillRect(0, 0, 1, 1);
+      context.fillStyle = "oklch(0.968 0.007 247.896)";
+      context.fillRect(1, 0, 1, 1);
+      const pixels = context.getImageData(0, 0, 2, 1).data;
+      return pixels.slice(0, 4).every((value, index) => value === pixels[index + 4]);
+    })).toBe(true);
     await expect(capsule).toHaveCSS("box-shadow", /1px inset/);
   }
 }
