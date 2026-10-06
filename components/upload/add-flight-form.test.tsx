@@ -10,7 +10,7 @@ const options = { wings: [], tandemWings: [], sites: [], siteNames: [] };
 it("uses a single flight-type selection for manual entries and IGC uploads", async () => {
   const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "manual", results: [{ flightId: "igc" }] }) });
   vi.stubGlobal("fetch", fetch);
-  render(<AddFlightForm options={options} imperial={false} />);
+  render(<AddFlightForm options={options} imperial={false} defaultVisibility="friends" />);
   expect(screen.getAllByRole("group", { name: "Flight type (select all that apply)" })).toHaveLength(1);
   fireEvent.click(screen.getByRole("checkbox", { name: "Tandem" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Tow" }));
@@ -22,13 +22,13 @@ it("uses a single flight-type selection for manual entries and IGC uploads", asy
   fireEvent.change(screen.getByLabelText("Flight date"), { target: { value: "2024-07-12" } });
   fireEvent.click(screen.getByRole("button", { name: "Add manual flight" }));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-  expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({ tandemTouched: true, draft: { flightTypes: "tandem;tow", occupancy: "tandem" } });
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toMatchObject({ visibility: "friends", tandemTouched: true, draft: { flightTypes: "tandem;tow", occupancy: "tandem" } });
 });
 
 it("keeps explicit solo intent across other field edits before uploading", async () => {
   const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [{ flightId: "igc" }] }) });
   vi.stubGlobal("fetch", fetch);
-  render(<AddFlightForm options={options} imperial={false} />);
+  render(<AddFlightForm options={options} imperial={false} defaultVisibility="friends" />);
   fireEvent.click(screen.getByRole("checkbox", { name: "Tandem" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Tandem" }));
   fireEvent.click(screen.getByRole("checkbox", { name: "SIV" }));

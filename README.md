@@ -100,8 +100,13 @@ system's temporary directory (`$env:TEMP` on Windows, usually `/tmp` on Linux).
 
 ## Testing
 
+For ordinary code changes, use focused checks rather than the full suite. Before
+committing, ask whether tests should run. For PR submission or updates, run the
+full suite by default unless the user explicitly asks to skip it. A combined
+commit-and-PR request uses the PR default. See [the testing workflow](docs/testing.md#when-to-run-tests).
+
 ```bash
-pnpm check       # required before submitting: typecheck, lint, tests, build AND browsers
+pnpm check       # default before PR submission: typecheck, lint, tests, build AND browsers
 pnpm check:linux # reproduce CI in Linux with Docker, pinned runtimes and an isolated database
 pnpm test        # unit (IGC parser/derive/artifact) + privacy & site integration
 pnpm typecheck   # tsc --noEmit

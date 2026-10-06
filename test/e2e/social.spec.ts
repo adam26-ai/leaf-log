@@ -1,4 +1,4 @@
-import { uploadFlight } from "./helpers";
+import { uploadFlight, expectNavigationCount, expectFeedRowsContained } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -55,9 +55,16 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   await expect(page.getByRole("button", { name: /requested/i })).toBeVisible();
 
   await bPage.goto("/friends");
+  await expectNavigationCount(bPage, "Friends", 1);
+  await test.info().attach("friends-notification-desktop", { body: await bPage.getByRole("banner").screenshot(), contentType: "image/png" });
+  await bPage.setViewportSize({ width: 390, height: 844 });
+  await expectNavigationCount(bPage, "Friends", 1);
+  await test.info().attach("friends-notification-mobile", { body: await bPage.getByRole("banner").screenshot(), contentType: "image/png" });
+  await bPage.setViewportSize({ width: 1280, height: 720 });
   const requestRow = bPage.locator("li").filter({ hasText: aName });
   await requestRow.getByRole("button", { name: /accept/i }).click();
   await expect(bPage.getByText("No pending requests.")).toBeVisible();
+  await expectNavigationCount(bPage, "Friends", 0);
 
   await bPage.goto("/upload");
   await uploadFlight(bPage, IGC_PATH);
@@ -67,13 +74,22 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   await bPage.getByRole("button", { name: "Friends only", exact: true }).click();
   await expect(bPage.getByRole("button", { name: "Friends only", exact: true })).toHaveAttribute("aria-pressed", "true");
 
-  await page.goto("/feed");
+  await page.goto("/logbook");
+  await expectNavigationCount(page, "Feed", 1);
+  await page.getByRole("link", { name: "Feed", exact: true }).click();
   await expect(page.getByText(`@${bHandle}`)).toBeVisible();
+  await expectNavigationCount(page, "Feed", 0);
   // Sites are fully community-driven (no curated seed), so the shared
   // fixture's flight reads "Unknown site" until someone names it.
   await expect(page.getByRole("link", { name: /unknown site/i })).toBeVisible();
   await expect(page.getByLabel("Flight trophies")).toBeVisible();
+  for (const width of [320, 390, 480, 640, 768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expectFeedRowsContained(page);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/@${bHandle}`);
+  await expectNavigationCount(page, "Feed", 0);
   await expect(page.getByLabel("Flight trophies")).toBeVisible();
   await expect(page.getByTitle("Maximum altitude")).toBeVisible();
 

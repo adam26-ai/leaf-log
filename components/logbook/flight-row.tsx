@@ -5,6 +5,9 @@ import Image from "next/image";
 import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
 import { WingPairIcon } from "@/components/icons/wing-icon";
+import { useFeedLayout } from "./feed-layout-provider";
+import { trophyGroups } from "@/lib/flights/trophy-groups";
+import { TrophyPill } from "./trophy-pill";
 import { ResponsiveTrophies } from "./responsive-trophies";
 import {
   formatDuration,
@@ -49,6 +52,7 @@ export function FlightRow({
   showAnalysis = false,
   friendFlightsFound = false,
   prioritizeSiteOnMobile = false,
+  feedLayout = false,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -61,8 +65,10 @@ export function FlightRow({
   showAnalysis?: boolean;
   friendFlightsFound?: boolean;
   prioritizeSiteOnMobile?: boolean;
+  feedLayout?: boolean;
 }) {
   const { units } = useUnits();
+  const layout = useFeedLayout(trophies ?? []);
   const visibility =
     flight.visibility === "public"
       ? { label: "Public", className: "border-white bg-success-accent text-gray-800" }
@@ -82,6 +88,32 @@ export function FlightRow({
       ?? (flight.landingSiteAssignment === "needs_review" ? "Choose site" : null);
     const showLanding = (flight.takeoffSiteName || !flight.landingSiteName) && landing && (flight.landingSiteAssignment === "needs_review" || flight.landingSiteId !== flight.takeoffSiteId
       || flight.landingZoneId !== flight.takeoffZoneId || landing !== site);
+    if (feedLayout) {
+      const groups = trophyGroups(trophies ?? [], layout.slots);
+      return (
+        <Link href={`/flights/${flight.id}`} data-feed-card-width={Math.round(layout.width)}
+          className="grid min-h-[45px] items-center rounded-md border border-gray-200 py-1 text-xs transition-colors hover:bg-gray-50"
+          style={{ backgroundImage: `linear-gradient(to right, ${blue}, ${green})`, gridTemplateColumns: layout.columns, columnGap: layout.gap, paddingLeft: layout.padding, paddingRight: layout.padding }}>
+          <span data-feed-column="date" className={`min-w-0 text-gray-600${layout.stacked ? " truncate" : ""}`} style={{ gridColumn: 1, gridRow: layout.stacked ? 2 : 1, fontSize: 13, lineHeight: '16px' }}>
+            <span className={layout.stacked ? "font-bold" : "block font-bold"}>{formatLocalDateShort(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span>
+            {layout.stacked && " \u00b7 "}
+            <span className={layout.stacked ? "tabular-nums" : "block whitespace-nowrap tabular-nums"}>{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} &middot; {formatDuration(flight.durationS)}</span>
+          </span>
+          <span data-feed-column="site" title={showLanding ? `${site} \u2192 ${landing}` : site} className={`min-w-0${layout.stacked ? " flex flex-wrap items-baseline gap-x-1.5" : ""}`} style={{ gridColumn: layout.stacked ? 1 : 2, gridRow: 1 }}>
+            <span className="block max-w-full truncate font-condensed font-bold leading-4 text-ink" style={{ fontSize: 16 }}>{site}</span>
+            {showLanding && <span title={`Landing: ${landing}`} className="block max-w-full truncate text-xs leading-4 text-gray-600">&rarr; {landing}</span>}
+          </span>
+          {layout.altitude && <span title="Maximum altitude" className="flex min-w-0 items-center gap-1 whitespace-nowrap tabular-nums text-brand-blue-strong" style={{gridColumn: 3, gridRow: 1}}><Cloud className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>}
+          <span data-feed-column="friends" className="flex items-center justify-center" style={{gridColumn: layout.stacked ? 2 : layout.altitude ? 4 : 3, gridRow: layout.stacked ? '1 / span 2' : 1}}>
+            {friendFlightsFound && <span title="You flew together" aria-label="You flew together" className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded-full border border-brand-blue bg-brand-blue text-white"><WingPairIcon aria-hidden="true" className="h-6 w-6" /></span>}
+          </span>
+          {layout.hasTrophies && <span data-feed-column="trophies" className="min-w-0" style={{gridColumn: layout.stacked ? 3 : layout.altitude ? 5 : 4, gridRow: layout.stacked ? '1 / span 2' : 1}}>
+            {!!groups.length && <span aria-label="Flight trophies" className="flex gap-1">{groups.map(group => <TrophyPill key={group.map(t => t.category).join(',')} trophies={group} compact={layout.compactTrophies} />)}</span>}
+          </span>}
+          {layout.upload && <span className="inline-flex" style={{gridColumn: layout.hasTrophies ? 6 : 5, gridRow: 1}}><UploadSource source={flight.source} /></span>}
+        </Link>
+      );
+    }
     return (
       <div className="relative">
       <Link href={`/flights/${flight.id}`} style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}

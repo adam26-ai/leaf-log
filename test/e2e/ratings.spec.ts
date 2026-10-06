@@ -62,7 +62,7 @@ test("a signed-in pilot can open /ratings and see their P2/P3/P4 progress", asyn
   await expect(page.getByRole("heading", { name: /P2/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /P3/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /P4/ })).toBeVisible();
-  for (const width of [320, 360, 390, 400, 480, 640, 1024, 1280]) {
+  for (const width of [320, 360, 390, 400, 480, 640, 1023, 1024, 1100, 1279, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     if (width >= 640) await expect(page.getByRole("banner").getByText(`@${handle}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("banner").getByLabel("E2E Ratings Pilot", { exact: true })).toHaveCSS("width", "44px");

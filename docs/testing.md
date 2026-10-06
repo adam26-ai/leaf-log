@@ -166,10 +166,26 @@ browser workflow cover this. A boundary drag check also mixed geographic distanc
 with a fixed pixel threshold; it now drags by a known screen distance and waits
 for the marker to reach the pointer while asserting no extra vertex is inserted.
 
-## Required pre-PR check
+## When to run tests
+
+- During ordinary code changes and local preview iteration, do not run the full
+  suite unless explicitly requested. Use focused tests or lightweight checks
+  relevant to the change when useful. This includes work on a branch with an
+  existing PR; local edits alone are not a PR update request.
+- Before a commit, ask whether tests should run and whether the user wants
+  focused tests or the full suite. Honor an answer already given for that commit.
+- When submitting or updating a PR, run the full suite by default after the final
+  edits. A combined commit-and-PR request uses this default without an additional
+  testing question. If the user explicitly asks to skip tests, honor that request
+  and disclose the missing validation in the PR.
+- Full-suite commands are for explicit requests and PR submission, not each small
+  change: `pnpm check`, `pnpm check:linux`, unfiltered `pnpm test`, and the entire
+  browser suite. Report only checks actually completed.
+
+## Default pre-PR check
 
 On Windows/macOS, run `pnpm check:linux` before submitting browser or CI changes.
-This runs the required full `pnpm check` inside Linux; a second native run is not
+This runs the full `pnpm check` inside Linux; a second native run is not
 required. It uses Docker's Playwright image matching the installed lockfile
 version, Node from `.node-version`, Ubuntu 24.04 (matching CI), four CPUs, and its
 own disposable PostgreSQL service. It copies tracked and non-ignored source

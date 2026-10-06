@@ -112,6 +112,11 @@ function emptyPatch(endpoint: SiteEndpoint): LocationFieldPatch {
     : { landingSiteId: null, landingSiteName: null, landingZoneId: null, landingZoneName: null };
 }
 
+/** A free-text location has no linked site or zone whose name could be cached. */
+export function customLocationNamePatch(name: string, endpoint: SiteEndpoint): LocationFieldPatch {
+  return { ...emptyPatch(endpoint), [`${endpoint}SiteName`]: name };
+}
+
 /**
  * Re-reads a previously matched site (and, if any, zone) id and re-verifies
  * BOTH are still visible to `ownerId` before returning a cache patch — not

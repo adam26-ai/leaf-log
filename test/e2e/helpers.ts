@@ -1,5 +1,29 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Photo controls stay at the viewport edges, independent of image dimensions. */
+export async function expectPhotoViewerControls(page: Page) {
+  const viewport = page.viewportSize()!;
+  const previous = page.getByRole("button", { name: "Previous", exact: true });
+  const next = page.getByRole("button", { name: "Next", exact: true });
+  const close = page.getByRole("button", { name: "Close", exact: true });
+  for (const button of [previous, next, close]) {
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS("width", "56px");
+    await expect(button).toHaveCSS("height", "56px");
+    expect(await button.evaluate(element => parseFloat(getComputedStyle(element).borderTopLeftRadius)))
+      .toBeGreaterThanOrEqual(28);
+  }
+  const left = (await previous.boundingBox())!;
+  const right = (await next.boundingBox())!;
+  const corner = (await close.boundingBox())!;
+  expect(left.x).toBeCloseTo(16, 0);
+  expect(right.x + right.width).toBeCloseTo(viewport.width - 16, 0);
+  expect(left.y + left.height / 2).toBeCloseTo(viewport.height / 2, 0);
+  expect(right.y + right.height / 2).toBeCloseTo(viewport.height / 2, 0);
+  expect(corner.x + corner.width).toBeCloseTo(viewport.width - 16, 0);
+  expect(corner.y).toBeCloseTo(16, 0);
+}
+
 /** A held mouse crossing between the map and profile keeps its original owner. */
 export async function expectReplayDragOwnership(page: Page, origin: "map" | "profile") {
   const map = page.locator(".flight-replay-map");
@@ -51,18 +75,53 @@ export async function expectReplayDragOwnership(page: Page, origin: "map" | "pro
   await expect(timeline).toHaveAttribute("aria-valuenow", released!);
 }
 
-/** Exactly one header destination marks the current page for sighted and screen-reader users. */
+/** Counts remain readable without changing the navigation link names. */
+export async function expectNavigationCount(page: Page, name: "Feed" | "Friends", count: number) {
+  const link = page.getByRole("banner").getByRole("link", { name, exact: true });
+  const badge = link.getByRole("status");
+  if (count === 0) await expect(badge).toHaveCount(0);
+  else {
+    await expect(badge).toHaveText(count > 99 ? "99+" : String(count));
+    await expect(badge).toHaveCSS("background-color", "rgb(216, 255, 0)");
+    await expect(badge).toHaveCSS("border-top-color", "rgb(0, 125, 204)");
+    await expect(badge).toHaveCSS("color", "rgb(0, 90, 153)");
+  }
+  await expect(link).toHaveAccessibleName(name);
+}
+
 export async function expectCurrentHeaderLink(page: Page, name: string) {
   const header = page.getByRole("banner");
   const current = header.getByRole("link").and(header.locator('[aria-current="page"]'));
   await expect(current).toHaveCount(1);
   await expect(current).toHaveAccessibleName(name);
   if (name === "Leaf Log — your logbook") {
-    await expect(current).toHaveCSS("--tw-ring-color", "#007dcc");
+    await expect(current.locator('img[src="/leaf-log-capsule.png"]')).toBeVisible();
+    await expect(current.locator('img[src="/leaf-log-outline.svg"]')).toBeHidden();
+    await expect(current).toHaveCSS("box-shadow", "none");
   } else if (name !== "Settings") {
     await expect(current).toHaveCSS("background-color", "rgb(0, 125, 204)");
     await expect(current).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(current.locator("svg")).toHaveCSS("color", "rgb(255, 255, 255)");
+  }
+  if (name !== "Leaf Log — your logbook") {
+    const logo = header.getByRole("link", { name: "Leaf Log — your logbook", exact: true });
+    await expect(logo.locator('img[src="/leaf-log-capsule.png"]')).toBeHidden();
+    await expect(logo.locator('img[src="/leaf-log-outline.svg"]')).toBeVisible();
+    const capsule = logo.locator("span");
+    // Compare pixels because Chromium may serialize the same color as Lab or OKLCH.
+    await expect.poll(() => capsule.evaluate(element => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2;
+      canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = getComputedStyle(element).backgroundColor;
+      context.fillRect(0, 0, 1, 1);
+      context.fillStyle = "oklch(0.968 0.007 247.896)";
+      context.fillRect(1, 0, 1, 1);
+      const pixels = context.getImageData(0, 0, 2, 1).data;
+      return pixels.slice(0, 4).every((value, index) => value === pixels[index + 4]);
+    })).toBe(true);
+    await expect(capsule).toHaveCSS("box-shadow", /1px inset/);
   }
 }
 
@@ -123,6 +182,14 @@ export async function expectSingleRowHeader(page: Page) {
   const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
   expect(avatar).not.toBeNull();
   const center = avatar!.y + avatar!.height / 2;
+  const addFlight = header.getByRole("link", { name: "Add flight", exact: true });
+  const addFlightBox = (await addFlight.boundingBox())!;
+  expect(addFlightBox.x + addFlightBox.width).toBeLessThanOrEqual(avatar!.x);
+  // Full labels stay available down to the laptop breakpoint, with room for the account.
+  if (page.viewportSize()!.width >= 1024) {
+    await expect(addFlight.getByText("Add flight", { exact: true })).toHaveCSS("position", "static");
+    await expect(header.getByRole("link", { name: "Settings", exact: true }).locator('[aria-hidden="false"]')).toBeVisible();
+  }
   for (const link of await header.getByRole("link").all()) {
     if (!await link.isVisible()) continue;
     const box = await link.boundingBox();
@@ -332,4 +399,36 @@ export async function expectReplaySpaceShortcut(page: Page) {
 /** Scope per-entry calculation actions outside the flight navigation link. */
 export function logbookEntry(page: Page, flightId: string) {
   return page.getByRole("listitem").filter({ has: page.locator(`a[href="/flights/${flightId}"]`) });
+}
+
+/** Feed icons must remain inside the flight link and clear of kudos at every breakpoint. */
+export async function expectFeedRowsContained(page: Page) {
+  const flights = page.locator('main li a[href^="/flights/"]');
+  await expect(flights.first()).toBeVisible();
+  await expect(page.getByLabel(/^Visibility:/)).toHaveCount(0);
+  await expect.poll(() => flights.evaluateAll(links => links.every(link => {
+    const button = link.closest("li")!.querySelector("button")!;
+    const icon = button.querySelector("svg")!.getBoundingClientRect();
+    const count = button.querySelector("span")!.getBoundingClientRect();
+    return icon.bottom <= count.top + 1
+      && Math.abs((icon.left + icon.right) - (count.left + count.right)) < 2;
+  }))).toBe(true);
+  await expect.poll(() => flights.evaluateAll(links => links.every(link => {
+    const bounds = link.getBoundingClientRect();
+    const row = link.closest("li")!;
+    const kudos = row.querySelector("button")!.getBoundingClientRect();
+    return link.scrollWidth <= link.clientWidth + 1 && bounds.right <= kudos.left
+      && bounds.right <= document.documentElement.clientWidth;
+  }))).toBe(true);
+  // Badge tracks remain aligned at every width, including empty badge slots.
+  await expect.poll(() => flights.evaluateAll(links => {
+    return ['[title="Maximum altitude"]', '[data-feed-column="friends"]', '[data-feed-column="trophies"]'].every(selector => {
+      const visible = links.flatMap(link => {
+        const element = link.querySelector(selector);
+        return element?.getClientRects().length ? [element] : [];
+      });
+      const positions = visible.map(element => element.getBoundingClientRect().left);
+      return positions.every(left => Math.abs(left - positions[0]) < 1);
+    });
+  })).toBe(true);
 }

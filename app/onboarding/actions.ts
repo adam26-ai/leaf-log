@@ -19,7 +19,7 @@ export async function completeOnboarding(
   if ("error" in d) return { error: d.error };
   const { handle } = h;
   const { displayName } = d;
-  const defaultVisibility = normalizeVisibility(formData.get("default_visibility"));
+  const defaultVisibility = normalizeVisibility(formData.get("default_visibility") ?? "friends");
 
   const userId = await getCurrentUserId();
   if (!userId) redirect("/sign-in");

@@ -14,9 +14,9 @@ export default async function UploadPage() {
         <SectionHeading as="h1">Add flight</SectionHeading>
         <p className="mt-4 mb-8 text-gray-600">
           Drop an .igc file from your Leaf (or any flight recorder). We&apos;ll parse it and build your flight
-          page. Flights are private until you choose to share them.
+          page. New flights use your default privacy setting.
         </p>
-        <AddFlightForm options={options} imperial={profile.defaultUnits === "imperial"} />
+        <AddFlightForm options={options} imperial={profile.defaultUnits === "imperial"} defaultVisibility={profile.defaultVisibility} />
       </main>
     </div>
   );

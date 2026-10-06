@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { photoUrl, unpinnedReason, type FlightPhoto } from "./photos";
 
 /**
@@ -113,7 +114,7 @@ export function PhotoGallery({
             <img
               src={photoUrl(open.flightId ?? flightId, open.id, "display")}
               alt={open.originalFilename ?? "Flight photo"}
-              className="max-h-[85vh] w-auto rounded-md"
+              className="max-h-[85vh] w-auto max-w-full rounded-md"
             />
             <div className="absolute left-0 right-0 top-0 flex items-center justify-between p-2 text-paper">
               <span className="rounded bg-ink/60 px-2 py-0.5 text-xs">
@@ -129,42 +130,46 @@ export function PhotoGallery({
                     Delete
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={close}
-                  className="rounded bg-ink/60 px-2 py-0.5 text-xs hover:bg-ink"
-                >
-                  Close
-                </button>
               </div>
             </div>
-            {photos.length > 1 && (
-              <>
-                <NavButton side="left" onClick={() => step(-1)} />
-                <NavButton side="right" onClick={() => step(1)} />
-              </>
-            )}
             {open.placementSource === "unpinned" && (
               <div className="absolute bottom-0 left-0 right-0 bg-ink/70 px-3 py-1.5 text-center text-xs text-paper">
                 Not on the map — {unpinnedReason(open)}
               </div>
             )}
           </div>
+          {photos.length > 1 && (
+            <>
+              <NavButton side="left" onClick={() => step(-1)} />
+              <NavButton side="right" onClick={() => step(1)} />
+            </>
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); close(); }}
+            className={`absolute right-4 top-4 ${lightboxButtonClass}`}
+            aria-label="Close"
+          >
+            <X className="h-8 w-8" aria-hidden="true" />
+          </button>
         </div>
       )}
     </div>
   );
 }
 
+const lightboxButtonClass = "flex h-14 w-14 items-center justify-center rounded-full bg-ink/60 text-paper hover:bg-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper";
+
 function NavButton({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
+  const Icon = side === "left" ? ChevronLeft : ChevronRight;
   return (
     <button
       type="button"
-      onClick={onClick}
-      className={`absolute top-1/2 -translate-y-1/2 ${side === "left" ? "left-2" : "right-2"} flex h-9 w-9 items-center justify-center rounded-full bg-ink/60 text-lg text-paper hover:bg-ink`}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className={`absolute top-1/2 -translate-y-1/2 ${side === "left" ? "left-4" : "right-4"} ${lightboxButtonClass}`}
       aria-label={side === "left" ? "Previous" : "Next"}
     >
-      {side === "left" ? "‹" : "›"}
+      <Icon className="h-8 w-8" aria-hidden="true" />
     </button>
   );
 }

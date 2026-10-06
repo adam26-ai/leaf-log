@@ -1,4 +1,4 @@
-import { uploadFlight, waitForMapReady } from "./helpers";
+import { expectPhotoViewerControls, uploadFlight, waitForMapReady } from "./helpers";
 import { test, expect } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -79,9 +79,18 @@ test("owner uploads photos (incl. HEIC) → gallery thumbnails serve", async ({ 
   await expect
     .poll(() => big.evaluate((img: HTMLImageElement) => img.naturalWidth), { timeout: 15_000 })
     .toBeGreaterThan(0);
+  await expectPhotoViewerControls(page);
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(big).toHaveAttribute("alt", "tiled-sample.heic");
   await expect.poll(() => big.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await expectPhotoViewerControls(page);
+  const viewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: 600 });
+  await expectPhotoViewerControls(page);
+  await page.getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(big).toHaveAttribute("alt", "exif-sample.jpg");
+  await expectPhotoViewerControls(page);
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(big).toHaveCount(0);
+  await page.setViewportSize(viewport);
 });

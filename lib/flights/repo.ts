@@ -664,13 +664,7 @@ export function listPublicFlights(ownerId: string): Promise<FlightListItem[]> {
   return listProfileFlightsForViewer(ownerId, null);
 }
 
-export async function listFeedForViewer(
-  viewerId: string,
-  options: { limit?: number; cursor?: string | null } = {},
-): Promise<FeedPageResult> {
-  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 20)), 50);
-  const cursor = decodeFeedCursor(options.cursor);
-
+export async function feedWhereForViewer(viewerId: string): Promise<Prisma.FlightWhereInput> {
   const friendships = await prisma.friendship.findMany({
     where: {
       status: "accepted",
@@ -682,15 +676,26 @@ export async function listFeedForViewer(
     row.requesterId === viewerId ? row.addresseeId : row.requesterId,
   );
 
-  if (friendIds.length === 0) return { rows: [], nextCursor: null };
+  return {
+    ownerId: { in: friendIds, not: viewerId },
+    status: "ready",
+    visibility: { in: ["public", "friends"] },
+  };
+}
+
+export async function listFeedForViewer(
+  viewerId: string,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<FeedPageResult> {
+  const limit = Math.min(Math.max(1, Math.floor(options.limit ?? 20)), 50);
+  const cursor = decodeFeedCursor(options.cursor);
+  const feedWhere = await feedWhereForViewer(viewerId);
 
   const page = await prisma.flight.findMany({
     where: {
       // Friendships are bounded by mutual acceptance, so an IN list is fine for
       // now; a raw-SQL join is a future optimization if this access path grows.
-      ownerId: { in: friendIds, not: viewerId },
-      status: "ready",
-      visibility: { in: ["public", "friends"] },
+      ...feedWhere,
       ...feedCursorWhere(cursor),
     },
     orderBy: [

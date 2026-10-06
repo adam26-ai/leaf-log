@@ -233,8 +233,9 @@ test("manual location search moves the map before choosing exact coordinates, in
   });
   await page.goto("/upload");
   const introduction = page.locator("main > p");
-  await expect(introduction).toHaveText("Drop an .igc file from your Leaf (or any flight recorder). We'll parse it and build your flight page. Flights are private until you choose to share them.");
+  await expect(introduction).toHaveText("Drop an .igc file from your Leaf (or any flight recorder). We'll parse it and build your flight page. New flights use your default privacy setting.");
   await expect(introduction.locator("code, span")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Visibility", exact: true })).toHaveValue("friends");
   await expect(page.getByLabel("Flight date", { exact: true })).toBeEnabled();
   await page.getByLabel("Flight date", { exact: true }).fill("2024-07-12");
   await addEntrySite(page, "Memory Hill");

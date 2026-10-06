@@ -44,7 +44,7 @@ d("profile settings", () => {
     const prv = await prisma.user.create({
       data: {
         email: `prv_${suffix}@test.local`,
-        profile: { create: { handle: privateHandle, displayName: "Prv" } }, // defaults to private
+        profile: { create: { handle: privateHandle, displayName: "Prv", defaultVisibility: "private" } },
       },
     });
     privateOwnerId = prv.id;

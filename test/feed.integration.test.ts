@@ -3,6 +3,7 @@
 // Friends feed invariants. Requires a local Postgres and must not skip.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { config } from "dotenv";
+import { navigationCounts } from "@/lib/social/notifications";
 config({ path: ".env.local" });
 
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
@@ -80,6 +81,36 @@ describe("friends feed", () => {
     });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
+  });
+
+  it("counts only new visible friend flights and incoming requests, and persists a monotonic read time", async () => {
+    const viewer = await createPilot("badge");
+    const friend = await createPilot("badgefriend");
+    const incoming = await createPilot("incoming");
+    const outgoing = await createPilot("outgoing");
+    await prisma.friendship.createMany({ data: [
+      { requesterId: viewer.id, addresseeId: friend.id, status: "accepted" },
+      { requesterId: incoming.id, addresseeId: viewer.id, status: "pending" },
+      { requesterId: viewer.id, addresseeId: outgoing.id, status: "pending" },
+    ] });
+    const visible = await createFlight({ ownerId: friend.id, visibility: "friends", label: "new" });
+    await createFlight({ ownerId: friend.id, visibility: "private", label: "private" });
+    await createFlight({ ownerId: friend.id, visibility: "public", status: "processing", label: "processing" });
+    await createFlight({ ownerId: incoming.id, visibility: "public", label: "stranger" });
+    await createFlight({ ownerId: viewer.id, visibility: "public", label: "own" });
+    // Explicit times avoid millisecond ties with account creation.
+    const baseline = new Date("2026-01-01T00:00:00Z");
+    await prisma.profile.update({ where: { id: viewer.id }, data: { createdAt: baseline } });
+    expect(await navigationCounts(viewer.id)).toEqual({ feed: 1, friends: 1 });
+    const viewedAt = new Date(visible.createdAt.getTime() + 1);
+    expect(await navigationCounts(viewer.id, viewedAt)).toEqual({ feed: 0, friends: 1 });
+    expect(await navigationCounts(viewer.id, baseline)).toEqual({ feed: 0, friends: 1 });
+    const later = await createFlight({ ownerId: friend.id, visibility: "public", label: "later" });
+    await prisma.flight.update({ where: { id: later.id }, data: { createdAt: new Date(viewedAt.getTime() + 1) } });
+    expect(await navigationCounts(viewer.id)).toEqual({ feed: 1, friends: 1 });
+    await prisma.friendship.deleteMany({ where: { addresseeId: viewer.id, status: "pending" } });
+    await prisma.friendship.deleteMany({ where: { requesterId: viewer.id, addresseeId: friend.id } });
+    expect(await navigationCounts(viewer.id)).toEqual({ feed: 0, friends: 0 });
   });
 
   it("ranks trophies per pilot across full history while returning only authorized flight awards", async () => {
