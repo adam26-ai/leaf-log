@@ -35,20 +35,6 @@ function command(executable, args, capture = false) {
 const sourceFiles = command("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], true)
   .toString().split("\0").filter(path => path && existsSync(path));
 writeFileSync(resolve(artifacts, "source-files.list"), sourceFiles.join("\0") + "\0");
-// SwiftShader counts host CPUs, not the container's affinity. Chromium reads
-// its config beside the renderer library during startup, not in the project.
-// Change only this disposable image; never modify a developer's browser cache.
-writeFileSync(resolve(artifacts, "configure-renderer.cjs"), `
-const fs = require("node:fs");
-const path = require("node:path");
-const libraries = fs.readdirSync("/ms-playwright", { recursive: true })
-  .filter(file => path.basename(file) === "libvk_swiftshader.so");
-if (!libraries.length) throw new Error("Playwright's SwiftShader libraries were not found.");
-for (const library of libraries) {
-  fs.writeFileSync(path.join("/ms-playwright", path.dirname(library), "SwiftShader.ini"), "[Processor]\\nThreadCount=4\\n");
-}
-console.log("Configured four SwiftShader workers in " + libraries.length + " Chromium installations.");
-`);
 // Generate LF regardless of the host's Git line-ending settings.
 writeFileSync(resolve(artifacts, "run.sh"), `set -euo pipefail
 cd /work
@@ -56,7 +42,7 @@ trap 'for dir in playwright-report test-results; do if [ -d "$dir" ]; then cp -a
 tar -C /source --null -T /artifacts/source-files.list -cf - | tar -xf -
 npm install --prefix /opt/leaf-node node@${nodeVersion}
 export PATH=/opt/leaf-node/node_modules/node/bin:$PATH
-node /artifacts/configure-renderer.cjs
+node scripts/configure-swiftshader.mjs /ms-playwright
 corepack pnpm install --frozen-lockfile
 corepack pnpm ${mode === "all" ? "check" : `check:${mode}`}
 `);

@@ -63,10 +63,13 @@ export async function expectReplayDragOwnership(page: Page, origin: "map" | "pro
   await page.mouse.move(left, chartY);
   await page.mouse.down();
   try {
-    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    // Let Playwright assert in the browser: a slow attribute read can outlive
+    // expect.poll's deadline even when the pointer has already scrubbed.
+    await expect(timeline).toHaveAttribute("aria-valuenow", /^[1-9]\d*$/);
     const start = Number(await timeline.getAttribute("aria-valuenow"));
     await page.mouse.move(right, mapY);
-    await expect.poll(async () => Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
+    await expect(timeline).not.toHaveAttribute("aria-valuenow", String(start));
+    expect(Number(await timeline.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
   } finally {
     await page.mouse.up();
   }

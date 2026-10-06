@@ -1,5 +1,29 @@
 # Testing and CI reliability
 
+## Follow-up: PR 106, October 5, 2026
+
+The merged [run 37400970638](https://github.com/adam26-ai/leaf-log/actions/runs/37400970638)
+passed both jobs and all 45 browser scenarios. Its preceding
+[PR run](https://github.com/adam26-ai/leaf-log/actions/runs/37400852428)
+failed the profile-drag assertion: the trace's attribute read returned playback
+time 74 after 5.32 seconds, beyond the five-second `expect.poll` deadline.
+The same failure occurred after PR 105. Use locator assertions for the initial
+nonzero value and subsequent change, then retain the numeric forward-movement
+check and the release check. Keep real pointer capture and map rendering.
+
+The [PR 105 merge run](https://github.com/adam26-ai/leaf-log/actions/runs/37334469829)
+also exhausted the upload/edit scenario while waiting for Tandem on the editor.
+The trace remained on the replay page after clicking Edit flight, despite a
+successful editor response. Wait for the replay's first render before clicking
+and assert the editor URL before changing flight types. Persistence, duplicate
+handling and ratings-field synchronization assertions remain in that workflow.
+
+Hosted CI and the disposable Linux check use `scripts/configure-swiftshader.mjs`
+to set four software-renderer workers beside Chromium's renderer libraries.
+This removes a configuration difference; the traces establish browser stalls,
+but do not prove renderer worker count caused them. No retries, skips or longer
+deadlines are added.
+
 ## Follow-up: PR 105, October 5, 2026
 
 [Run 37275688301](https://github.com/adam26-ai/leaf-log/actions/runs/37275688301)
