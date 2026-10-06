@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { config } from "dotenv";
 import { navigationCounts } from "@/lib/social/notifications";
+import { listHighlights } from "@/lib/flights/list-highlights";
 config({ path: ".env.local" });
 
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
@@ -111,6 +112,51 @@ describe("friends feed", () => {
     await prisma.friendship.deleteMany({ where: { addresseeId: viewer.id, status: "pending" } });
     await prisma.friendship.deleteMany({ where: { requesterId: viewer.id, addresseeId: friend.id } });
     expect(await navigationCounts(viewer.id)).toEqual({ feed: 0, friends: 0 });
+  });
+
+  it("matches each pilot's full logbook shading independently of feed pagination and other pilots", async () => {
+    const viewer = await createPilot("shadeViewer");
+    const pilotA = await createPilot("shadeA");
+    const pilotB = await createPilot("shadeB");
+    await prisma.friendship.createMany({ data: [
+      { requesterId: viewer.id, addresseeId: pilotA.id, status: "accepted" },
+      { requesterId: viewer.id, addresseeId: pilotB.id, status: "accepted" },
+    ] });
+    const visible = await createFlight({ ownerId: pilotA.id, visibility: "friends", label: "shade-visible", flightDate: new Date("2026-06-09") });
+    const hidden = await createFlight({ ownerId: pilotA.id, visibility: "private", label: "shade-record" });
+    const older = await createFlight({ ownerId: pilotA.id, visibility: "public", label: "shade-older", flightDate: new Date("2020-01-01") });
+    const failed = await createFlight({ ownerId: pilotA.id, visibility: "private", status: "failed", label: "shade-failed" });
+    const other = await createFlight({ ownerId: pilotB.id, visibility: "public", label: "shade-other", flightDate: new Date("2026-06-10") });
+    await Promise.all([
+      { flight: visible, duration: 100, distance: 1000 },
+      { flight: hidden, duration: 400, distance: 4000 },
+      { flight: older, duration: 200, distance: 2000 },
+      { flight: failed, duration: 10000, distance: 100000 },
+      { flight: other, duration: 100, distance: 1000 },
+    ].map(async ({ flight, duration, distance }) => {
+      await prisma.flight.update({ where: { id: flight.id }, data: {
+        durationS: duration, maxAltM: 500 + duration, launchAltM: 500,
+        recordingKind: "logbook", reportedXcType: "open", reportedXcDistanceM: distance,
+      } });
+    }));
+    const page1 = await repo.listFeedForViewer(viewer.id, { limit: 1 });
+    const page2 = await repo.listFeedForViewer(viewer.id, { limit: 1, cursor: page1.nextCursor });
+    expect(page1.rows.map(flight => flight.id)).toEqual([other.id]);
+    expect(page2.rows.map(flight => flight.id)).toEqual([visible.id]);
+    const scores = await repo.highlightsForVisibleFlights([...page1.rows, ...page2.rows]);
+    expect(scores).toEqual({
+      [other.id]: { highlightScore: 1, distanceScore: 1 },
+      [visible.id]: { highlightScore: 0.25, distanceScore: 0.25 },
+    });
+    expect(await repo.highlightsForVisibleFlights(page2.rows)).toEqual({ [visible.id]: scores[visible.id] });
+    const ownFlights = await repo.listOwnFlights(pilotA.id);
+    const ownFlight = ownFlights.find(flight => flight.id === visible.id)!;
+    const ownHighlights = listHighlights(ownFlights);
+    expect(scores[visible.id]).toEqual({ highlightScore: ownHighlights.highlightScore(ownFlight), distanceScore: ownHighlights.distanceScore(ownFlight) });
+    expect(scores).not.toHaveProperty(hidden.id);
+    expect(scores).not.toHaveProperty(older.id);
+    expect(scores).not.toHaveProperty(failed.id);
+    expect(await repo.highlightsForVisibleFlights([])).toEqual({});
   });
 
   it("ranks trophies per pilot across full history while returning only authorized flight awards", async () => {

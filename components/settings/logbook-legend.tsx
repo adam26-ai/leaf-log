@@ -2,8 +2,8 @@
 
 import { useId, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { Cloud, Eye, Trophy, Users, Waypoints, X } from "lucide-react";
-import { WingIcon } from "@/components/icons/wing-icon";
+import { Cloud, Trophy, Users, Waypoints, X } from "lucide-react";
+import { WingPairIcon } from "@/components/icons/wing-icon";
 import { useUnits } from "@/lib/flights/use-units";
 import { formatAltitude } from "@/lib/flights/format";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,9 @@ const help = {
   date: ["Date, time & duration", "The first line shows the flight date. Below it are the local takeoff time and time spent flying. Manual entries may show only the details you supplied."],
   site: ["Flying site", "The site name identifies where you took off. When a different landing site is known, it appears after an arrow."],
   altitude: ["Maximum altitude", "The cloud symbol shows the highest altitude recorded during the flight, in your selected units."],
-  friends: ["Friend flights", "The wing and people badge means matching friend flights were found. Open the flight to explore flying together in replay."],
+  friends: ["Friend flights", "The two-paraglider badge means you flew together with a friend. Open the flight to explore the matching friend flights in replay."],
   trophies: ["Personal bests", "Trophies mark your top three flights in categories such as duration, altitude, altitude gain, and distance. Gold, silver, and bronze indicate first, second, and third place; the small symbol identifies the category."],
-  privacy: ["Flight visibility", "The eye badge shows who can see the flight: a lock for private, people for friends, or a globe for public. This example is visible to friends."],
+  privacy: ["Flight visibility", "The round visibility badge shows who can see the flight: a lock for private, people for friends, or a globe for public. This example is visible to friends."],
   source: ["Log source", "The symbol indicates how the log was created: IGC automatically uploaded from a Leaf, IGC manually uploaded, flight details entered by hand, or imported from another logbook."],
 } as const;
 type Detail = keyof typeof help;
@@ -43,15 +43,15 @@ export function LogbookLegend() {
 
   function badge(key: "friends" | "trophies" | "privacy" | "source", visibility: string) {
     const symbols = {
-      friends: <><WingIcon aria-hidden="true" className="h-5 w-5" /><Users aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></>,
+      friends: <WingPairIcon aria-hidden="true" className="h-6 w-6" />,
       trophies: <><Trophy aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><Waypoints aria-hidden="true" className="h-[15px] w-[15px]" /></>,
-      privacy: <><Eye aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><Users aria-hidden="true" className="h-[17.5px] w-[17.5px]" /></>,
+      privacy: <Users aria-hidden="true" className="h-[15px] w-[15px]" />,
       source: <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-8 w-8" />,
     };
     const styles = {
-      friends: "h-6 w-11 gap-0.5 rounded-full border border-brand-blue bg-brand-blue text-white",
+      friends: "h-6 w-8 rounded-full border border-brand-blue bg-brand-blue text-white",
       trophies: "h-6 w-11 gap-1 rounded-full border border-black/20 bg-[#f5cd57] text-[#563b00]",
-      privacy: "h-6 gap-0.5 rounded-full border border-brand-blue bg-brand-blue/10 px-1.5 text-brand-blue-strong",
+      privacy: "h-6 w-6 rounded-full border border-brand-blue bg-brand-blue/10 text-brand-blue-strong",
       source: "h-8 w-8",
     };
     return detail(key, symbols[key], cn("shrink-0 items-center justify-center", styles[key], visibility));

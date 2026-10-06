@@ -44,8 +44,15 @@ it("applies ordered card-width transitions and preserves minimum badge space", (
   expect(feedLayout(600, [all]).upload).toBe(true);
   expect(feedLayout(599, [all]).upload).toBe(false);
   expect(feedLayout(400, [all]).altitude).toBe(true);
-  expect(feedLayout(399, [all]).altitude).toBe(false);
+  expect(feedLayout(399, [all]).altitude).toBe(true);
   expect(feedLayout(359, [all]).stacked).toBe(true);
+  expect(feedLayout(359, [all]).altitude).toBe(true);
+  expect(feedLayout(300, [all]).altitude).toBe(true);
+  expect(feedLayout(300, [all]).combinedBadges).toBe(false);
+  expect(feedLayout(300, [all]).columns).toBe("minmax(0,1fr) 76px 32px 24px");
+  expect(feedLayout(299, [all]).altitude).toBe(false);
+  expect(feedLayout(299, [all]).combinedBadges).toBe(true);
+  expect(feedLayout(299, [all]).columns).toBe("minmax(0,1fr) auto");
   expect(feedLayout(259, [all]).trophies).toBe(24);
   expect(feedLayout(259, [all]).compactTrophies).toBe(true);
   expect(feedLayout(320, [[]]).hasTrophies).toBe(false);

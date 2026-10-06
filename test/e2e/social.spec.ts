@@ -83,7 +83,7 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   // fixture's flight reads "Unknown site" until someone names it.
   await expect(page.getByRole("link", { name: /unknown site/i })).toBeVisible();
   await expect(page.getByLabel("Flight trophies")).toBeVisible();
-  for (const width of [320, 390, 480, 640, 768, 1024, 1280]) {
+  for (const width of [320, 390, 480, 500, 501, 530, 567, 568, 611, 612, 640, 768, 935, 936, 1024, 1280]) {
     await page.setViewportSize({ width, height: 844 });
     await expectFeedRowsContained(page);
   }

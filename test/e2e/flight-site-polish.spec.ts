@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -161,6 +161,35 @@ test("site management separates linked flights from matching names and counts ea
     await expect(review.getByRole("button", { name: "Assign site to 2 selected flights", exact: true })).toBeEnabled();
     await review.getByRole("button", { name: "Previous matches" }).click();
     await expect(review.getByRole("checkbox").first()).toBeChecked();
+  } finally { await db.$disconnect(); }
+});
+
+test("friend feed and profile shading match the pilot's own logbook including private history", async ({ page, newContext }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const base = { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "manual_entry", launchAltM: 500, reportedXcType: "open" };
+    const flight = await db.flight.create({ data: { ...base, visibility: "friends", takeoffSiteName: "Personal best ridge", durationS: 100, maxAltM: 600, reportedXcDistanceM: 1000 } });
+    const hidden = await db.flight.create({ data: { ...base, visibility: "private", durationS: 400, maxAltM: 900, reportedXcDistanceM: 4000 } });
+    await page.goto("/logbook");
+    const ownShading = await readFlightCardShading(page.locator(`a[href="/flights/${flight.id}"]`));
+    expect(ownShading).toContain("linear-gradient");
+
+    const context = await newContext();
+    const friendPage = await context.newPage();
+    const friendHandle = await signUp(friendPage);
+    const friend = await db.profile.findUniqueOrThrow({ where: { handle: friendHandle } });
+    await db.friendship.create({ data: { requesterId: owner.id, addresseeId: friend.id, status: "accepted" } });
+    const card = friendPage.locator(`a[href="/flights/${flight.id}"]`);
+    await friendPage.goto("/feed");
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await expect(friendPage.locator(`a[href="/flights/${hidden.id}"]`)).toHaveCount(0);
+    await friendPage.reload();
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await friendPage.goto(`/@${handle}`);
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await expect(friendPage.locator(`a[href="/flights/${hidden.id}"]`)).toHaveCount(0);
   } finally { await db.$disconnect(); }
 });
 

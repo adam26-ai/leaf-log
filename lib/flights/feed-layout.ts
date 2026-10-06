@@ -6,13 +6,14 @@ import { trophyGroups } from "./trophy-groups";
 export const FEED_LAYOUT_STEPS = [
   { below: 640, change: "Use compact trophy icons" },
   { below: 600, change: "Hide upload source" },
-  { below: 400, change: "Hide maximum altitude" },
   { below: 360, change: "Place site above date/time/duration" },
+  { below: 300, change: "Hide maximum altitude and combine badge columns" },
 ] as const;
 
 export function feedLayout(width: number, trophySets: FlightTrophy[][]) {
-  const upload = width >= 600, altitude = width >= 400;
+  const upload = width >= 600, altitude = width >= 300;
   const stacked = width < 360, compactTrophies = width < 640;
+  const combinedBadges = width < 300;
   const padding = Math.max(4, Math.min(12, width * .012));
   const gap = Math.max(3, Math.min(12, width * .01));
   const date = stacked ? 0 : Math.max(104, Math.min(132, width * .16));
@@ -28,6 +29,7 @@ export function feedLayout(width: number, trophySets: FlightTrophy[][]) {
   // Reclaim unused slots after medal grouping, shared across the whole list.
   const count = Math.max(0, ...trophySets.map(set => trophyGroups(set, slots).length));
   const trophies = count ? count * pill + (count - 1) * 4 : 0;
-  const columns = [!stacked && `${date}px`, "minmax(0,1fr)", altitude && `${alt}px`, `${friends}px`, hasTrophies && `${trophies}px`, upload && `${source}px`].filter(Boolean).join(" ");
-  return { width, upload, altitude, stacked, compactTrophies, padding, gap, slots, trophies, hasTrophies, columns };
+  const columns = combinedBadges ? "minmax(0,1fr) auto"
+    : [!stacked && `${date}px`, "minmax(0,1fr)", altitude && `${alt}px`, `${friends}px`, hasTrophies && `${trophies}px`, upload && `${source}px`].filter(Boolean).join(" ");
+  return { width, upload, altitude, stacked, compactTrophies, combinedBadges, padding, gap, slots, trophies, hasTrophies, columns };
 }
