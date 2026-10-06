@@ -43,6 +43,7 @@ function UploadSource({ source }: { source: string }) {
 export function FlightRow({
   flight,
   owner,
+  isOwner = false,
   kudoCount,
   compact = false,
   highlightScore = 0,
@@ -56,6 +57,7 @@ export function FlightRow({
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
+  isOwner?: boolean;
   kudoCount?: number;
   compact?: boolean;
   highlightScore?: number;
@@ -85,7 +87,7 @@ export function FlightRow({
     const blue = `rgb(0 153 255 / ${blueAlpha})`;
     const green = `rgb(148 233 30 / ${greenAlpha})`;
     const landing = formatLocationLabel(flight.landingSiteName, flight.landingZoneName)
-      ?? (flight.landingSiteAssignment === "needs_review" ? "Choose site" : null);
+      ?? (isOwner && flight.landingSiteAssignment === "needs_review" ? "Choose site" : null);
     const showLanding = (flight.takeoffSiteName || !flight.landingSiteName) && landing && (flight.landingSiteAssignment === "needs_review" || flight.landingSiteId !== flight.takeoffSiteId
       || flight.landingZoneId !== flight.takeoffZoneId || landing !== site);
     if (feedLayout) {

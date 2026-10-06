@@ -344,6 +344,13 @@ export async function readSiteKind(editor: Locator) {
   return takeoff && landing ? "both" : takeoff ? "takeoff" : "landing";
 }
 
+/** An omitted landing also omits the arrow next to the primary site. */
+export async function expectReplayLandingHidden(page: Page) {
+  const heading = page.getByRole("heading", { level: 1 });
+  await expect(heading).toBeVisible();
+  await expect(heading.locator("..").getByText("→", { exact: true })).toHaveCount(0);
+}
+
 /** When a replay map exists, wait for its first rendered frame before
  * interacting with the site header. Manual flights have no replay map. */
 export async function openSiteChooser(page: Page, endpoint: "primary" | "landing" = "primary") {
