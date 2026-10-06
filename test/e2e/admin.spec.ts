@@ -27,7 +27,7 @@ test("main admin can search, grant, revoke, re-enable and separately remove admi
     await expectCurrentHeaderLink(page, "Leaf Log — your logbook");
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Admin", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
-    for (const width of [320, 360, 390, 400, 480, 640, 1024, 1280]) {
+    for (const width of [320, 360, 390, 400, 480, 640, 1023, 1024, 1100, 1279, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await expectSingleRowHeader(page);
       await expectCurrentHeaderLink(page, "Admin");

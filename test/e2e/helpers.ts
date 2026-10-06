@@ -71,11 +71,21 @@ export async function expectCurrentHeaderLink(page: Page, name: string) {
   await expect(current).toHaveCount(1);
   await expect(current).toHaveAccessibleName(name);
   if (name === "Leaf Log — your logbook") {
-    await expect(current).toHaveCSS("--tw-ring-color", "#007dcc");
+    await expect(current.locator('img[src="/leaf-log-capsule.png"]')).toBeVisible();
+    await expect(current.locator('img[src="/leaf-log-outline.svg"]')).toBeHidden();
+    await expect(current).toHaveCSS("box-shadow", "none");
   } else if (name !== "Settings") {
     await expect(current).toHaveCSS("background-color", "rgb(0, 125, 204)");
     await expect(current).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(current.locator("svg")).toHaveCSS("color", "rgb(255, 255, 255)");
+  }
+  if (name !== "Leaf Log — your logbook") {
+    const logo = header.getByRole("link", { name: "Leaf Log — your logbook", exact: true });
+    await expect(logo.locator('img[src="/leaf-log-capsule.png"]')).toBeHidden();
+    await expect(logo.locator('img[src="/leaf-log-outline.svg"]')).toBeVisible();
+    const capsule = logo.locator("span");
+    await expect(capsule).toHaveCSS("background-color", "oklch(0.968 0.007 247.896)");
+    await expect(capsule).toHaveCSS("box-shadow", /1px inset/);
   }
 }
 
@@ -136,6 +146,14 @@ export async function expectSingleRowHeader(page: Page) {
   const avatar = await header.getByRole("link", { name: "Settings", exact: true }).boundingBox();
   expect(avatar).not.toBeNull();
   const center = avatar!.y + avatar!.height / 2;
+  const addFlight = header.getByRole("link", { name: "Add flight", exact: true });
+  const addFlightBox = (await addFlight.boundingBox())!;
+  expect(addFlightBox.x + addFlightBox.width).toBeLessThanOrEqual(avatar!.x);
+  // Full labels stay available down to the laptop breakpoint, with room for the account.
+  if (page.viewportSize()!.width >= 1024) {
+    await expect(addFlight.getByText("Add flight", { exact: true })).toHaveCSS("position", "static");
+    await expect(header.getByRole("link", { name: "Settings", exact: true }).locator('[aria-hidden="false"]')).toBeVisible();
+  }
   for (const link of await header.getByRole("link").all()) {
     if (!await link.isVisible()) continue;
     const box = await link.boundingBox();

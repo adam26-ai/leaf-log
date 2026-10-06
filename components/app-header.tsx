@@ -49,8 +49,8 @@ export async function AppHeader({ profile, feedSeenThrough }: { profile: Profile
     <header className="sticky top-0 z-40 flex items-center justify-between gap-1 border-b border-gray-200 bg-paper px-1 py-3 min-[360px]:px-2 sm:gap-2 sm:px-4 sm:py-4 xl:px-10">
       <div className="flex shrink-0 items-center gap-0.5 min-[360px]:gap-1 sm:gap-3 xl:gap-6">
         <CurrentPageLink href="/logbook" title="Your logbook" aria-label="Leaf Log — your logbook"
-          className="shrink-0 rounded-full aria-[current=page]:ring-2 aria-[current=page]:ring-brand-blue-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
-          <LeafLogLogo compact />
+          className="group shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
+          <LeafLogLogo compact navigation />
         </CurrentPageLink>
         <NavigationNotifications feedSeenThrough={feedSeenThrough} refreshKey={new Date().toISOString()}>
           <nav aria-label="Main navigation" className="flex shrink-0 items-center gap-px text-sm min-[360px]:gap-0.5 min-[400px]:gap-1 min-[480px]:gap-1.5 xl:gap-2">
@@ -60,10 +60,10 @@ export async function AppHeader({ profile, feedSeenThrough }: { profile: Profile
                 href={href}
                 title={label}
                 aria-label={label}
-                className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 p-0 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 aria-[current=page]:border-brand-blue-strong aria-[current=page]:bg-brand-blue-strong aria-[current=page]:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] min-[360px]:h-[34px] min-[360px]:w-[34px] min-[400px]:h-[38px] min-[400px]:w-[38px] min-[480px]:h-10 min-[480px]:w-10 xl:w-auto xl:px-4"
+                className="group relative inline-flex h-8 w-8 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-100 p-0 font-medium text-slate-700 transition-colors hover:border-[#0099FF] hover:bg-sky-50 aria-[current=page]:border-brand-blue-strong aria-[current=page]:bg-brand-blue-strong aria-[current=page]:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0099FF] min-[360px]:h-[34px] min-[360px]:w-[34px] min-[400px]:h-[38px] min-[400px]:w-[38px] min-[480px]:h-10 min-[480px]:w-10 lg:w-auto lg:px-4"
               >
                 <Icon aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-[#0099FF] group-aria-[current=page]:text-white" />
-                <span className="sr-only xl:not-sr-only">{label}</span>
+                <span className="sr-only lg:not-sr-only">{label}</span>
                 {(href === "/feed" || href === "/friends") && <NavigationBadge kind={href === "/feed" ? "feed" : "friends"} />}
               </CurrentPageLink>
             ))}
