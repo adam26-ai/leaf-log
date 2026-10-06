@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { parse } from "dotenv";
 import { PrismaClient } from "@prisma/client";
+import { customLocationNamePatch } from "../lib/sites/associate";
 
 async function main() {
   const env = parse(readFileSync(".env.local"));
@@ -26,8 +27,8 @@ async function main() {
         updated.push(await tx.flight.update({
           where: { id },
           data: {
-            ...(takeoff ? { takeoffSiteName: takeoff, takeoffSiteAssignment: "custom_name", takeoffSiteId: null, takeoffZoneId: null, takeoffZoneName: null } : {}),
-            landingSiteName: landing, landingSiteAssignment: "custom_name", landingSiteId: null, landingZoneId: null, landingZoneName: null,
+            ...(takeoff ? { ...customLocationNamePatch(takeoff, "takeoff"), takeoffSiteAssignment: "custom_name" } : {}),
+            ...customLocationNamePatch(landing, "landing"), landingSiteAssignment: "custom_name",
           },
           select: { takeoffSiteName: true, landingSiteName: true },
         }));

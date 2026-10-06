@@ -6,6 +6,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { flightTrophies } from "../lib/flights/trophies";
 import { METRICS_VERSION, XC_SCORING_VERSION, XC_CATEGORIES } from "../lib/flights/analysis-state";
 import { readXcScore } from "../lib/igc/xc-types";
+import { customLocationNamePatch } from "../lib/sites/associate";
 
 async function main() {
   const env = parse(readFileSync(".env.local"));
@@ -61,8 +62,8 @@ async function main() {
           ...(fixture.source === "csv_import" ? { reportedXcDistanceM: 12000, reportedXcType: "open" } : {}),
           takeoffLat: template.takeoffLat, takeoffLon: template.takeoffLon, landingLat: template.landingLat, landingLon: template.landingLon,
           bounds: template.bounds as Prisma.InputJsonValue,
-          takeoffSiteName: fixture.site, takeoffSiteAssignment: "custom_name",
-          landingSiteName: index === 1 ? "Robert Louis Stevenson State Park — Valley Landing (demo)" : fixture.site,
+          ...customLocationNamePatch(fixture.site, "takeoff"), takeoffSiteAssignment: "custom_name",
+          ...customLocationNamePatch(index === 1 ? "Robert Louis Stevenson State Park — Valley Landing (demo)" : fixture.site, "landing"),
           landingSiteAssignment: "custom_name",
           ...(recorded ? { data: { create: { rawIgc: template.data!.rawIgc, track: template.data!.track as Prisma.InputJsonValue, replay: template.data!.replay ?? Prisma.JsonNull } } } : {}),
         } });
