@@ -83,7 +83,7 @@ async function signUp(page: Page) {
   return suffix;
 }
 
-test("site map browses public and owned sites, selects the list, and stays visible after reload", async ({ page, context }) => {
+test("site map browses public and owned sites, selects the list, and stays visible after reload", async ({ page, context }, testInfo) => {
   const suffix = await signUp(page);
   const db = new PrismaClient();
   const siteIds: string[] = [];
@@ -121,7 +121,15 @@ test("site map browses public and owned sites, selects the list, and stays visib
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const layout = await page.evaluate(() => ({
+      width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll<HTMLElement>("body *")].flatMap(element => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.right > innerWidth ? [{ tag: element.tagName, className: element.className, right: bounds.right, text: element.textContent?.slice(0, 80) }] : [];
+      }),
+    }));
+    if (layout.scrollWidth > layout.width) await testInfo.attach("responsive-layout", { body: JSON.stringify(layout, null, 2), contentType: "application/json" });
+    expect(layout.scrollWidth <= layout.width).toBe(true);
     await page.screenshot({ path: "test-results/site-map-mobile.png", fullPage: true });
   } finally {
     await db.user.delete({ where: { id: owner.id } });

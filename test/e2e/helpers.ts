@@ -1,5 +1,20 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Exercise actual GPU loss/restoration without replacing the renderer. */
+export async function setMapContextLost(map: Locator, lost: boolean) {
+  await map.evaluate(async (element, lose) => {
+    const canvas = element.querySelector("canvas") as HTMLCanvasElement & { testContextExtension?: WEBGL_lose_context };
+    if (!canvas) throw new Error("Map canvas missing");
+    const extension = canvas.testContextExtension ?? canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context");
+    if (!extension) throw new Error("WEBGL_lose_context is required for the context recovery regression");
+    canvas.testContextExtension = extension;
+    const event = new Promise<void>(resolve => canvas.addEventListener(lose ? "webglcontextlost" : "webglcontextrestored", () => resolve(), { once: true }));
+    if (lose) extension.loseContext();
+    else extension.restoreContext();
+    await event;
+  }, lost);
+}
+
 /** Compare the actual rendered shading across owner and friend flight cards. */
 export async function readFlightCardShading(card: Locator) {
   await expect(card).toBeVisible();

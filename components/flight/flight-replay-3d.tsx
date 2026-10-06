@@ -890,7 +890,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
    */
   function groundElevationAt(lon: number, lat: number): number | null {
     const map = mapRef.current;
-    if (!map) return null;
+    if (!map?.style) return null;
     let ground: number | null = null;
     try {
       ground = map.queryTerrainElevation([lon, lat]);
@@ -1044,7 +1044,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     smooth = false,
   ) {
     const map = mapRef.current;
-    if (!map || !dataRef.current) return;
+    if (!map?.style || !dataRef.current) return;
     if (map.getCenterClampedToGround()) map.setCenterClampedToGround(false);
     const p = positionAt(t);
     const padding = trackingPadding(p[2]);
@@ -1186,9 +1186,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   }
 
   function removeShadow(map: maplibregl.Map) {
+    shadowSampleCountRef.current = -1;
+    // MapLibre clears its style while the WebGL context is lost.
+    if (!map.style) return;
     if (map.getLayer(SHADOW_LAYER_ID)) map.removeLayer(SHADOW_LAYER_ID);
     if (map.getSource(SHADOW_SOURCE_ID)) map.removeSource(SHADOW_SOURCE_ID);
-    shadowSampleCountRef.current = -1;
   }
 
   function syncShadow() {
@@ -1254,7 +1256,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
     const overlay = overlayRef.current;
     const d = dataRef.current;
     const tracks = trackRef.current;
-    if (!overlay || !d || !tracks.length) return;
+    if (!overlay || !mapRef.current?.style || !d || !tracks.length) return;
     const displayedTracks = tracks.map((track) => displayedTrackAt(track, t)).filter((track) => track.path.length >= 2);
     const pos = positionAt(t);
     const state = replayStateAt(d, t);
@@ -2063,6 +2065,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
   // (Re)apply our DEM terrain + hillshade + sky. Needed on first load and after
   // every basemap setStyle (which resets terrain and wipes custom layers).
   function setupTerrain(map: maplibregl.Map) {
+    if (!map.style) return;
     if (!map.getSource("dem")) {
       map.addSource("dem", {
         type: "raster-dem",
@@ -2140,17 +2143,29 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       attributionControl: { compact: true },
     });
     const mapCanvas = map.getCanvas();
+    let recoveryPending = false;
+    let initialized = false;
+    let removeTerrainProfileListener: (() => void) | undefined;
     const recordContextEvent = (event: string) => {
       if (!trackDiagnosticModeRef.current) return;
       const entry = `${new Date().toISOString()} ${event}`;
       setTrackDiagnosticContextEvents((current) => [...current.slice(-7), entry]);
     };
-    const handleContextLost = () => recordContextEvent("webglcontextlost");
+    const handleContextLost = () => {
+      recordContextEvent("webglcontextlost");
+      recoveryPending = true;
+      container.dataset.renderReady = "false";
+      const overlay = overlayRef.current;
+      overlayRef.current = null;
+      // The old deck.gl GPU resources cannot be reused after restoration.
+      if (overlay) map.removeControl(overlay);
+      groundElevationCacheRef.current.clear();
+      terrainProfilesPublishedRef.current.clear();
+      shadowSampleCountRef.current = -1;
+    };
     const handleContextRestored = () => recordContextEvent("webglcontextrestored");
-    if (trackDiagnosticModeRef.current) {
-      mapCanvas.addEventListener("webglcontextlost", handleContextLost);
-      mapCanvas.addEventListener("webglcontextrestored", handleContextRestored);
-    }
+    mapCanvas.addEventListener("webglcontextlost", handleContextLost);
+    mapCanvas.addEventListener("webglcontextrestored", handleContextRestored);
     const removeMouseNavigation = installMouseNavigation(map);
     const removeTouchNavigation = installTouchNavigation(map);
     mapRef.current = map;
@@ -2178,7 +2193,11 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       }
     });
 
-    map.on("load", () => {
+    const initializeReplay = () => {
+      if (disposed || !map.style || overlayRef.current) return;
+      const recovering = initialized;
+      initialized = true;
+      removeTerrainProfileListener?.();
       setupTerrain(map);
 
       const overlay = new MapboxOverlay({
@@ -2211,12 +2230,12 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       map.addControl(overlay);
       overlayRef.current = overlay;
 
-      fitToRoute(0);
+      if (!recovering) fitToRoute(0);
       renderLayers(timeRef.current);
       syncShadow();
       // Entering 3D mid-flight with follow/chase on: centre on the glider (a fresh
       // load sits at takeoff t=0, where the fitBounds overview is preferred).
-      if (cameraModeRef.current !== "fixed" && timeRef.current > 0) {
+      if (cameraModeRef.current !== "fixed" && (recovering || timeRef.current > 0)) {
         centerOnGlider(timeRef.current, cameraModeRef.current === "chase");
       }
 
@@ -2267,11 +2286,19 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
         }
       };
       map.on("idle", publishTerrainProfile);
+      removeTerrainProfileListener = () => map.off("idle", publishTerrainProfile);
       publishTerrainProfile();
+    };
+    map.on("load", initializeReplay);
+    map.on("style.load", () => {
+      if (!recoveryPending || disposed) return;
+      recoveryPending = false;
+      initializeReplay();
     });
 
     return () => {
       disposed = true;
+      removeTerrainProfileListener?.();
       if (styleRefreshTimerRef.current) window.clearInterval(styleRefreshTimerRef.current);
       overlayRef.current = null;
       mapRef.current = null;
@@ -2399,7 +2426,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       previous = now;
       const map = mapRef.current;
       const target = trackingTargetRef.current;
-      if (!map || !target) return;
+      if (!map?.style || !target) return;
       if (cameraModeRef.current === "fixed" || cameraTrackingSuspended(now)) {
         trackingTargetRef.current = null;
         trackingMotionRef.current = null;

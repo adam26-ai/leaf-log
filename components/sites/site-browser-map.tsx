@@ -33,7 +33,7 @@ export function SiteBrowserMap({ sites, selectedId, initialPoint, onSelect }: {
     redrawBoundaries.current?.();
     const map = mapRef.current;
     const selected = sites.find(site => site.id === selectedId);
-    if (map && previousSelection.current !== selectedId && selected && hasSitePoint(selected)) {
+    if (map?.style && previousSelection.current !== selectedId && selected && hasSitePoint(selected)) {
       map.easeTo({ center: [selected.lon, selected.lat], zoom: Math.max(map.getZoom(), 12), duration: 350 });
     }
     previousSelection.current = selectedId;
@@ -44,6 +44,7 @@ export function SiteBrowserMap({ sites, selectedId, initialPoint, onSelect }: {
     const element = container.current;
     let map: maplibregl.Map;
     let disposed = false;
+    let recovering = false;
     try {
       const point = initial.current;
       map = new maplibregl.Map({ container: element, style: styleFor("streets"),
@@ -63,18 +64,28 @@ export function SiteBrowserMap({ sites, selectedId, initialPoint, onSelect }: {
       }] : []),
     });
     redrawBoundaries.current = () => {
+      if (disposed || !map.style) return;
       (map.getSource("site-boundaries") as maplibregl.GeoJSONSource | undefined)?.setData(boundaryData());
     };
-    // Recreate overlays after switching between the map and satellite styles.
+    // Restored contexts can retain the overlays; basemap changes remove them.
     map.on("style.load", () => {
-      map.addSource("site-boundaries", { type: "geojson", data: boundaryData() });
-      map.addLayer({ id: "site-boundaries-fill", type: "fill", source: "site-boundaries", minzoom: 11,
+      if (disposed || !map.style) return;
+      if (!map.getSource("site-boundaries")) map.addSource("site-boundaries", { type: "geojson", data: boundaryData() });
+      else redrawBoundaries.current?.();
+      if (!map.getLayer("site-boundaries-fill")) map.addLayer({ id: "site-boundaries-fill", type: "fill", source: "site-boundaries", minzoom: 11,
         paint: { "fill-color": ["get", "color"], "fill-opacity": 0.08 } });
-      map.addLayer({ id: "site-boundaries-outline", type: "line", source: "site-boundaries", minzoom: 11,
+      if (!map.getLayer("site-boundaries-outline")) map.addLayer({ id: "site-boundaries-outline", type: "line", source: "site-boundaries", minzoom: 11,
         paint: { "line-color": ["get", "color"], "line-width": ["case", ["get", "selected"], 3, 2] } });
+      if (recovering) {
+        recovering = false;
+        const selected = current.current.sites.find(site => site.id === current.current.selectedId);
+        if (selected && hasSitePoint(selected)) map.easeTo({ center: [selected.lon, selected.lat], zoom: Math.max(map.getZoom(), 12), duration: 0 });
+        paint();
+      }
     });
     const markers = new Map<string, { marker: maplibregl.Marker; button: HTMLButtonElement }>();
     const paint = () => {
+      if (disposed || !map.style) return;
       const visible = new Set<string>();
       const bounds = map.getBounds();
       for (const site of current.current.sites) {
@@ -107,7 +118,8 @@ export function SiteBrowserMap({ sites, selectedId, initialPoint, onSelect }: {
     map.on("load", paint);
     map.on("moveend", paint);
     map.on("idle", () => { element.dataset.renderReady = "true"; });
-    const observer = new ResizeObserver(() => { map.resize(); paint(); });
+    map.on("webglcontextlost", () => { recovering = true; element.dataset.renderReady = "false"; });
+    const observer = new ResizeObserver(() => { if (!disposed && map.style) { map.resize(); paint(); } });
     observer.observe(element);
     let userMoved = false;
     map.on("movestart", event => { if (event.originalEvent) userMoved = true; });
