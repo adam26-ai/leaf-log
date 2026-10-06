@@ -1,4 +1,4 @@
-import { openSitesPage, createSiteFromFlight, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
+import { openSitesPage, createSiteFromFlight, expectSiteEditorFooter, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -83,7 +83,7 @@ async function signUp(page: Page) {
   return suffix;
 }
 
-test("site map browses public and owned sites, selects the list, and stays visible after reload", async ({ page, context }) => {
+test("site map browses public and owned sites, selects the list, and stays visible after reload", async ({ page, context }, testInfo) => {
   const suffix = await signUp(page);
   const db = new PrismaClient();
   const siteIds: string[] = [];
@@ -121,7 +121,15 @@ test("site map browses public and owned sites, selects the list, and stays visib
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const layout = await page.evaluate(() => ({
+      width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+      overflowing: [...document.querySelectorAll<HTMLElement>("body *")].flatMap(element => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.right > innerWidth ? [{ tag: element.tagName, className: element.className, right: bounds.right, text: element.textContent?.slice(0, 80) }] : [];
+      }),
+    }));
+    if (layout.scrollWidth > layout.width) await testInfo.attach("responsive-layout", { body: JSON.stringify(layout, null, 2), contentType: "application/json" });
+    expect(layout.scrollWidth <= layout.width).toBe(true);
     await page.screenshot({ path: "test-results/site-map-mobile.png", fullPage: true });
   } finally {
     await db.user.delete({ where: { id: owner.id } });
@@ -131,6 +139,7 @@ test("site map browses public and owned sites, selects the list, and stays visib
 });
 
 test("a standalone site saves its pin and persists public and private visibility", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
   const suffix = await signUp(page);
   // A site can be created independently, without borrowing an IGC.
   await openSitesPage(page);
@@ -138,7 +147,13 @@ test("a standalone site saves its pin and persists public and private visibility
   const standaloneName = `E2E Standalone Ridge ${suffix}`;
   const editor = page.getByRole('dialog', { name: 'Site details' });
   await page.getByRole('button', { name: 'Create a site', exact: true }).click();
+  await expectSiteEditorFooter(editor);
+  await editor.getByRole('button', { name: 'Save site', exact: true }).click();
+  await expect(editor.getByRole('alert')).toContainText('Enter a site name');
+  await expectSiteEditorFooter(editor);
   await editor.getByLabel('Name', { exact: true }).fill(standaloneName);
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await expectSiteEditorFooter(editor);
   await editor.getByLabel('Pin latitude').fill('35');
   await editor.getByLabel('Pin longitude').fill('15');
   await editor.getByRole('button', { name: 'Save site', exact: true }).click();
@@ -148,6 +163,7 @@ test("a standalone site saves its pin and persists public and private visibility
   for (const visibility of ['public', 'private'] as const) {
     await page.getByRole('button', { name: 'Edit site', exact: true }).click();
     await setSiteVisibility(editor, visibility);
+    await expectSiteEditorFooter(editor);
     await editor.getByRole('button', { name: 'Save site', exact: true }).click();
     await expect(editor).toHaveCount(0);
     await page.reload();
@@ -209,6 +225,7 @@ test("a site with a nearby namesake can change to takeoff and landing", async ({
   await editor.getByLabel("Pin longitude").fill("15");
   await editor.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(editor.getByRole("alert")).toContainText("already has a nearby map pin");
+  await expectSiteEditorFooter(editor);
   await expect(editor.getByLabel("Name", { exact: true })).toHaveValue(name);
   await editor.getByRole("button", { name: "Cancel", exact: true }).click();
 });

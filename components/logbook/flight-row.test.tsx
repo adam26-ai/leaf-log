@@ -53,10 +53,29 @@ it.each([true, false])("distinguishes ambiguous takeoff sites from unmatched sit
   expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
 });
 
-it("shows an ambiguous landing even when the takeoff also needs a choice", () => {
-  render(<FlightRow flight={{ ...flight, takeoffSiteId: null, takeoffSiteName: null, takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" }} compact />);
+it("shows an ambiguous landing to the owner even when the takeoff also needs a choice", () => {
+  render(<FlightRow flight={{ ...flight, takeoffSiteId: null, takeoffSiteName: null, takeoffSiteAssignment: "needs_review", landingSiteAssignment: "needs_review" }} compact isOwner />);
   expect(screen.getByTitle("Choose site → Choose site")).toBeInTheDocument();
   expect(screen.getByTitle("Landing: Choose site")).toHaveTextContent("→ Choose site");
+});
+
+it.each([true, false])("hides an unnamed landing from non-owners while retaining the owner's prompt (feedLayout=%s)", (feedLayout) => {
+  const unresolved = { ...flight, landingSiteAssignment: "needs_review" };
+  const { rerender } = render(<FlightRow flight={unresolved} compact feedLayout={feedLayout} />);
+  expect(screen.getByTitle("Woodrat")).toBeInTheDocument();
+  expect(screen.queryByText(/Choose site|→/)).not.toBeInTheDocument();
+  expect(screen.queryByTitle("Landing: Choose site")).not.toBeInTheDocument();
+
+  rerender(<FlightRow flight={unresolved} compact feedLayout={feedLayout} isOwner />);
+  expect(screen.getByTitle("Woodrat → Choose site")).toBeInTheDocument();
+  expect(screen.getByTitle("Landing: Choose site")).toHaveTextContent("→ Choose site");
+});
+
+it.each([true, false])("retains a named landing for non-owners even when it needs review (feedLayout=%s)", (feedLayout) => {
+  render(<FlightRow flight={{ ...flight, landingSiteName: "Valley Field", landingSiteAssignment: "needs_review" }} compact feedLayout={feedLayout} />);
+  expect(screen.getByTitle("Woodrat → Valley Field")).toBeInTheDocument();
+  expect(screen.getByTitle("Landing: Valley Field")).toHaveTextContent("→ Valley Field");
+  expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
 });
 
 it.each([

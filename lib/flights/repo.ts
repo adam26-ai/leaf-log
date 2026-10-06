@@ -14,6 +14,7 @@ import { isLogbookEntry } from "./recording";
 import { flightStatistics } from "./statistics";
 import { flightTrophies, type FlightTrophy } from "./trophies";
 import { METRICS_VERSION } from "./analysis-state";
+import { listHighlights } from "./list-highlights";
 
 /** Social eligibility is narrower than direct flight access (no instructor exceptions).
  * Filter before pagination, geometry reads, or returning any participant metadata.
@@ -528,6 +529,28 @@ export async function trophiesForVisibleFlights(flights: { id: string; ownerId: 
   const ranked: Record<string, FlightTrophy[]> = {};
   for (const ownerId of new Set(flights.map(flight => flight.ownerId))) Object.assign(ranked, flightTrophies(history.filter(flight => flight.ownerId === ownerId)));
   return Object.fromEntries(flights.map(flight => [flight.id, ranked[flight.id] ?? []]));
+}
+
+/** Match each pilot's own logbook shading across their complete ready history.
+ * Return only shading scores for already-authorized flights, keeping private records on the server.
+ */
+export async function highlightsForVisibleFlights(flights: { id: string; ownerId: string }[]): Promise<Record<string, { highlightScore: number; distanceScore: number }>> {
+  if (!flights.length) return {};
+  const ownerIds = [...new Set(flights.map(flight => flight.ownerId))];
+  const history = await prisma.flight.findMany({
+    where: { ownerId: { in: ownerIds }, status: "ready" },
+    select: { id: true, ownerId: true, status: true, durationS: true, maxAltM: true, launchAltM: true, straightDistM: true, xcScore: true, reportedXcDistanceM: true, reportedXcType: true },
+  });
+  const byId = new Map(history.map(flight => [flight.id, flight]));
+  const byOwner = new Map(ownerIds.map(ownerId => [ownerId, listHighlights(history.filter(flight => flight.ownerId === ownerId))]));
+  return Object.fromEntries(flights.map(({ id, ownerId }) => {
+    const flight = byId.get(id);
+    const highlights = byOwner.get(ownerId)!;
+    return [id, {
+      highlightScore: flight?.ownerId === ownerId ? highlights.highlightScore(flight) : 0,
+      distanceScore: flight?.ownerId === ownerId ? highlights.distanceScore(flight) : 0,
+    }];
+  }));
 }
 
 /** Logbook companion discovery: accepted friends, readable recordings, positive airtime

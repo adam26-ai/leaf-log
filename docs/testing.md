@@ -1,5 +1,39 @@
 # Testing and CI reliability
 
+## Safari / WebKit context recovery
+
+Set `LEAF_E2E_BROWSER=webkit` to select Playwright's Desktop Safari project;
+Chromium remains the default. Install WebKit with `pnpm exec playwright install
+webkit` (add `--with-deps` on Linux). With the local test database configured,
+run these focused scenarios from PowerShell:
+
+```powershell
+$env:LEAF_E2E_BROWSER = "webkit"
+pnpm exec playwright test map-context.spec.ts sites.spec.ts --grep "WebGL context loss|site map browses"
+Remove-Item Env:LEAF_E2E_BROWSER
+```
+
+Playwright's WebKit is a useful Safari compatibility check, but Linux WebKit
+does not reproduce macOS Safari's exact version or GPU driver. Verify the
+affected Mac as well when investigating device-specific GPU failures.
+
+The context-loss regressions use `WEBGL_lose_context` on the real MapLibre
+canvas. Before the fixes, switching replay pilots failed with
+`this.style.getLayer` and selecting a site failed with `this.style.getSource`,
+because MapLibre clears its style during context loss. The scenarios select
+pilots, map pins and list rows while the context is lost, then restore it and
+check rendering and selection. The Sites scenario also checks raster tile
+pixels, zoom and drag navigation. Only third-party tile data is a fixture;
+it does not verify live tile-provider availability. The replay recreates its
+deck.gl overlay after restoration, retaining the selected pilot and camera.
+These checks establish recovery behavior, not why a particular GPU lost its
+context.
+
+One focused Linux WebKit run also failed the existing mobile-width assertion
+immediately after resizing the Sites page; an isolated follow-up passed. The
+scenario now attaches overflowing-element measurements if it repeats. This
+intermittent assertion remains unresolved; keep its width check intact.
+
 ## Follow-up: PR 106, October 5, 2026
 
 The merged [run 37400970638](https://github.com/adam26-ai/leaf-log/actions/runs/37400970638)

@@ -34,7 +34,7 @@ export function SiteEditor({ initial, flightPoint = null, canChangeVisibility = 
       .catch(() => { if (!cancelled) setReferenceError(true); });
     return () => { cancelled = true; };
   }, []);
-  const onBoundaryChange = useCallback((draft: unknown) => setBoundaryDraft(draft), []);
+  const onBoundaryChange = useCallback((draft: unknown) => { setBoundaryDraft(draft); setError(null); }, []);
   const map = useRef<BoundaryEditorHandle>(null);
   const point = { lat: lat.trim() ? Number(lat) : null, lon: lon.trim() ? Number(lon) : null };
   const mapped = hasSitePoint(point);
@@ -44,8 +44,10 @@ export function SiteEditor({ initial, flightPoint = null, canChangeVisibility = 
     ? "Place the site pin inside the boundary before saving."
     : boundaryValidation?.ok === false ? `Check the boundary: ${boundaryValidation.error.replaceAll("_", " ")}.`
       : boundaryDraft === null && mode === "boundary" ? "Add at least 3 points." : null;
+  const saveError = boundaryError || error;
   const inputClass = "mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/25";
-  function placePin(next: SitePoint) { setLat(String(Number(next.lat.toFixed(6)))); setLon(String(Number(next.lon.toFixed(6)))); }
+  function updateValue(next: SiteEditorValue) { setValue(next); setError(null); }
+  function placePin(next: SitePoint) { setLat(String(Number(next.lat.toFixed(6)))); setLon(String(Number(next.lon.toFixed(6)))); setError(null); }
   async function save() {
     setError(null);
     const raw = { ...value, ...point, boundary: map.current ? map.current.readDraft() : boundaryDraft };
@@ -71,12 +73,12 @@ export function SiteEditor({ initial, flightPoint = null, canChangeVisibility = 
     {Boolean(usageCount && usageCount > 1) && <p className="text-xs text-gray-500">Used by {usageCount} of your flights.</p>}
     <fieldset disabled={pending} className="flex min-w-0 flex-col gap-2">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-        <label className="col-span-2 min-w-0 text-xs font-medium text-gray-700 sm:col-span-1">Name<input value={value.name} maxLength={60} onChange={e => setValue({ ...value, name: e.target.value })} className={inputClass} /></label>
+        <label className="col-span-2 min-w-0 text-xs font-medium text-gray-700 sm:col-span-1">Name<input value={value.name} maxLength={60} onChange={e => updateValue({ ...value, name: e.target.value })} className={inputClass} /></label>
         <div><span className="block text-xs font-medium text-gray-700">Used for</span><div role="group" aria-label="Used for" className="mt-1 flex gap-1">
           {(["takeoff", "landing"] as const).map(kind => {
             const selected = value.kind === kind || value.kind === "both";
             return <button type="button" key={kind} aria-label={kind === "takeoff" ? "Takeoff" : "Landing"} title={kind === "takeoff" ? "Takeoff" : "Landing"} aria-pressed={selected}
-              onClick={() => setValue({ ...value, kind: value.kind === "both" ? kind === "takeoff" ? "landing" : "takeoff" : selected ? kind : "both" })}
+              onClick={() => updateValue({ ...value, kind: value.kind === "both" ? kind === "takeoff" ? "landing" : "takeoff" : selected ? kind : "both" })}
               className={`rounded-md border px-2 py-1.5 ${selected ? "border-brand-blue bg-brand-blue/15 text-brand-blue-strong" : "border-gray-300 text-gray-500 hover:bg-gray-100"}`}><SiteUseIcon landing={kind === "landing"} /></button>;
           })}
         </div></div>
@@ -87,7 +89,7 @@ export function SiteEditor({ initial, flightPoint = null, canChangeVisibility = 
               onClick={() => {
                 if (!canChangeVisibility) { setVisibilityHelp("Only the site owner can change visibility."); return; }
                 if (visibility === "public" && !mapped) { setVisibilityHelp("Add a map pin before sharing this site."); return; }
-                setVisibilityHelp(null); setValue({ ...value, visibility });
+                setVisibilityHelp(null); updateValue({ ...value, visibility });
               }} className={`rounded-md border p-2 ${value.visibility === visibility ? "border-brand-blue bg-brand-blue/15 text-brand-blue-strong" : "border-gray-300 text-gray-500 hover:bg-gray-100"}`}><Icon className="h-4 w-4" /></button>;
           })}
           <span className="ml-1 w-10 text-xs text-gray-600">{value.visibility === "public" ? "Public" : "Private"}</span>
@@ -106,14 +108,14 @@ export function SiteEditor({ initial, flightPoint = null, canChangeVisibility = 
         showSaveButton={false} showCancel={false} onSave={async () => ({ ok: true })} onClear={async () => ({ ok: true })} onCancel={onCancel} />
       {referenceError && <p role="status" className="text-xs text-orange-700">Other sites could not be loaded. Reopen the editor to try again.</p>}
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-gray-700"><span className="shrink-0">Pin latitude:</span><input aria-label="Pin latitude" type="number" step="any" min={-90} max={90} value={lat} onChange={e => setLat(e.target.value)} className={`${inputClass} !mt-0 min-w-0`} /></label>
-        <label className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-gray-700"><span className="shrink-0">Longitude:</span><input aria-label="Pin longitude" type="number" step="any" min={-180} max={180} value={lon} onChange={e => setLon(e.target.value)} className={`${inputClass} !mt-0 min-w-0`} /></label>
+        <label className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-gray-700"><span className="shrink-0">Pin latitude:</span><input aria-label="Pin latitude" type="number" step="any" min={-90} max={90} value={lat} onChange={e => { setLat(e.target.value); setError(null); }} className={`${inputClass} !mt-0 min-w-0`} /></label>
+        <label className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-gray-700"><span className="shrink-0">Longitude:</span><input aria-label="Pin longitude" type="number" step="any" min={-180} max={180} value={lon} onChange={e => { setLon(e.target.value); setError(null); }} className={`${inputClass} !mt-0 min-w-0`} /></label>
       </div>
     </fieldset>
     <div className="sticky bottom-0 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 bg-paper py-2">
-      <div>{(boundaryError || error) && <p role="alert" className="text-sm text-red-700">{boundaryError || error}</p>}</div>
-      <div className="flex flex-col justify-end gap-2 sm:flex-row"><Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>Cancel</Button>
-        <Button type="button" disabled={pending} onClick={() => void save()}>{pending ? "Saving…" : saveLabel}</Button></div>
+      <div className="min-w-0">{saveError && <p role="alert" className="break-words text-sm text-red-700">{saveError}</p>}</div>
+      <div className="flex flex-nowrap justify-end gap-2"><Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>Cancel</Button>
+        <Button type="button" disabled={pending || Boolean(saveError)} className="disabled:bg-gray-200 disabled:text-gray-500 disabled:opacity-100" onClick={() => void save()}>{pending ? "Saving…" : saveLabel}</Button></div>
     </div>
   </section>;
 }

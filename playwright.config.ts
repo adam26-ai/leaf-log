@@ -29,6 +29,8 @@ process.env.LEAF_E2E = "1";
 // shell. This also matches Edge's headless implementation on Windows.
 const channel = process.env.PLAYWRIGHT_CHANNEL ||
   (!existsSync(chromium.executablePath()) && process.platform === "win32" ? "msedge" : "chromium");
+const browser = process.env.LEAF_E2E_BROWSER ?? "chromium";
+if (!["chromium", "webkit"].includes(browser)) throw new Error("LEAF_E2E_BROWSER must be chromium or webkit.");
 
 export default defineConfig({
   testDir: "./test/e2e",
@@ -45,16 +47,18 @@ export default defineConfig({
   ],
   use: {
     baseURL,
-    channel,
-    // Force the CI renderer locally too; allowing SwiftShader alone still lets
-    // a developer's GPU conceal software-rendering failures.
-    launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"] },
     serviceWorkers: "block",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    browser === "webkit"
+      ? { name: "webkit", use: { ...devices["Desktop Safari"] } }
+      : { name: "chromium", use: { ...devices["Desktop Chrome"], channel,
+        // Force the CI renderer locally too; allowing SwiftShader alone still lets
+        // a developer's GPU conceal software-rendering failures. These flags are Chromium-only.
+        launchOptions: { args: ["--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-unsafe-swiftshader"] },
+      } },
   ],
   webServer: {
     command: "node --import tsx test/e2e/server.ts",

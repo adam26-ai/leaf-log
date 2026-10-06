@@ -15,10 +15,13 @@ export function FeedLayoutProvider({ trophySets, children }: { trophySets: Fligh
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
   }, []);
-  const pilot = Math.max(112, Math.min(176, width * .16));
+  const scaledPilot = Math.min(176, width * .16);
+  // The pilot column includes a 46px avatar and a 6px gap.
+  const compactPilot = scaledPilot - 46 - 6 < 90;
+  const pilot = compactPilot ? 112 : scaledPilot;
   const gap = Math.max(4, Math.min(12, width * .012));
   const layout = feedLayout(Math.max(0, width - pilot - 40 - gap * 2), trophySets);
-  return <Context.Provider value={layout}><div ref={ref} data-feed-pilot-compact={width < 600} style={{ "--feed-pilot": `${pilot}px`, "--feed-row-gap": `${gap}px` } as CSSProperties}>
+  return <Context.Provider value={layout}><div ref={ref} data-feed-pilot-compact={compactPilot} style={{ "--feed-pilot": `${pilot}px`, "--feed-row-gap": `${gap}px` } as CSSProperties}>
     {children}
   </div></Context.Provider>;
 }

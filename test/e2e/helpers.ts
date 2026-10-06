@@ -1,5 +1,26 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Exercise actual GPU loss/restoration without replacing the renderer. */
+export async function setMapContextLost(map: Locator, lost: boolean) {
+  await map.evaluate(async (element, lose) => {
+    const canvas = element.querySelector("canvas") as HTMLCanvasElement & { testContextExtension?: WEBGL_lose_context };
+    if (!canvas) throw new Error("Map canvas missing");
+    const extension = canvas.testContextExtension ?? canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context");
+    if (!extension) throw new Error("WEBGL_lose_context is required for the context recovery regression");
+    canvas.testContextExtension = extension;
+    const event = new Promise<void>(resolve => canvas.addEventListener(lose ? "webglcontextlost" : "webglcontextrestored", () => resolve(), { once: true }));
+    if (lose) extension.loseContext();
+    else extension.restoreContext();
+    await event;
+  }, lost);
+}
+
+/** Compare the actual rendered shading across owner and friend flight cards. */
+export async function readFlightCardShading(card: Locator) {
+  await expect(card).toBeVisible();
+  return card.evaluate(element => getComputedStyle(element).backgroundImage);
+}
+
 /** Photo controls stay at the viewport edges, independent of image dimensions. */
 export async function expectPhotoViewerControls(page: Page) {
   const viewport = page.viewportSize()!;
@@ -217,8 +238,22 @@ export async function expectResponsiveLegend(page: Page) {
     for (const [index, name] of names.entries()) {
       await expect((index < ejected ? symbols : row).getByRole("button", { name, exact: true })).toBeVisible();
     }
+    const friends = legend.getByRole("button", { name: "Explain friend flights", exact: true });
+    await expect(friends.locator("svg")).toHaveCount(1);
+    await expect(friends.locator("svg > g")).toHaveCount(2);
+    const visibility = legend.getByRole("button", { name: "Explain flight visibility", exact: true });
+    await expect(visibility.locator("svg")).toHaveCount(1);
+    await expect(visibility.locator(".lucide-users")).toHaveCount(1);
+    await expect(visibility).toHaveCSS("width", "24px");
+    await expect(visibility).toHaveCSS("height", "24px");
     expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
     const initialHeight = (await legend.boundingBox())!.height;
+    await friends.hover();
+    await expect(legend.getByRole("status").getByText(/^The two-paraglider badge/)).toBeVisible();
+    expect((await legend.boundingBox())!.height).toBe(initialHeight);
+    await visibility.hover();
+    await expect(legend.getByRole("status").getByText(/^The round visibility badge/)).toBeVisible();
+    expect((await legend.boundingBox())!.height).toBe(initialHeight);
     await legend.getByRole("button", { name: "Explain log source", exact: true }).hover();
     await expect(legend.getByRole("status").getByText("Log source", { exact: true })).toBeVisible();
     expect((await legend.boundingBox())!.height).toBe(initialHeight);
@@ -310,6 +345,28 @@ export async function setNewFlightTypes(page: Page, names: string[]) {
   }
 }
 
+/** Footer actions stay side by side, with blocking errors to their left. */
+export async function expectSiteEditorFooter(editor: Locator) {
+  const section = editor.getByRole("region", { name: "Site editor", exact: true });
+  const cancel = section.getByRole("button", { name: "Cancel", exact: true });
+  const save = section.getByRole("button", { name: "Save site", exact: true });
+  await save.scrollIntoViewIfNeeded();
+  await expect(cancel).toBeVisible();
+  await expect(save).toBeVisible();
+  const cancelBox = (await cancel.boundingBox())!;
+  const saveBox = (await save.boundingBox())!;
+  expect(cancelBox.y).toBeCloseTo(saveBox.y, 0);
+  expect(cancelBox.x + cancelBox.width).toBeLessThanOrEqual(saveBox.x);
+  const error = section.getByRole("alert");
+  if (await error.count()) {
+    await expect(save).toBeDisabled();
+    const errorBox = (await error.boundingBox())!;
+    expect(errorBox.x + errorBox.width).toBeLessThanOrEqual(cancelBox.x);
+  } else {
+    await expect(save).toBeEnabled();
+  }
+}
+
 /** Wait for site details to replace the loading state, then assert the
  * selected visibility and both available choices. */
 export async function expectSiteVisibility(editor: Locator, visibility: "private" | "public") {
@@ -342,6 +399,13 @@ export async function readSiteKind(editor: Locator) {
   const landing = await group.getByRole("button", { name: "Landing", exact: true }).getAttribute("aria-pressed") === "true";
   expect(takeoff || landing).toBe(true);
   return takeoff && landing ? "both" : takeoff ? "takeoff" : "landing";
+}
+
+/** An omitted landing also omits the arrow next to the primary site. */
+export async function expectReplayLandingHidden(page: Page) {
+  const heading = page.getByRole("heading", { level: 1 });
+  await expect(heading).toBeVisible();
+  await expect(heading.locator("..").getByText("→", { exact: true })).toHaveCount(0);
 }
 
 /** When a replay map exists, wait for its first rendered frame before
@@ -419,14 +483,57 @@ export async function expectFeedRowsContained(page: Page) {
   await expect.poll(() => flights.evaluateAll(links => links.every(link => {
     const bounds = link.getBoundingClientRect();
     const row = link.closest("li")!;
+    const pilot = row.querySelector('a[href^="/@"]')!;
+    const pilotText = pilot.lastElementChild!;
+    const handle = pilotText.lastElementChild!;
+    const provider = row.closest('[data-feed-pilot-compact]')!;
+    const compactPilot = provider.getBoundingClientRect().width * .16 - 52 < 90;
+    if (provider.getAttribute('data-feed-pilot-compact') !== String(compactPilot)) return false;
+    if ((handle.getClientRects().length === 0) !== compactPilot) return false;
+    if (compactPilot && Math.abs(pilotText.getBoundingClientRect().width - 60) > 1) return false;
     const kudos = row.querySelector("button")!.getBoundingClientRect();
+    const altitude = link.querySelector('[title="Maximum altitude"]');
+    if (Boolean(altitude) !== (bounds.width >= 300)) return false;
+    const combinedBadges = bounds.width < 300;
+    const badgeColumn = link.querySelector('[data-feed-column="badges"]');
+    if (combinedBadges) {
+      const hasBadges = Boolean(link.querySelector('[aria-label="You flew together"], [aria-label="Flight trophies"]'));
+      if (Boolean(badgeColumn) !== hasBadges) return false;
+      const style = getComputedStyle(link);
+      let textRight = bounds.right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+      if (badgeColumn) {
+        const badges = Array.from(badgeColumn.children).map(child => child.getBoundingClientRect());
+        const expectedWidth = (link.querySelector('[aria-label="You flew together"]') ? 32 : 0)
+          + (link.querySelector('[aria-label="Flight trophies"]') ? 24 : 0) + (badges.length === 2 ? 4 : 0);
+        const badgeBounds = badgeColumn.getBoundingClientRect();
+        if (Math.abs(badgeBounds.width - expectedWidth) > 1) return false;
+        if (Math.abs(badgeBounds.right - textRight) > 1) return false;
+        if (badges.some((badge, index) => index > 0 && (badge.left < badges[index - 1].right
+          || Math.abs(badge.top - badges[index - 1].top) > 1))) return false;
+        textRight = badgeBounds.left - parseFloat(style.columnGap);
+      }
+      for (const selector of ['[data-feed-column="site"]', '[data-feed-column="date"]']) {
+        if (Math.abs(link.querySelector(selector)!.getBoundingClientRect().right - textRight) > 1) return false;
+      }
+    } else if (badgeColumn) return false;
+    const columnSelectors = combinedBadges
+      ? ['[data-feed-column="site"]', '[data-feed-column="badges"]']
+      : ['[data-feed-column="site"]', '[title="Maximum altitude"]', '[data-feed-column="friends"]', '[data-feed-column="trophies"]'];
+    const columns = columnSelectors
+      .flatMap(selector => {
+        const element = link.querySelector(selector);
+        return element ? [element.getBoundingClientRect()] : [];
+      });
+    if (columns.some((column, index) => index > 0 && column.left < columns[index - 1].right - 1)) return false;
     return link.scrollWidth <= link.clientWidth + 1 && bounds.right <= kudos.left
       && bounds.right <= document.documentElement.clientWidth;
   }))).toBe(true);
-  // Badge tracks remain aligned at every width, including empty badge slots.
+  // Wider cards keep shared badge tracks, including empty slots. Compact cards
+  // size their right-aligned badge area per flight, as checked above.
   await expect.poll(() => flights.evaluateAll(links => {
-    return ['[title="Maximum altitude"]', '[data-feed-column="friends"]', '[data-feed-column="trophies"]'].every(selector => {
+    return ['[title="Maximum altitude"]', '[data-feed-column="friends"]', '[data-feed-column="trophies"]', '[data-feed-column="badges"]'].every(selector => {
       const visible = links.flatMap(link => {
+        if (link.getBoundingClientRect().width < 300) return [];
         const element = link.querySelector(selector);
         return element?.getClientRects().length ? [element] : [];
       });

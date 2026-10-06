@@ -2,11 +2,10 @@ import Link from "next/link";
 import { KudosButton } from "@/components/flight/kudos-button";
 import { prisma } from "@/lib/prisma";
 import { Avatar } from "@/components/avatar";
-import { listHighlights } from "@/lib/flights/list-highlights";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { requireProfile } from "@/lib/profile";
-import { flightsSharedWithViewer, listFeedForViewer, trophiesForVisibleFlights } from "@/lib/flights/repo";
+import { flightsSharedWithViewer, highlightsForVisibleFlights, listFeedForViewer, trophiesForVisibleFlights } from "@/lib/flights/repo";
 import { AppHeader } from "@/components/app-header";
 import { FlightRow } from "@/components/logbook/flight-row";
 import { FeedLayoutProvider } from "@/components/logbook/feed-layout-provider";
@@ -34,9 +33,9 @@ export default async function FeedPage({
     limit: 20,
     cursor: firstParam(cursor),
   });
-  const { highlightScore, distanceScore } = listHighlights(feed.rows);
-  const [trophies, sharedFlightIds, ownKudos] = await Promise.all([
+  const [trophies, highlights, sharedFlightIds, ownKudos] = await Promise.all([
     trophiesForVisibleFlights(feed.rows),
+    highlightsForVisibleFlights(feed.rows),
     flightsSharedWithViewer(profile.id, feed.rows.map(flight => flight.id)),
     prisma.kudo.findMany({
       where: { profileId: profile.id, flightId: { in: feed.rows.map(flight => flight.id) } },
@@ -75,7 +74,7 @@ export default async function FeedPage({
                     className="flex w-[var(--feed-pilot)] shrink-0 items-center gap-1.5 text-gray-600 hover:text-ink"
                   >
                     <Avatar handle={flight.owner.handle} displayName={flight.owner.displayName} avatarUpdatedAt={flight.owner.avatarUpdatedAt} className="h-[46px] w-[46px] text-base" />
-                    <span className="min-w-0 max-w-full leading-4">
+                    <span className="min-w-0 max-w-full flex-1 leading-4">
                       <span className="block truncate font-condensed text-[14px] leading-5 font-bold text-ink [[data-feed-pilot-compact=true]_&]:line-clamp-2 [[data-feed-pilot-compact=true]_&]:whitespace-normal [[data-feed-pilot-compact=true]_&]:break-words">{flight.owner.displayName}</span>
                       <span className="block truncate text-xs text-gray-500 [[data-feed-pilot-compact=true]_&]:hidden">@{flight.owner.handle}</span>
                     </span>
@@ -86,8 +85,8 @@ export default async function FeedPage({
                     compact
                     feedLayout
                     trophies={trophies[flight.id]}
-                    highlightScore={highlightScore(flight)}
-                    distanceScore={distanceScore(flight)}
+                    highlightScore={highlights[flight.id].highlightScore}
+                    distanceScore={highlights[flight.id].distanceScore}
                     friendFlightsFound={sharedFlightIds.has(flight.id)}
                     prioritizeSiteOnMobile
                   />

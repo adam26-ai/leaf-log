@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { flightsSharedWithViewer, listProfileFlightsForViewer, statsFrom, trophiesForVisibleFlights } from "@/lib/flights/repo";
-import { listHighlights } from "@/lib/flights/list-highlights";
+import { flightsSharedWithViewer, highlightsForVisibleFlights, listProfileFlightsForViewer, statsFrom, trophiesForVisibleFlights } from "@/lib/flights/repo";
 import { getCurrentProfile } from "@/lib/profile";
 import { countFriends, friendStateFor } from "@/lib/social/friends";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -39,13 +38,14 @@ export default async function ProfilePage({
     viewerId ? friendStateFor(viewerId, profile.id) : Promise.resolve("none" as const),
   ]);
   const stats = statsFrom(flights);
-  const [trophies, sharedFlightIds] = await Promise.all([
-    trophiesForVisibleFlights(flights.map(flight => ({ id: flight.id, ownerId: profile.id }))),
+  const visibleFlights = flights.map(flight => ({ id: flight.id, ownerId: profile.id }));
+  const [trophies, highlights, sharedFlightIds] = await Promise.all([
+    trophiesForVisibleFlights(visibleFlights),
+    highlightsForVisibleFlights(visibleFlights),
     viewerId && friendState === "friends"
       ? flightsSharedWithViewer(viewerId, flights.map(flight => flight.id))
       : Promise.resolve(new Set<string>()),
   ]);
-  const { highlightScore, distanceScore } = listHighlights(flights);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -88,7 +88,7 @@ export default async function ProfilePage({
             <ul className="mt-6 flex flex-col gap-2">
               {flights.map((f) => (
                 <li key={f.id}>
-                  <FlightRow flight={f} compact trophies={trophies[f.id]} highlightScore={highlightScore(f)} distanceScore={distanceScore(f)} friendFlightsFound={sharedFlightIds.has(f.id)} prioritizeSiteOnMobile />
+                  <FlightRow flight={f} compact trophies={trophies[f.id]} highlightScore={highlights[f.id].highlightScore} distanceScore={highlights[f.id].distanceScore} friendFlightsFound={sharedFlightIds.has(f.id)} prioritizeSiteOnMobile />
                 </li>
               ))}
             </ul>

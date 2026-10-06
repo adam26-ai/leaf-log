@@ -21,6 +21,20 @@ it("keeps an unnamed landing without a review request hidden", () => {
   expect(screen.queryByText("Site not recorded")).not.toBeInTheDocument();
 });
 
+it.each(["needs_review", "unassigned"])("hides an unnamed landing from non-owners (assignment=%s)", (landingSiteAssignment) => {
+  render(<FlightHeader flight={{ ...flight, landingSiteName: null, landingSiteAssignment }} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Main Ridge");
+  expect(screen.queryByText("Choose site")).not.toBeInTheDocument();
+  expect(screen.queryByText("→")).not.toBeInTheDocument();
+  expect(screen.queryByText("Site not recorded")).not.toBeInTheDocument();
+});
+
+it("retains a named landing for non-owners even when it needs review", () => {
+  render(<FlightHeader flight={{ ...flight, landingSiteAssignment: "needs_review" }} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);
+  expect(screen.getByRole("button", { name: "Valley Field" })).toHaveAttribute("data-endpoint", "landing");
+  expect(screen.getByText("→")).toBeInTheDocument();
+});
+
 it("keeps the site control mounted when a server refresh updates its name", () => {
   const { rerender } = render(<FlightHeader flight={flight} isOwner={false} previousFlightId={null} nextFlightId={null} actions={null} />);
   const control = screen.getByRole("button", { name: "Main Ridge" });

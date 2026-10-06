@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -164,6 +164,35 @@ test("site management separates linked flights from matching names and counts ea
   } finally { await db.$disconnect(); }
 });
 
+test("friend feed and profile shading match the pilot's own logbook including private history", async ({ page, newContext }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const base = { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "manual_entry", launchAltM: 500, reportedXcType: "open" };
+    const flight = await db.flight.create({ data: { ...base, visibility: "friends", takeoffSiteName: "Personal best ridge", durationS: 100, maxAltM: 600, reportedXcDistanceM: 1000 } });
+    const hidden = await db.flight.create({ data: { ...base, visibility: "private", durationS: 400, maxAltM: 900, reportedXcDistanceM: 4000 } });
+    await page.goto("/logbook");
+    const ownShading = await readFlightCardShading(page.locator(`a[href="/flights/${flight.id}"]`));
+    expect(ownShading).toContain("linear-gradient");
+
+    const context = await newContext();
+    const friendPage = await context.newPage();
+    const friendHandle = await signUp(friendPage);
+    const friend = await db.profile.findUniqueOrThrow({ where: { handle: friendHandle } });
+    await db.friendship.create({ data: { requesterId: owner.id, addresseeId: friend.id, status: "accepted" } });
+    const card = friendPage.locator(`a[href="/flights/${flight.id}"]`);
+    await friendPage.goto("/feed");
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await expect(friendPage.locator(`a[href="/flights/${hidden.id}"]`)).toHaveCount(0);
+    await friendPage.reload();
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await friendPage.goto(`/@${handle}`);
+    expect(await readFlightCardShading(card)).toBe(ownShading);
+    await expect(friendPage.locator(`a[href="/flights/${hidden.id}"]`)).toHaveCount(0);
+  } finally { await db.$disconnect(); }
+});
+
 test("an unresolved landing can be chosen independently and survives reload", async ({ page, newContext }) => {
   const handle = await signUp(page);
   const db = new PrismaClient();
@@ -174,8 +203,26 @@ test("an unresolved landing can be chosen independently and survives reload", as
     const visitor = await newContext();
     const visitorPage = await visitor.newPage();
     await visitorPage.goto(`/flights/${flight.id}`);
-    await expect(visitorPage.getByText("Choose site", { exact: true })).toBeVisible();
+    await expectReplayLandingHidden(visitorPage);
+    await expect(visitorPage.getByText("Choose site", { exact: true })).toHaveCount(0);
     await expect(visitorPage.getByRole("button", { name: "Choose site", exact: true })).toHaveCount(0);
+
+    const friendHandle = await signUp(visitorPage);
+    const friend = await db.profile.findUniqueOrThrow({ where: { handle: friendHandle } });
+    await db.friendship.create({ data: { requesterId: owner.id, addresseeId: friend.id, status: "accepted" } });
+    await visitorPage.goto("/feed");
+    const card = visitorPage.locator(`a[href="/flights/${flight.id}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.getByTitle("Named launch", { exact: true })).toBeVisible();
+    await expect(card).not.toContainText("Choose site");
+    await expect(card).not.toContainText("→");
+    await card.click();
+    await expect(visitorPage.getByRole("heading", { level: 1 })).toHaveText("Named launch");
+    await expectReplayLandingHidden(visitorPage);
+    await expect(visitorPage.getByText("Choose site", { exact: true })).toHaveCount(0);
+
+    await page.goto("/logbook");
+    await expect(page.locator(`a[href="/flights/${flight.id}"]`).getByTitle("Landing: Choose site")).toBeVisible();
     await page.goto(`/flights/${flight.id}`);
     const { dialog } = await openSiteChooser(page, "landing");
     await dialog.getByRole("listitem").filter({ hasText: site.name }).getByRole("button", { name: "Use this site", exact: true }).click();
@@ -185,6 +232,12 @@ test("an unresolved landing can be chosen independently and survives reload", as
     await expect(page.getByRole("button", { name: site.name, exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Named launch");
     expect(await db.flight.findUniqueOrThrow({ where: { id: flight.id } })).toMatchObject({ landingSiteId: site.id, landingSiteAssignment: "user_selected", takeoffSiteName: "Named launch", takeoffSiteId: null });
+
+    await visitorPage.goto("/feed");
+    await expect(card.getByTitle(`Landing: ${site.name}`, { exact: true })).toBeVisible();
+    await card.click();
+    await expect(visitorPage.getByRole("button", { name: site.name, exact: true })).toBeVisible();
+    await expect(visitorPage.getByRole("button", { name: "Choose site", exact: true })).toHaveCount(0);
   } finally { await db.$disconnect(); }
 });
 

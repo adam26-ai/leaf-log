@@ -69,7 +69,7 @@ export function FlightHeader({
   const primaryLat = flight[`${primaryEndpoint}Lat`];
   const primaryLon = flight[`${primaryEndpoint}Lon`];
   const showLanding = primaryEndpoint === "takeoff" && (
-    flight.landingSiteAssignment === "needs_review" ||
+    (isOwner && flight.landingSiteAssignment === "needs_review") ||
     Boolean(flight.landingSiteName) && (
       flight.landingSiteId !== flight.takeoffSiteId ||
       flight.landingSiteName !== flight.takeoffSiteName

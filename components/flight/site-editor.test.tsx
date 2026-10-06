@@ -12,12 +12,15 @@ it("updates the boundary warning as the pin moves inside and outside, including 
   const onSave = vi.fn().mockResolvedValue(undefined);
   render(<SiteEditor initial={{ ...initial, id: "ridge", lat: 46, boundary }} onSave={onSave} onCancel={vi.fn()} />);
   expect(screen.getByRole("alert")).toHaveTextContent("Place the site pin inside the boundary");
+  expect(screen.getByRole("button", { name: "Save site" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Save site" }));
   expect(onSave).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Pin latitude"), { target: { value: "45" } });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save site" })).toBeEnabled();
   fireEvent.change(screen.getByLabelText("Pin longitude"), { target: { value: "7" } });
   expect(screen.getByRole("alert")).toHaveTextContent("Place the site pin inside the boundary");
+  expect(screen.getByRole("button", { name: "Save site" })).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Pin longitude"), { target: { value: "6" } });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Save site" }));
@@ -66,5 +69,32 @@ it("keeps the draft visible and shows a returned save conflict", async () => {
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This site changed"));
   expect(screen.getByRole("button", { name: "Takeoff" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: "Landing" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Save site" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+});
+
+it("allows saving again after correcting a name validation error", async () => {
+  const onSave = vi.fn().mockResolvedValue(undefined);
+  render(<SiteEditor initial={{ ...initial, name: "" }} onSave={onSave} onCancel={vi.fn()} />);
+  const save = screen.getByRole("button", { name: "Save site" });
+  fireEvent.click(save);
+  expect(screen.getByRole("alert")).toHaveTextContent("Enter a site name");
+  expect(save).toBeDisabled();
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Name", { exact: true }), { target: { value: "New Ridge" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(save).toBeEnabled();
+  fireEvent.click(save);
+  await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "New Ridge" })));
+});
+
+it("clears a coordinate error when the pin is corrected", () => {
+  render(<SiteEditor initial={initial} onSave={vi.fn()} onCancel={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Pin latitude"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save site" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Enter both latitude and longitude");
+  expect(screen.getByRole("button", { name: "Save site" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("Pin latitude"), { target: { value: "45" } });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save site" })).toBeEnabled();
 });

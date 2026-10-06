@@ -1,4 +1,4 @@
-import { openSitesPage, uploadFlight } from "./helpers";
+import { expectSiteEditorFooter, openSitesPage, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -317,13 +317,10 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   await expectVertexCount(page, 3, 5000);
   await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible({ timeout: 5_000 });
 
-  // The boundary editor's own Save is gone in this embedded context —
-  // there's one unified Save (bottom row) covering both the name and any
-  // pending boundary edit. Clicking it surfaces the boundary's own
-  // validation error rather than silently discarding the invalid draft or
-  // saving the name anyway.
-  await page.getByRole("button", { name: "Save site", exact: true }).click();
-  await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible({ timeout: 5_000 });
+  // The unified Save covers both the name and boundary. Live validation
+  // disables it until the pin is corrected, preserving the invalid draft.
+  const dialog = page.getByRole("dialog", { name: "Site details" });
+  await expectSiteEditorFooter(dialog);
   // Still on the edit screen — the invalid boundary blocked the whole
   // Save, name included, rather than silently saving the name and
   // discarding the in-progress boundary draft.
@@ -332,23 +329,25 @@ test("an anchor-excluding boundary shows live validation and blocks saving the s
   await page.getByRole("button", { name: "Place or move pin", exact: true }).click();
   await clickMap(page, pixelFor(anchorLon + metersToDegLon(250, anchorLat), anchorLat + metersToDegLat(80), center, zoom, container));
   await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toHaveCount(0);
+  await expectSiteEditorFooter(dialog);
   await expect(page.getByText(`${siteName} Site pin & boundary`, { exact: true })).toBeVisible();
   await expect(page.getByText("Other sites", { exact: true })).toBeVisible();
   await moveOnMap(page, pixelFor(anchorLon - metersToDegLon(120, anchorLat), anchorLat + metersToDegLat(100), center, zoom, container));
   await expect(page.getByText("Green reference field", { exact: true })).toBeVisible();
-  const dialog = page.getByRole("dialog", { name: "Site details" });
   await page.setViewportSize({ width: 1280, height: 1000 });
   await dialog.screenshot({ path: "test-results/site-editor-desktop.png" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel("Pin latitude", { exact: true }).fill(String(anchorLat));
   await page.getByLabel("Pin longitude", { exact: true }).fill(String(anchorLon));
   await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toBeVisible();
+  await expectSiteEditorFooter(dialog);
   await dialog.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await dialog.screenshot({ path: "test-results/site-editor-mobile.png" });
   expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.getByLabel("Pin latitude", { exact: true }).fill(String(anchorLat + metersToDegLat(80)));
   await page.getByLabel("Pin longitude", { exact: true }).fill(String(anchorLon + metersToDegLon(250, anchorLat)));
   await expect(page.getByText(/Place the site pin inside the boundary before saving/i)).toHaveCount(0);
+  await expectSiteEditorFooter(dialog);
   await page.getByRole("button", { name: "Save site", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await page.reload();
