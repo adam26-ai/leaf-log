@@ -1,5 +1,29 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Photo controls stay at the viewport edges, independent of image dimensions. */
+export async function expectPhotoViewerControls(page: Page) {
+  const viewport = page.viewportSize()!;
+  const previous = page.getByRole("button", { name: "Previous", exact: true });
+  const next = page.getByRole("button", { name: "Next", exact: true });
+  const close = page.getByRole("button", { name: "Close", exact: true });
+  for (const button of [previous, next, close]) {
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS("width", "56px");
+    await expect(button).toHaveCSS("height", "56px");
+    expect(await button.evaluate(element => parseFloat(getComputedStyle(element).borderTopLeftRadius)))
+      .toBeGreaterThanOrEqual(28);
+  }
+  const left = (await previous.boundingBox())!;
+  const right = (await next.boundingBox())!;
+  const corner = (await close.boundingBox())!;
+  expect(left.x).toBeCloseTo(16, 0);
+  expect(right.x + right.width).toBeCloseTo(viewport.width - 16, 0);
+  expect(left.y + left.height / 2).toBeCloseTo(viewport.height / 2, 0);
+  expect(right.y + right.height / 2).toBeCloseTo(viewport.height / 2, 0);
+  expect(corner.x + corner.width).toBeCloseTo(viewport.width - 16, 0);
+  expect(corner.y).toBeCloseTo(16, 0);
+}
+
 /** A held mouse crossing between the map and profile keeps its original owner. */
 export async function expectReplayDragOwnership(page: Page, origin: "map" | "profile") {
   const map = page.locator(".flight-replay-map");
