@@ -1,4 +1,4 @@
-import { uploadFlight, expectNavigationCount } from "./helpers";
+import { uploadFlight, expectNavigationCount, expectFeedRowsContained } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -83,6 +83,11 @@ test("friends feed exposes friends-only flights and kudos to accepted friends", 
   // fixture's flight reads "Unknown site" until someone names it.
   await expect(page.getByRole("link", { name: /unknown site/i })).toBeVisible();
   await expect(page.getByLabel("Flight trophies")).toBeVisible();
+  for (const width of [320, 390, 480, 640, 768, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expectFeedRowsContained(page);
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/@${bHandle}`);
   await expectNavigationCount(page, "Feed", 0);
   await expect(page.getByLabel("Flight trophies")).toBeVisible();

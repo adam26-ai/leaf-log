@@ -346,3 +346,35 @@ export async function expectReplaySpaceShortcut(page: Page) {
 export function logbookEntry(page: Page, flightId: string) {
   return page.getByRole("listitem").filter({ has: page.locator(`a[href="/flights/${flightId}"]`) });
 }
+
+/** Feed icons must remain inside the flight link and clear of kudos at every breakpoint. */
+export async function expectFeedRowsContained(page: Page) {
+  const flights = page.locator('main li a[href^="/flights/"]');
+  await expect(flights.first()).toBeVisible();
+  await expect(page.getByLabel(/^Visibility:/)).toHaveCount(0);
+  await expect.poll(() => flights.evaluateAll(links => links.every(link => {
+    const button = link.closest("li")!.querySelector("button")!;
+    const icon = button.querySelector("svg")!.getBoundingClientRect();
+    const count = button.querySelector("span")!.getBoundingClientRect();
+    return icon.bottom <= count.top + 1
+      && Math.abs((icon.left + icon.right) - (count.left + count.right)) < 2;
+  }))).toBe(true);
+  await expect.poll(() => flights.evaluateAll(links => links.every(link => {
+    const bounds = link.getBoundingClientRect();
+    const row = link.closest("li")!;
+    const kudos = row.querySelector("button")!.getBoundingClientRect();
+    return link.scrollWidth <= link.clientWidth + 1 && bounds.right <= kudos.left
+      && bounds.right <= document.documentElement.clientWidth;
+  }))).toBe(true);
+  // Badge tracks remain aligned at every width, including empty badge slots.
+  await expect.poll(() => flights.evaluateAll(links => {
+    return ['[title="Maximum altitude"]', '[data-feed-column="friends"]', '[data-feed-column="trophies"]'].every(selector => {
+      const visible = links.flatMap(link => {
+        const element = link.querySelector(selector);
+        return element?.getClientRects().length ? [element] : [];
+      });
+      const positions = visible.map(element => element.getBoundingClientRect().left);
+      return positions.every(left => Math.abs(left - positions[0]) < 1);
+    });
+  })).toBe(true);
+}

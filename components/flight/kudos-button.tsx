@@ -16,11 +16,13 @@ export function KudosButton({
   initialCount,
   initialKudoed,
   canToggle,
+  stacked = false,
 }: {
   flightId: string;
   initialCount: number;
   initialKudoed: boolean;
   canToggle: boolean;
+  stacked?: boolean;
 }) {
   const [state, setState] = useState({
     count: initialCount,
@@ -53,7 +55,7 @@ export function KudosButton({
 
   const content = (
     <>
-      <ThumbsUp className={cn("h-4 w-4", state.kudoed && "fill-brand-blue text-brand-blue-strong")} aria-hidden="true" />
+      <ThumbsUp className={cn(stacked ? "h-5 w-5" : "h-4 w-4", "shrink-0", state.kudoed && "fill-brand-blue text-brand-blue-strong")} aria-hidden="true" />
       <span className="tabular-nums">{state.count}</span>
     </>
   );
@@ -61,7 +63,7 @@ export function KudosButton({
   if (!canToggle) {
     return (
       <div
-        className="inline-flex items-center gap-1.5 text-sm text-gray-600"
+        className={cn("inline-flex items-center text-sm text-gray-600", stacked ? "w-full flex-col justify-center gap-0 text-center" : "gap-1.5")}
         title={kudoLabel(state.count)}
         aria-label={kudoLabel(state.count)}
       >
@@ -79,7 +81,8 @@ export function KudosButton({
       title={kudoLabel(state.count)}
       onClick={toggle}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-gray-100 disabled:opacity-60",
+        "inline-flex items-center rounded-md px-1.5 py-1 text-sm font-medium transition-colors hover:bg-gray-100 disabled:opacity-60",
+        stacked ? "w-full flex-col justify-center gap-0 text-center" : "gap-1.5",
         state.kudoed ? "text-brand-blue-strong" : "text-gray-600 hover:text-ink",
       )}
     >

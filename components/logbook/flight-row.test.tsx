@@ -10,6 +10,15 @@ vi.mock("@/lib/flights/queue-xc-action", () => ({ queueFlightXc: vi.fn(), queueM
 
 afterEach(cleanup);
 
+it("omits Feed visibility and empty trophy space while retaining companions and upload source", () => {
+  render(<FlightRow flight={flight} compact feedLayout friendFlightsFound />);
+  expect(screen.queryByLabelText(/Visibility:/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Flight trophies")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("You flew together")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Manually uploaded" })).toBeInTheDocument();
+  expect(screen.getByRole("link")).toHaveAttribute("href", "/flights/flight-1");
+});
+
 const flight = {
   id: "flight-1",
   source: "manual_upload",
