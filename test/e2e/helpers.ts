@@ -2,7 +2,11 @@ import { expect, type FileChooser, type Locator, type Page } from "@playwright/t
 
 /** Exercise actual GPU loss/restoration without replacing the renderer. */
 export async function setMapContextLost(map: Locator, lost: boolean) {
-  await map.evaluate(async (element, lose) => {
+  // Both callers already wait for map readiness. Evaluate the unique map in
+  // one browser call instead of acquiring an element handle during GPU work.
+  await map.evaluateAll(async (elements, lose) => {
+    if (elements.length !== 1) throw new Error("Expected exactly one ready map");
+    const element = elements[0];
     const canvas = element.querySelector("canvas") as HTMLCanvasElement & { testContextExtension?: WEBGL_lose_context };
     if (!canvas) throw new Error("Map canvas missing");
     const extension = canvas.testContextExtension ?? canvas.getContext("webgl2")?.getExtension("WEBGL_lose_context");
@@ -13,6 +17,23 @@ export async function setMapContextLost(map: Locator, lost: boolean) {
     else extension.restoreContext();
     await event;
   }, lost);
+  if (lost) {
+    // Real pointer events must remain safe with no style/projection. Crossing
+    // the canvas explicitly covers mouseout regardless of the prior cursor.
+    const canvas = await map.locator("canvas").boundingBox();
+    if (!canvas) throw new Error("Map canvas must remain visible during context loss");
+    await map.page().mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    await map.page().mouse.move(canvas.x + canvas.width / 2, canvas.y - 1);
+  }
+}
+
+/** Assert camera mode and selected pilot in one browser-side locator check. */
+export async function expectReplayFollowSelection(page: Page, pilotName: string) {
+  const followingReplay = page.locator("body").filter({
+    has: page.getByRole("button", { name: /^Camera: Follow/ }),
+  });
+  await expect(followingReplay.getByRole("button", { name: `Follow ${pilotName}`, exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
 }
 
 /** Compare the actual rendered shading across owner and friend flight cards. */

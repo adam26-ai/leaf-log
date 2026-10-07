@@ -2,7 +2,7 @@ import { test, expect, type Locator, type Page } from "./fixtures";
 import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
-import { openSitesPage, setMapContextLost, waitForMapReady } from "./helpers";
+import { expectReplayFollowSelection, openSitesPage, setMapContextLost, waitForMapReady } from "./helpers";
 import sharp from "sharp";
 
 async function installRasterTiles(page: Page) {
@@ -85,8 +85,8 @@ test("friend takeoff avatars remain usable during WebGL context loss and restore
   try {
     const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
     const friend = await db.profile.findUniqueOrThrow({ where: { handle: friendHandle } });
-    // Avoid initial Follow-camera movement consuming the software renderer's
-    // budget. Real takeoff avatar clicks still enter Follow for pilot selection.
+    // Start stationary, then lose the context before any avatar enters Follow.
+    // Pilot selection must work while MapLibre's style is absent.
     await db.profile.update({ where: { id: owner.id }, data: { mapDefaults: { camera: "fixed" } } });
     await db.flight.update({ where: { id: friendFlightId }, data: { visibility: "friends" } });
     await db.friendship.create({ data: { requesterId: owner.id, addresseeId: friend.id, status: "accepted" } });
@@ -97,19 +97,19 @@ test("friend takeoff avatars remain usable during WebGL context loss and restore
     const map = page.locator(".flight-replay-map");
     await waitForMapReady(map);
     await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
+    await setMapContextLost(map, true);
     const avatar = page.locator(`[data-takeoff-flight="${friendFlightId}"]`);
     await expect(avatar).toBeEnabled();
     await avatar.click();
     await expect(page.getByRole("button", { name: "Follow Context Friend", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await setMapContextLost(map, true);
     await page.locator(`[data-takeoff-flight="${flightId}"]`).click();
     await expect(page.getByRole("button", { name: "Follow Context Pilot", exact: true })).toHaveAttribute("aria-pressed", "true");
     expect(errors).toEqual([]);
     await avatar.click();
+    await expect(page.getByRole("button", { name: "Follow Context Friend", exact: true })).toHaveAttribute("aria-pressed", "true");
     await setMapContextLost(map, false);
     await waitForMapReady(map);
-    await expect(page.getByRole("button", { name: /^Camera: Follow/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Follow Context Friend", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expectReplayFollowSelection(page, "Context Friend");
     expect(errors).toEqual([]);
   } finally { await db.$disconnect(); }
 });
