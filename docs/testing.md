@@ -34,6 +34,44 @@ immediately after resizing the Sites page; an isolated follow-up passed. The
 scenario now attaches overflowing-element measurements if it repeats. This
 intermittent assertion remains unresolved; keep its width check intact.
 
+## Follow-up: PR 109 merge, October 6, 2026
+
+The [PR run](https://github.com/adam26-ai/leaf-log/actions/runs/37497706178)
+passed, but the [merge run](https://github.com/adam26-ai/leaf-log/actions/runs/37543102100)
+again exhausted the replay context-loss scenario's budget before injection.
+The Fixed preference loaded, but checking the friend avatar took 20.9 seconds
+and clicking it took another 15 seconds. The loss helper started at 51.4 seconds;
+its map lookup finished just before the deadline, without executing the loss
+evaluation. The unbound-handle error appeared during timed-out teardown.
+
+Inject real context loss immediately after initial map readiness and the saved
+Fixed-camera assertion. Then click friend, owner and friend while the context
+is lost, checking each selection before restoration. This preserves all avatar
+selection assertions and adds the primary-to-friend transition during loss,
+without spending the pre-loss budget entering Follow. Restore the real context
+and retain the selected-friend, Follow-camera, rendering and page-error checks.
+Authentication, uploads, friendship visibility and the renderer remain real;
+no retries, skips or deadline increases are added.
+
+The focused scenario then exposed a real MapLibre error during a native
+mouseout event: terrain-coordinate drawing tried to read shaderPreludeCode
+from the destroyed projection. Remove terrain through setTerrain(null) in a
+capture-phase canvas context-loss listener, before MapLibre clears its style.
+This leaves native coordinate events usable during loss; the existing restored
+style initialization reinstalls terrain and the deck.gl overlay.
+The shared loss helper explicitly moves the native pointer onto and off the
+lost canvas, and injects loss/restoration without acquiring an element handle.
+The final locator assertion checks Follow mode and selected friend together,
+avoiding separate browser round trips during restoration's terrain rendering.
+
+The final focused replay scenario passed in Linux Chromium (31.6 seconds) and
+WebKit (17.8 seconds). A separate WebKit Sites check still failed: one run
+reported an internal /friends prefetch access-control error before context
+loss; an isolated run then failed the initial raster-pixel assertion, with
+successful fixture tile responses but transparent GPU samples and a blank
+canvas. These failures precede the loss helper and remain unresolved. Keep the
+page-error and raster assertions intact; Chromium passed both focused scenarios.
+
 ## Follow-up: PR 108, October 6, 2026
 
 [Run 37424828718](https://github.com/adam26-ai/leaf-log/actions/runs/37424828718)

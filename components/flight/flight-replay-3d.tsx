@@ -2155,6 +2155,10 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       recordContextEvent("webglcontextlost");
       recoveryPending = true;
       container.dataset.renderReady = "false";
+      // Clear terrain before MapLibre destroys its style/projection. Otherwise
+      // native mouseout/unproject events still try to draw terrain coordinates
+      // with that destroyed projection while the context is lost.
+      if (map.style && map.getTerrain()) map.setTerrain(null);
       const overlay = overlayRef.current;
       overlayRef.current = null;
       // The old deck.gl GPU resources cannot be reused after restoration.
@@ -2164,7 +2168,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       shadowSampleCountRef.current = -1;
     };
     const handleContextRestored = () => recordContextEvent("webglcontextrestored");
-    mapCanvas.addEventListener("webglcontextlost", handleContextLost);
+    mapCanvas.addEventListener("webglcontextlost", handleContextLost, { capture: true });
     mapCanvas.addEventListener("webglcontextrestored", handleContextRestored);
     const removeMouseNavigation = installMouseNavigation(map);
     const removeTouchNavigation = installTouchNavigation(map);
@@ -2309,7 +2313,7 @@ export const FlightReplay3D = forwardRef<FlightReplay3DHandle, FlightReplay3DPro
       removeTrackedZoomButtons();
       removeMouseNavigation();
       removeTouchNavigation();
-      mapCanvas.removeEventListener("webglcontextlost", handleContextLost);
+      mapCanvas.removeEventListener("webglcontextlost", handleContextLost, { capture: true });
       mapCanvas.removeEventListener("webglcontextrestored", handleContextRestored);
       map.remove();
     };
