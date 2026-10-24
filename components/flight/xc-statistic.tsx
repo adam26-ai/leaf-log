@@ -22,7 +22,9 @@ export function XcStatistic({ flight, owner, onRefresh, selectedRoute, onCycle }
   const xc = readXcScore(flight.xcScore);
   const route = selectedRoute ?? xc?.best;
   const reported = reportedXc(flight);
-  const ReportedValue = xc ? "button" : "span";
+  const showReported = !selectedRoute && reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM);
+  const routeLabel = showReported ? reported.name : route?.name ?? "XC distance";
+  const distance = formatDistance(showReported ? reported.distanceM : route?.distanceM ?? 0, units);
   const state = analysisState(flight);
   const pending = analysisPending(flight.xcStatus);
   const Icon = route?.shape === "fai-triangle" ? Triangle : route?.shape === "free-triangle" ? TriangleRight : Waypoints;
@@ -47,30 +49,33 @@ export function XcStatistic({ flight, owner, onRefresh, selectedRoute, onCycle }
   }, [open]);
 
   return <div ref={container} className="relative flex min-w-0 items-center gap-2 px-2 py-1.5">
-    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
+    {xc && <button type="button" onClick={onCycle ?? toggleReplayXcRoute} aria-pressed={Boolean(selectedRoute)}
+      aria-label={`Cycle XC routes: ${routeLabel}, ${distance}`}
+      title={showReported ? `${reported.name} — reported by the pilot. Click to cycle scored routes, then hide the route.`
+        : `${route!.name}: ${distance} credited distance. Click to cycle scored routes, then hide the route.`}
+      className="absolute inset-0 z-0 rounded-md transition-colors hover:bg-gray-100" />}
+    <span className="pointer-events-none relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--replay-metric-icon-bg)]">
       <Icon aria-hidden="true" className="h-5 w-5 text-[var(--replay-icon)] [stroke-width:var(--replay-metric-icon-stroke)]" />
     </span>
-    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+    <div className={`relative z-10 flex min-w-0 flex-1 flex-col gap-0.5${xc ? " pointer-events-none" : ""}`}>
     <div className="flex h-5 min-w-0 items-center gap-1">
-      {!selectedRoute && reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? <ReportedValue onClick={xc ? onCycle ?? toggleReplayXcRoute : undefined} title={`${reported.name} — reported by the pilot`} className="flex min-w-0 items-center gap-1.5 font-condensed text-base font-bold text-ink">
+      {showReported ? <span title={`${reported.name} — reported by the pilot`} className="flex min-w-0 items-center gap-1.5 font-condensed text-base font-bold text-ink">
         {formatDistance(reported.distanceM, units)}<span className="text-[10px] font-normal text-gray-500">reported</span>
-      </ReportedValue> : xc ? <button type="button" onClick={onCycle ?? toggleReplayXcRoute} aria-pressed={Boolean(selectedRoute)}
-        title={`${route!.name}: ${formatDistance(route!.distanceM, units)} credited distance. Click to cycle scored routes, then hide the route.`}
-        className="flex min-w-0 items-center gap-1.5 rounded-md text-left hover:bg-gray-100">
+      </span> : xc ? <span className="flex min-w-0 items-center gap-1.5">
         <span className="truncate whitespace-nowrap font-condensed text-base font-bold tabular-nums text-ink">{formatDistance(route!.distanceM, units)}</span>
-      </button> : state.action && owner
+      </span> : state.action && owner
         ? <CalculateXcButton flightId={flight.id} label={state.label} onQueued={onRefresh} inline />
         : <span className="font-condensed text-base font-bold text-ink">—</span>}
       {showDetails && <button ref={trigger} type="button" aria-label={`XC details: ${state.label}`}
         aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}
-        title={state.label} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-ink">
+        title={state.label} className="pointer-events-auto relative z-20 grid h-5 w-5 shrink-0 place-items-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-ink">
         {pending ? <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />
           : xc?.approximate && state.action === "improve" ? <span aria-hidden="true" className="text-base leading-none">≈</span>
           : state.action === "retry" ? <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
           : <Info aria-hidden="true" className="h-3.5 w-3.5" />}
       </button>}
     </div>
-    <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">{!selectedRoute && reported && (isLogbookEntry(flight) || !xc || reported.distanceM > xc.best.distanceM) ? reported.name : route?.name ?? "XC distance"}</span>
+    <span className="truncate whitespace-nowrap text-[9px] font-medium uppercase tracking-wide text-gray-500">{routeLabel}</span>
     </div>
     {open && showDetails && <div id={panelId} role="region" aria-label="XC calculation details"
       className="absolute left-0 top-full z-50 mt-1 w-64 max-w-[80vw] rounded-xl border border-gray-200 bg-white p-3 text-xs text-gray-600 shadow-lg">
