@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady, cycleReplayXcMetric } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -432,9 +432,13 @@ test("duplicate upload attaches to the original entry and replay cycles scored r
     await page.reload();
     const map = page.locator(".flight-replay-map");
     await expect(map).toHaveAttribute("data-scored-route", "hidden");
-    const metric = page.getByTitle(/credited distance/);
-    for (const [shape, name] of [["open", "Open distance"], ["fai-triangle", "FAI triangle"], ["free-triangle", "Free triangle"], ["hidden", "Open distance"]]) {
-      await metric.click();
+    const metric = page.getByRole("button", { name: /^Cycle XC routes:/ });
+    await page.getByRole("button", { name: /^XC details:/ }).click();
+    await expect(page.getByRole("region", { name: "XC calculation details" })).toBeVisible();
+    await expect(map).toHaveAttribute("data-scored-route", "hidden");
+    await page.getByRole("button", { name: "Close XC details", exact: true }).click();
+    for (const [target, shape, name] of [["icon", "open", "Open distance"], ["label", "fai-triangle", "FAI triangle"], ["padding", "free-triangle", "Free triangle"], ["value", "hidden", "Open distance"]] as const) {
+      await cycleReplayXcMetric(page, target);
       await expect(map).toHaveAttribute("data-scored-route", shape);
       await expect(metric).toHaveAttribute("title", new RegExp(name));
     }

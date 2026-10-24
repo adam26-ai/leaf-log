@@ -1,5 +1,25 @@
 import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
 
+/** Exercise the XC cell's full hit area, including space outside its distance value. */
+export async function cycleReplayXcMetric(page: Page, target: "icon" | "label" | "padding" | "value") {
+  const metric = page.getByRole("button", { name: /^Cycle XC routes:/ });
+  if (target === "padding") {
+    await metric.click({ position: { x: 2, y: 2 } });
+  } else {
+    const cell = metric.locator("..");
+    const content = target === "icon" ? cell.locator(":scope > span > svg")
+      : target === "label" ? cell.locator(":scope > div > span")
+      : cell.locator(":scope > div > div > span").first();
+    const buttonBox = (await metric.boundingBox())!;
+    const contentBox = (await content.boundingBox())!;
+    await metric.click({ position: {
+      x: contentBox.x + contentBox.width / 2 - buttonBox.x,
+      y: contentBox.y + contentBox.height / 2 - buttonBox.y,
+    } });
+  }
+  return metric;
+}
+
 /** Exercise actual GPU loss/restoration without replacing the renderer. */
 export async function setMapContextLost(map: Locator, lost: boolean) {
   // Both callers already wait for map readiness. Evaluate the unique map in
