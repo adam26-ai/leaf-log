@@ -101,6 +101,7 @@ test("a non-owner renames a public site while visibility remains owner-only", as
   const bPage = await bContext.newPage();
   await signUp(bPage, `comm_b_${suffix}@test.local`, bHandle, "Community B");
   await bPage.goto(flightUrl);
+  await waitForMapReady(bPage.locator(".flight-replay-map"));
   await expect(bPage.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 
   const newName = `${siteName} (renamed)`;
@@ -108,6 +109,8 @@ test("a non-owner renames a public site while visibility remains owner-only", as
   await expect(siteButton).toBeEnabled({ timeout: 10_000 });
   await siteButton.click();
   await expect(bPage.getByText("Public site — community owned")).toBeVisible({ timeout: 5_000 });
+  // Let the summary map finish mounting before replacing it with the editor.
+  await waitForMapReady(bPage.getByRole("dialog", { name: "Site details" }).getByTestId("site-area-map"));
   await bPage.getByRole("button", { name: "Edit site", exact: true }).click();
   const editor = bPage.getByRole("dialog", { name: "Site details" });
   await expectSiteVisibility(editor, "public");

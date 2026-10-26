@@ -1,5 +1,19 @@
 # Testing and CI reliability
 
+## Follow-up: PR 112, October 26, 2026
+
+The hosted [PR run](https://github.com/adam26-ai/leaf-log/actions/runs/40374977319)
+passed the gates job and 47 browser scenarios, but the community rename scenario
+remained at "Loading site details" after selecting Edit site. The trace shows
+the editor action returned HTTP 200 in 40 milliseconds while the browser stalled
+during map initialization; both replay and summary maps became ready during the
+click. This does not establish a server or permissions failure.
+
+Wait for the replay and summary maps before opening the editor, using the same
+readiness helper as the neighboring community scenarios. Keep the non-owner
+visibility restriction, live rename and persistence checks in both pilot
+sessions. No retries, skips or longer deadlines are added.
+
 ## Safari / WebKit context recovery
 
 Set `LEAF_E2E_BROWSER=webkit` to select Playwright's Desktop Safari project;
