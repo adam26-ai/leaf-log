@@ -1,11 +1,28 @@
 import { Prisma } from "@prisma/client";
 import { METRICS_VERSION } from "../flights/analysis-state";
-import type { DerivedMetrics, ParsedIgc } from "./types";
+import type { DerivedMetrics, Fix, ParsedIgc } from "./types";
 import { recordAltitude } from "./altitude";
+
+/** Recover an uninitialized zero without changing ordinary launch readings. */
+export function launchAltitude(fixes: Fix[]): number | null {
+  const first = fixes[0];
+  const altitude = first ? recordAltitude(first) : null;
+  // Oudie recordings can mark the startup zero A while reporting FXA 800 m.
+  // A real zero, missing altitude, and every nonzero reading keep their behavior.
+  if (altitude !== 0 || first.fixAccuracyM == null || first.fixAccuracyM <= 100) return altitude;
+  for (let index = 1; index < fixes.length; index++) {
+    const fix = fixes[index];
+    const dt = fix.t - first.t;
+    if (dt <= 0 || dt > 15) continue;
+    const candidate = recordAltitude(fix);
+    if (candidate != null && (fix.fixAccuracyM == null || fix.fixAccuracyM <= 100)) return candidate;
+  }
+  return null;
+}
 
 export function altitudeMeasurements(parsed: ParsedIgc, metrics: DerivedMetrics | null) {
   const fixes = metrics ? parsed.fixes.slice(metrics.takeoffIndex, metrics.landingIndex + 1) : [];
-  const launch = fixes[0] ? recordAltitude(fixes[0]) : null;
+  const launch = launchAltitude(fixes);
   return { metricsVersion: METRICS_VERSION, launchAltM: launch == null ? null : Math.round(launch),
     maxAltM: fixes.some(fix => recordAltitude(fix) != null) ? metrics!.maxAltM : null };
 }

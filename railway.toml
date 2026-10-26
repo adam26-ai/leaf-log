@@ -3,7 +3,7 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "pnpm start"
-preDeployCommand = ["pnpm exec prisma migrate deploy"]
+preDeployCommand = ["pnpm db:deploy"]
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"

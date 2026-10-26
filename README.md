@@ -160,7 +160,7 @@ than silently choosing the nearest candidate.
 ## Deployment (Railway)
 
 Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
-`prisma migrate deploy` as the pre-deploy step, `/api/health` health check).
+`pnpm db:deploy` as the pre-deploy step, `/api/health` health check).
 
 1. Create a Railway project; add a **Postgres** service (provides `DATABASE_URL`).
 2. Add the web service from this repo.
@@ -169,8 +169,23 @@ Config lives in [`railway.toml`](./railway.toml) (Nixpacks builder,
    `AUTH_SECRET`, `AUTH_URL`/`NEXTAUTH_URL` (`https://log.leafvario.com` in
    production), `AUTH_EMAIL_FROM`, `RESEND_API_KEY`, and optionally
    `NEXT_PUBLIC_MAPTILER_KEY`.
-4. Deploy — `prisma migrate deploy` runs automatically before each release. No
+4. Deploy — `pnpm db:deploy` applies migrations automatically before each release,
+   then runs the one-time startup-zero launch-altitude repair. Its completion is
+   saved in the database, so later deployments skip the scan. No
    site seeding step — sites are fully community-driven.
+
+The launch repair only examines recorded flights with a saved zero launch altitude
+and current measurements. It verifies their original IGC and uses the same narrow
+15-second recovery as new uploads. Only confirmed launch-altitude corrections are
+written; original files, pilot edits, maximum altitude, XC scores and render caches
+stay intact. Trophy rankings reflect corrected values on the next read. Nothing
+runs on logbook page loads. Cases needing review are logged; queued or concurrently
+changed flights leave the job incomplete and are retried on a subsequent deployment.
+Unexpected errors fail the pre-deploy step without marking the job complete.
+
+For an operator preview, run `pnpm db:repair-launch-altitudes`; add `--apply` to
+write confirmed corrections. These manual commands can rescan after completion;
+`--apply --once` is the deployment mode that respects the completion marker.
 
 The build (`prisma generate && next build`) does not use the database, so no
 `DATABASE_BUILD_URL` is needed. Railway's pre-deploy migration runs after the
