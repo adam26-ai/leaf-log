@@ -66,6 +66,12 @@ model VerificationToken {
 }
 
 // ---------- Application models ----------
+// Completed one-time deployment repairs. Never consulted by page requests.
+model MaintenanceJob {
+  id          String   @id
+  completedAt DateTime @default(now())
+}
+
 model Profile {
   id                 String        @id // == User.id (1:1)
   user               User          @relation(fields: [id], references: [id], onDelete: Cascade)

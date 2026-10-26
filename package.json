@@ -24,6 +24,8 @@
     "db:studio": "prisma studio",
     "db:backfill-short-ids": "tsx scripts/backfill-short-ids.ts",
     "db:reprocess-igc": "tsx scripts/reprocess-igc.ts",
+    "db:repair-launch-altitudes": "tsx scripts/repair-launch-altitudes.ts",
+    "db:deploy": "prisma migrate deploy && tsx scripts/repair-launch-altitudes.ts --apply --once",
     "gen:icons": "tsx scripts/gen-icons.ts"
   },
   "prisma": {
