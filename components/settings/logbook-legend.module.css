@@ -1,0 +1,30 @@
+.badges { display:contents; }
+.friendBadge { width:32px; }
+.trophySlot { container:legend-trophy / inline-size; }
+.trophyBadge { width:44px; }
+.source, .sourceImage { width:32px; height:32px; }
+@container(max-width:700px) {
+  .friendBadge { width:28px; }
+  .source, .sourceImage { width:24px; height:24px; }
+}
+@container legend-trophy (max-width:43.99px) {
+  .trophySlot .trophyBadge { width:24px; }
+  .trophyCategory { display:none; }
+}
+@container(max-width:340px) { .friendBadge { width:24px; } }
+/* The settings inset can land between the standard card's fixed-track sizes. */
+@container(min-width:490.01px) and (max-width:570px) {
+  .sample.sample { grid-template-columns:112px minmax(64px,1fr) 88px 28px minmax(24px,.8fr) 52px; }
+  .sample .metrics { display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+}
+@container(min-width:490.01px) and (max-width:502px) {
+  .sample.sample { grid-template-columns:minmax(0,1fr) 88px 28px 24px 52px; grid-template-areas:"site site friends trophies extras" "date metrics friends trophies extras"; row-gap:1px; padding-block:3px; }
+}
+/* Settings panels are narrower than the logbook itself on small phones. */
+@container(max-width:300px) {
+  /* Win over the shared card rules regardless of stylesheet loading order. */
+  .sample.sample { grid-template-columns:minmax(0,1fr) 88px; grid-template-areas:"site site" "date metrics" "badges badges"; }
+  .badges { grid-area:badges; display:flex; justify-content:flex-end; align-items:center; gap:4px; }
+  .sample .badges > * { width:auto; flex:none; }
+  .sample .badges > .trophySlot { width:24px; }
+}

@@ -1,0 +1,39 @@
+.row { position:relative; container-type:inline-size; }
+.card { display:grid; grid-template-columns:120px minmax(80px,1fr) 156px 32px minmax(24px,.8fr) 60px; grid-template-areas:"date site metrics friends trophies extras"; align-items:center; gap:6px; min-height:45px; padding:5px 10px; border:1px solid var(--color-gray-200); border-radius:6px; font-size:12px; }
+.card:hover { background-color:var(--color-gray-50); }
+.card > * { min-width:0; }
+.date { grid-area:date; color:var(--color-gray-600); font-size:13px; line-height:16px; }
+.date > span { display:block; white-space:nowrap; }
+.dateShort { display:none; }
+.site { grid-area:site; display:flex; flex-wrap:wrap; align-items:baseline; gap:0 6px; }
+.site > span { display:block; max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.site > span:first-child { font:700 16px/16px var(--font-condensed); }
+.site > span:last-child:not(:first-child) { color:var(--color-gray-600); font-size:12px; line-height:16px; }
+.metrics { grid-area:metrics; display:grid; grid-template-columns:78px minmax(0,1fr); gap:6px; align-items:center; }
+.metric { display:flex; align-items:center; gap:4px; white-space:nowrap; color:var(--color-brand-blue-strong); font-variant-numeric:tabular-nums; }
+.metric svg { width:14px; height:14px; flex-shrink:0; }
+.friends { grid-area:friends; display:flex; width:100%; align-items:center; justify-content:center; }
+.trophies { grid-area:trophies; }
+.extras { grid-area:extras; display:flex; align-items:center; gap:4px; }
+@container(max-width:700px) {
+  .card { grid-template-columns:112px minmax(64px,1fr) 156px 28px minmax(24px,.8fr) 52px; gap:4px; padding-inline:6px; }
+  .friends > span { width:28px; }
+  .extras > span:last-child, .extras img { width:24px; height:24px; }
+}
+@container(max-width:560px) {
+  .card { grid-template-columns:112px minmax(64px,1fr) 88px 28px minmax(24px,.8fr) 52px; }
+  .metrics { display:flex; flex-direction:column; align-items:start; gap:2px; }
+}
+@container(max-width:490px) {
+  .card { grid-template-columns:minmax(0,1fr) 88px 28px 24px 52px; grid-template-areas:"site site friends trophies extras" "date metrics friends trophies extras"; column-gap:4px; row-gap:1px; padding-block:3px; }
+  .metrics { gap:0; line-height:16px; }
+  .site { flex-wrap:nowrap; }
+  .site > span { min-width:0; }
+}
+@container(max-width:340px) {
+  .card { grid-template-columns:minmax(0,1fr) 80px 24px 24px 48px; column-gap:3px; padding-inline:4px; }
+  .dateFull { display:none; }
+  .dateShort { display:inline; }
+  .friends > span { width:24px; }
+  .extras { gap:0; }
+}

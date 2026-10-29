@@ -1,0 +1,182 @@
+.page { display:flex; height:100dvh; min-height:0; flex-direction:column; overflow:hidden; container-type:inline-size; }
+.navigation { flex-shrink:0; }
+/* Match the filters' 510px content breakpoint plus the editor's 8px side padding. */
+@container(max-width:526px) { .navigation { display:none; } }
+.editor { --climb-width:80px; flex:1; min-height:0; display:flex; flex-direction:column; gap:8px; width:100%; max-width:1100px; margin:0 auto; padding:16px 24px 12px; container-type:inline-size; }
+.editor[data-vario-unit="ft/min"] { --climb-width:104px; }
+.scrollContents { display:contents; }
+.heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; }
+.filters { display:grid; grid-template-columns:28px repeat(6,max-content) minmax(0,1fr); gap:4px 8px; overflow:clip; flex-shrink:0; padding:6px 0; border-block:1px solid var(--color-gray-200); }
+.filterLabels { display:flex; height:36px; align-items:center; font-size:11px; color:var(--color-gray-600); flex-shrink:0; }
+.category { display:grid; grid-template-rows:36px; justify-items:center; flex-shrink:0; }
+.filters button[aria-label^="Select"] { position:relative; white-space:nowrap; }
+.category[data-compact=true] [data-filter-label] { position:absolute; visibility:hidden; width:max-content; white-space:nowrap; left:0; top:0; }
+.filterBottom { display:contents; }
+.trailingFilters { display:grid; grid-template-columns:repeat(5,max-content); grid-template-areas:"friends trophies visibility notes source"; column-gap:6px; row-gap:8px; justify-self:end; }
+.trailingFilters .category { display:block; }
+.trailingFilters [data-filter-key=friends] { grid-area:friends; }
+.trailingFilters [data-filter-key=trophies] { grid-area:trophies; }
+.trailingFilters [data-filter-key=visibility] { grid-area:visibility; }
+.trailingFilters [data-filter-key=notes] { grid-area:notes; }
+.trailingFilters [data-filter-key=source] { grid-area:source; }
+.sort { display:flex; justify-content:center; gap:4px; flex-shrink:0; }
+.sort button { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--color-gray-300); border-radius:5px; color:var(--color-gray-600); background:var(--color-paper); }
+.sort button[aria-pressed=true] { color:var(--color-brand-blue-strong); background:#e5f5ff; border-color:var(--color-brand-blue); }
+.toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; flex-shrink:0; font-size:12px; }
+.toolbarGroup { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.filterSummary { grid-column:1 / -1; display:flex; flex-wrap:wrap; justify-content:flex-start; align-items:center; gap:4px 12px; min-width:0; padding-top:2px; font-size:12px; }
+.summaryCountSort { display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 6px; min-width:0; max-width:100%; }
+.summaryCountSort > span { white-space:nowrap; }
+.filterSummary > button { white-space:nowrap; }
+.currentSort { display:inline-flex; align-items:center; gap:3px; color:var(--color-gray-600); }
+.link { color:var(--color-brand-blue-strong); text-decoration:underline; cursor:pointer; }
+.gutter { overflow:hidden; scrollbar-gutter:stable; padding-right:2px; flex-shrink:0; }
+.list { min-height:0; flex:1; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right:2px; display:flex; flex-direction:column; gap:5px; }
+.row { display:grid; grid-template-columns:22px minmax(0,1fr); gap:9px; align-items:center; }
+.row > input { justify-self:center; width:16px; height:16px; accent-color:var(--color-brand-blue); }
+.card { --visibility-width:78px; --notes-width:70px; --badge-width:244px; display:grid; grid-template-columns:104px minmax(70px,1fr) minmax(55px,1.1fr) 88px var(--climb-width) 76px var(--badge-width); grid-template-areas:"date site wing altitude climb xc badges"; align-items:center; column-gap:6px; row-gap:4px; min-height:53px; padding:6px 10px; border:1px solid var(--color-gray-200); border-radius:6px; font-size:12px; background-color:var(--color-paper); }
+.card > * { min-width:0; }
+.selected { border-color:var(--color-brand-blue); }
+.deleted { background:var(--color-emergency-orange-light); border-color:var(--color-emergency-orange); }
+.legend { background:var(--color-gray-50); border-style:dashed; }
+.cell { border:0; background:transparent; text-align:left; border-radius:3px; cursor:pointer; max-width:100%; overflow-wrap:anywhere; }
+.cell:hover:not(:disabled) { outline:3px solid #e5f5ff; }
+.cell:disabled { cursor:default; }
+.cell svg { width:14px; height:14px; flex-shrink:0; }
+.metric { display:inline-flex; gap:5px; align-items:center; color:var(--color-brand-blue-strong); white-space:nowrap; }
+.site { display:flex; flex-direction:column; align-items:start; gap:2px; }
+.site > button:first-child { font:500 18px/1.1 var(--font-condensed); }
+.date { grid-area:date; }
+.dateLabel { display:flex; flex-wrap:wrap; column-gap:4px; }
+.dateLabel > span { white-space:nowrap; }
+.site { grid-area:site; }
+.wingColumn { grid-area:wing; padding-right:8px; }
+.wing { display:flex; gap:5px; align-items:center; line-height:1.35; }
+.wingText { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.wing svg { width:18px; height:18px; flex-shrink:0; }
+.details, .performance { display:contents; }
+.altitude { grid-area:altitude; }
+.climb { grid-area:climb; }
+.xc { grid-area:xc; }
+.xcType { display:block; padding-left:19px; font:400 12px/1.25 var(--font-condensed); color:var(--color-gray-600); white-space:nowrap; }
+.end { grid-area:badges; display:grid; grid-template-columns:24px 24px var(--visibility-width) var(--notes-width) 24px; grid-template-areas:"friends trophies visibility notes upload"; gap:6px; align-items:center; }
+.badgeSlot { display:flex; justify-content:center; align-items:center; min-width:0; min-height:24px; }
+.badgeSlot[data-editor-column=friends] { grid-area:friends; }
+.badgeSlot[data-editor-column=trophies] { grid-area:trophies; }
+.badgeSlot[data-editor-column=visibility] { grid-area:visibility; }
+.badgeSlot[data-editor-column=notes] { grid-area:notes; }
+.badgeSlot[data-editor-column=upload] { grid-area:upload; }
+.friendBadge, .trophyBadge { display:inline-flex; flex-shrink:0; align-items:center; justify-content:center; width:24px; height:24px; border-radius:999px; }
+.friendBadge { background:#0099ff; color:white; }
+.trophyBadge { border:1px solid #0003; }
+.trophyBadge[data-medal=gold] { background:#f5cd57; color:#563b00; }
+.trophyBadge[data-medal=silver] { background:#dce2e8; color:#394452; }
+.trophyBadge[data-medal=bronze] { background:#c99362; color:#40240e; }
+.pill { position:relative; display:inline-flex; justify-content:center; align-items:center; gap:4px; width:100%; height:24px; padding:2px 5px; border:1px solid currentColor; border-radius:999px; white-space:nowrap; }
+.filled { background:#e5f5ff; border-color:var(--color-brand-blue); color:var(--color-brand-blue-strong); }
+.public { background:#d8ff00; border-color:transparent; color:#272727; }
+.empty { background:var(--color-paper); border-color:var(--color-gray-300); color:var(--color-gray-600); }
+.recorded { text-decoration:underline dotted var(--color-brand-blue-strong); text-underline-offset:4px; }
+.changed { background:var(--color-emergency-orange-light); outline:2px solid var(--color-emergency-orange-light); }
+.deleteStatus { grid-column:1 / -1; display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--color-emergency-orange-strong); }
+.footer { flex-shrink:0; display:grid; grid-template-columns:minmax(0,1fr) max-content; align-items:end; gap:8px; border-top:1px solid var(--color-gray-200); padding-top:10px; font-size:12px; }
+.footerStatus { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; min-width:0; overflow-wrap:anywhere; }
+.footer > button { justify-self:end; }
+.modal { margin:auto; width:480px; max-width:calc(100vw - 24px); max-height:calc(100dvh - 32px); overflow:auto; padding:22px; border:1px solid var(--color-gray-200); border-radius:10px; background:var(--color-paper); color:var(--color-ink); box-shadow:var(--shadow-pop); }
+.modal::backdrop { background:#0d182852; }
+.modalHead { display:flex; align-items:start; justify-content:space-between; gap:10px; }
+.modalHead h2 { font:500 24px/1.2 var(--font-condensed); }
+.scope { font-size:12px; color:var(--color-brand-blue-strong); line-height:1.6; margin:10px 0 18px; overflow-wrap:anywhere; }
+.input { display:block; margin-top:6px; width:100%; min-width:0; padding:8px; border:1px solid var(--color-gray-300); border-radius:5px; font:inherit; }
+.field { display:block; margin-block:14px; font-size:13px; }
+.actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; margin-top:20px; }
+.actions > :first-child:nth-last-child(3) { margin-right:auto; }
+.reviewSection { padding:12px 0; border-bottom:1px solid var(--color-gray-200); }
+.reviewSection h3 { font-size:12px; color:var(--color-brand-blue-strong); line-height:1.6; overflow-wrap:anywhere; }
+.diff { display:flex; justify-content:space-between; align-items:start; gap:10px; margin-left:14px; padding:7px 0; font-size:12px; }
+.diff p { color:var(--color-gray-600); font-size:12px; margin-top:3px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.cancel { display:grid; place-items:center; flex-shrink:0; width:28px; height:28px; border:0; border-radius:4px; background:transparent; color:var(--color-gray-600); cursor:pointer; }
+.cancel:hover { background:var(--color-gray-100); color:#b42332; }
+.warning { padding:10px; margin-block:12px; border-radius:5px; background:var(--color-emergency-orange-light); color:var(--color-emergency-orange-strong); font-size:12px; }
+/* Use spare column space first, then progressively compact the same card. */
+@container(max-width:880px) {
+  .card { --visibility-width:28px; --badge-width:194px; }
+  .visibilityText { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+}
+@container(max-width:820px) {
+  .card { --notes-width:28px; --badge-width:152px; }
+  .notesText { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+}
+@container(max-width:760px) {
+  .card { grid-template-columns:100px minmax(70px,1fr) minmax(55px,1.1fr) var(--climb-width) 76px var(--badge-width); grid-template-areas:"date site wing performance xc badges"; }
+  .performance { grid-area:performance; display:flex; flex-direction:column; align-items:start; gap:4px; }
+  .altitude, .climb { display:flex; }
+}
+@container(max-width:680px) {
+  .card { --badge-width:92px; }
+  .end { grid-template-columns:28px 28px 24px; grid-template-rows:24px 24px; grid-template-areas:"friends trophies ." "visibility notes upload"; }
+  .trailingFilters { grid-template-columns:repeat(3,max-content); grid-template-areas:"friends trophies ." "visibility notes source"; }
+}
+@container(max-width:600px) {
+  .row { grid-template-columns:18px minmax(0,1fr); gap:6px; }
+  .card { grid-template-columns:90px minmax(48px,1fr) var(--climb-width) 76px var(--badge-width); grid-template-areas:"site site performance xc badges" "date wing performance xc badges"; padding:4px 6px; column-gap:4px; row-gap:1px; }
+  .site { flex-direction:row; align-items:baseline; gap:5px; }
+  .site > button { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .site > button, .site > button:first-child { font:500 16px/1.2 var(--font-condensed); }
+  .wingColumn { padding-right:0; }
+  .wing { gap:3px; }
+  .performance { gap:2px; }
+  .metric { gap:4px; line-height:16px; }
+}
+@container(max-width:510px) {
+  .card { --badge-width:144px; grid-template-columns:90px minmax(0,1fr) calc(var(--climb-width) + 80px); grid-template-areas:"site site details" "date wing details"; }
+  .details { grid-area:details; display:grid; grid-template-columns:var(--climb-width) 76px; grid-template-areas:"performance xc" "badges badges"; align-items:center; gap:4px; }
+  .end { grid-template-columns:24px 24px 28px 28px 24px; grid-template-rows:24px; grid-template-areas:"friends trophies visibility notes upload"; gap:4px; justify-content:end; padding-top:3px; border-top:1px solid var(--color-gray-200); }
+  .trailingFilters { grid-column:2 / -1; grid-template-columns:repeat(5,max-content); grid-template-areas:"friends trophies visibility notes source"; }
+  .filterBottom { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; }
+  .filterBottom .filterSummary { order:-1; flex:1; padding-top:0; }
+  .filterBottom .trailingFilters { flex-shrink:0; }
+}
+@container(max-width:360px) {
+  .card { grid-template-columns:max(90px,var(--climb-width)) minmax(56px,1fr) 92px; grid-template-areas:"site site badges" "date wing badges" "performance xc badges"; row-gap:2px; }
+  .details { display:contents; }
+  .end { grid-template-columns:28px 28px 24px; grid-template-rows:24px 24px; grid-template-areas:"friends trophies ." "visibility notes upload"; gap:6px; border:0; padding:0; }
+  .xcType { padding-left:18px; font-size:11px; }
+}
+@container(max-width:330px) {
+  .editor[data-vario-unit="ft/min"] .card { grid-template-columns:104px minmax(0,1fr); grid-template-areas:"site site" "date wing" "performance xc" "badges badges"; }
+  .editor[data-vario-unit="ft/min"] .end { grid-template-columns:24px 24px 28px 28px 24px; grid-template-rows:24px; grid-template-areas:"friends trophies visibility notes upload"; gap:4px; padding-top:3px; border-top:1px solid var(--color-gray-200); }
+}
+@container(max-width:300px) {
+  .card { grid-template-columns:90px minmax(0,1fr); grid-template-areas:"site site" "date wing" "performance xc" "badges badges"; }
+  .end { grid-template-columns:24px 24px 28px 28px 24px; grid-template-rows:24px; grid-template-areas:"friends trophies visibility notes upload"; gap:4px; padding-top:3px; border-top:1px solid var(--color-gray-200); }
+}
+@media(max-width:700px) {
+  .editor { padding:8px; gap:6px; }
+  .heading { position:relative; flex-wrap:nowrap; }
+  .heading h1 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .modal { padding:18px; }
+  .actions > :first-child:nth-last-child(3) { flex-basis:100%; }
+}
+@media(max-height:600px) { .editor { padding-block:8px; gap:5px; } }
+@media(max-width:520px) {
+  .actionText { display:none; }
+  .toolbar .toolbarAction { padding-inline:8px; }
+  .toolbar .moreFields { max-width:120px; }
+}
+@media(max-width:360px) { .toolbar .moreFields { max-width:100px; } .toolbar .toolbarAction { padding-inline:6px; } }
+@container(max-width:780px) {
+  .filters { column-gap:4px; }
+  .filters button[aria-label^="Select"] { padding-inline:4px; column-gap:2px; }
+  .trailingFilters { column-gap:4px; }
+}
+@container(max-width:400px) { .filters, .trailingFilters { column-gap:3px; } }
+/* In short phone windows, use one scroll area rather than forcing the full
+   matching legend and all controls above a second, unusably small scroller. */
+@media(max-width:520px) and (max-height:700px) {
+  .scrollContents { display:block; flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+  .scrollContents > .heading, .scrollContents > .filters, .scrollContents > .toolbar, .scrollContents > .gutter { margin-bottom:8px; }
+  .list { overflow:visible; scrollbar-gutter:auto; padding-right:0; }
+  .gutter { position:sticky; top:0; z-index:10; overflow:visible; scrollbar-gutter:auto; padding-right:0; background:var(--color-paper); }
+}
+

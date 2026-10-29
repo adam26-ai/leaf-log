@@ -16,7 +16,7 @@ async function getMagicLink(): Promise<string> {
   throw new Error("magic link file never appeared");
 }
 
-test("a signed-in pilot can open /ratings and see their P2/P3/P4 progress", async ({ page }) => {
+test("a signed-in pilot can open /ratings and see their P2/P3/P4 progress", async ({ page }, testInfo) => {
   const suffix = `${Date.now()}`;
   const email = `e2e_ratings_${suffix}@test.local`;
   const handle = `e2erate${suffix}`.slice(0, 18);
@@ -51,7 +51,7 @@ test("a signed-in pilot can open /ratings and see their P2/P3/P4 progress", asyn
   // 5. Turn it on in Settings.
   await page.goto("/settings");
   const logbookSettings = await openSettingsCard(page, "Logbook");
-  await expectResponsiveLegend(page);
+  await expectResponsiveLegend(page, testInfo);
   await page.getByRole("checkbox", { name: /track ushpa ratings progress/i }).check();
   await expect(logbookSettings.getByRole("status", { name: "Settings save status" })).toHaveText("Saved", { timeout: 10_000 });
 

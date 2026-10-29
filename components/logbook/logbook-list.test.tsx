@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { useState } from "react";
 import type { FlightListItem } from "@/lib/flights/repo";
-import { LogbookList } from "./logbook-list";
+import { FilterChoices, LogbookList } from "./logbook-list";
 
 vi.mock("./flight-row", () => ({ FlightRow: ({ flight, friendFlightsFound }: { flight: FlightListItem; friendFlightsFound?: boolean }) => <a href={`/flights/${flight.id}`} data-friend-flights={friendFlightsFound || undefined}>{flight.id}</a> }));
 afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); });
@@ -9,6 +10,39 @@ const flights = [
   { id: "unknown", status: "ready", takeoffSiteId: null, takeoffSiteName: null, glider: "Wing A", durationS: 3600 },
   { id: "woodrat", status: "ready", takeoffSiteId: "site", takeoffSiteMapped: true, takeoffSiteName: "Woodrat", glider: "Wing B", durationS: 7200 },
 ] as FlightListItem[];
+
+it("keeps portaled editor filter choices interactive and dismisses them with Escape", () => {
+  function EditorFilter() {
+    const [open,setOpen]=useState(false), [selected,setSelected]=useState<string[]|null>(null);
+    return <FilterChoices portal iconOnly label="Upload method" icon={<span>Upload</span>} open={open} onOpenChange={setOpen} options={[{key:"manual",label:"Manual entry"},{key:"igc",label:"IGC upload"}]} selected={selected} onChange={setSelected}/>;
+  }
+  render(<EditorFilter/>);
+  const trigger=screen.getByRole("button",{name:"Select Upload method"});
+  fireEvent.click(trigger);
+  const panel=screen.getByRole("group",{name:"Upload method choices"});
+  fireEvent.focusIn(within(panel).getByRole("checkbox",{name:"Manual entry"}));
+  fireEvent.click(within(panel).getByRole("checkbox",{name:"Manual entry"}));
+  expect(within(panel).getByRole("checkbox",{name:"Manual entry"})).not.toBeChecked();
+  expect(within(panel).getByRole("checkbox",{name:"IGC upload"})).toBeChecked();
+  fireEvent.keyDown(document,{key:"Escape"});
+  expect(screen.queryByRole("group",{name:"Upload method choices"})).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
+it("keeps popup header actions interactive without changing filter choices", () => {
+  function SortableFilter() {
+    const [open,setOpen]=useState(false), [ascending,setAscending]=useState(false);
+    return <FilterChoices portal label="Wings" icon={<span/>} open={open} onOpenChange={setOpen} options={[{key:"wing",label:"My wing"}]} headerActions={<button type="button" aria-pressed={ascending} onClick={()=>setAscending(true)}>Sort ascending</button>}/>;
+  }
+  render(<SortableFilter/>);
+  fireEvent.click(screen.getByRole('button',{name:'Select Wings'}));
+  const panel=screen.getByRole('group',{name:'Wings choices'});
+  fireEvent.focusIn(within(panel).getByRole('button',{name:'Sort ascending'}));
+  fireEvent.click(within(panel).getByRole('button',{name:'Sort ascending'}));
+  expect(within(panel).getByRole('button',{name:'Sort ascending'})).toHaveAttribute('aria-pressed','true');
+  fireEvent.keyDown(document,{key:'Escape'});
+  expect(screen.queryByRole('group',{name:'Wings choices'})).not.toBeInTheDocument();
+});
 
 it("counts unique flights across both endpoints and only flags flights without any site", () => {
   render(<LogbookList flights={[

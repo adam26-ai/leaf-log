@@ -2,18 +2,21 @@
 
 import { useId, useState, type ReactNode } from "react";
 import Image from "next/image";
-import { Cloud, Trophy, Users, Waypoints, X } from "lucide-react";
+import { Cloud, Route, Trophy, Users, Waypoints, X } from "lucide-react";
 import { WingPairIcon } from "@/components/icons/wing-icon";
 import { useUnits } from "@/lib/flights/use-units";
-import { formatAltitude } from "@/lib/flights/format";
+import { formatAltitude, formatDistance } from "@/lib/flights/format";
 import { cn } from "@/lib/utils";
+import card from "@/components/logbook/logbook-flight-card.module.css";
+import css from "./logbook-legend.module.css";
 
 const help = {
   date: ["Date, time & duration", "The first line shows the flight date. Below it are the local takeoff time and time spent flying. Manual entries may show only the details you supplied."],
   site: ["Flying site", "The site name identifies where you took off. When a different landing site is known, it appears after an arrow."],
   altitude: ["Maximum altitude", "The cloud symbol shows the highest altitude recorded during the flight, in your selected units."],
+  distance: ["XC distance", "The route symbol shows the largest available XC distance in your selected units. This can be calculated from an IGC recording or reported by the pilot. A dash means no XC distance is recorded."],
   friends: ["Friend flights", "The two-paraglider badge means you flew together with a friend. Open the flight to explore the matching friend flights in replay."],
-  trophies: ["Personal bests", "Trophies mark your top three flights in categories such as duration, altitude, altitude gain, and distance. Gold, silver, and bronze indicate first, second, and third place; the small symbol identifies the category."],
+  trophies: ["Personal bests", "Trophies mark your top three flights in categories such as duration, altitude, altitude gain, and distance. Gold, silver, and bronze indicate first, second, and third place. When space is tight, the badge becomes a single trophy icon; hover over it in your logbook to see all awards and categories."],
   privacy: ["Flight visibility", "The round visibility badge shows who can see the flight: a lock for private, people for friends, or a globe for public. This example is visible to friends."],
   source: ["Log source", "The symbol indicates how the log was created: IGC automatically uploaded from a Leaf, IGC manually uploaded, flight details entered by hand, or imported from another logbook."],
 } as const;
@@ -41,20 +44,20 @@ export function LogbookLegend() {
     >{children}</button>;
   }
 
-  function badge(key: "friends" | "trophies" | "privacy" | "source", visibility: string) {
+  function badge(key: "friends" | "trophies" | "privacy" | "source") {
     const symbols = {
       friends: <WingPairIcon aria-hidden="true" className="h-6 w-6" />,
-      trophies: <><Trophy aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><Waypoints aria-hidden="true" className="h-[15px] w-[15px]" /></>,
+      trophies: <><Trophy aria-hidden="true" className="h-[17.5px] w-[17.5px]" /><Waypoints aria-hidden="true" className={cn("h-[15px] w-[15px]", css.trophyCategory)} /></>,
       privacy: <Users aria-hidden="true" className="h-[15px] w-[15px]" />,
-      source: <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className="h-8 w-8" />,
+      source: <Image src="/leaf-auto-upload-transparent.png" alt="" width={32} height={32} className={css.sourceImage} />,
     };
     const styles = {
-      friends: "h-6 w-8 rounded-full border border-brand-blue bg-brand-blue text-white",
-      trophies: "h-6 w-11 gap-1 rounded-full border border-black/20 bg-[#f5cd57] text-[#563b00]",
+      friends: cn("h-6 rounded-full border border-brand-blue bg-brand-blue text-white", css.friendBadge),
+      trophies: cn("h-6 gap-1 rounded-full border border-black/20 bg-[#f5cd57] text-[#563b00]", css.trophyBadge),
       privacy: "h-6 w-6 rounded-full border border-brand-blue bg-brand-blue/10 text-brand-blue-strong",
-      source: "h-8 w-8",
+      source: css.source,
     };
-    return detail(key, symbols[key], cn("shrink-0 items-center justify-center", styles[key], visibility));
+    return detail(key, symbols[key], cn("inline-flex shrink-0 items-center justify-center", styles[key]));
   }
 
   return (
@@ -63,27 +66,26 @@ export function LogbookLegend() {
     }}>
       <h3 className="font-condensed text-lg font-bold text-ink">Legend</h3>
       <p className="mb-3 mt-1 text-xs text-gray-500">Mouse over or click on any symbol for details.</p>
-      <div aria-label="Legend symbols" className="mb-2 flex flex-wrap items-center gap-2 @min-[560px]/legend:hidden">
-        {badge("friends", "inline-flex @min-[560px]/legend:hidden")}
-        {badge("trophies", "inline-flex @min-[508px]/legend:hidden")}
-        {badge("privacy", "inline-flex @min-[456px]/legend:hidden")}
-        {badge("source", "inline-flex @min-[394px]/legend:hidden")}
-      </div>
-      <div aria-label="Example logbook entry" className="flex min-h-[45px] min-w-0 items-center gap-2 rounded-md border border-gray-200 px-3 py-1 text-sm" style={{ backgroundImage: "linear-gradient(to right, rgb(0 153 255 / 0.18), rgb(148 233 30 / 0.32))" }}>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-          {detail("date", <><span className="block whitespace-nowrap text-[13px] font-bold leading-4">Sat, Jun 6, 2026</span><span className="block whitespace-nowrap text-[13px] leading-4 tabular-nums">12:30 · 2h 15m</span></>, "shrink-0 text-gray-600 @min-[354px]/legend:w-[8.5rem]")}
-          {detail("site", <><span className="block font-condensed text-base font-bold leading-4 text-ink">Woodrat</span><span className="block whitespace-nowrap text-xs leading-4 text-gray-600">→ Longsword</span></>, "min-w-0 flex-1")}
-          {detail("altitude", <><Cloud aria-hidden="true" className="h-3.5 w-3.5" />{formatAltitude(2100, units)}</>, "ml-auto inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap tabular-nums text-brand-blue-strong")}
+      <div className={card.row}>
+      <div aria-label="Example logbook entry" className={cn(card.card, css.sample)} style={{ backgroundImage: "linear-gradient(to right, rgb(0 153 255 / 0.18), rgb(148 233 30 / 0.32))" }}>
+        {detail("date", <><span className="font-bold"><span className={card.dateFull}>Sat, Jun 6, 2026</span><span className={card.dateShort}>Sat, Jun 6</span></span><span>12:30 · 2h 15m</span></>, card.date)}
+        {detail("site", <><span>Woodrat</span><span>→ Longsword</span></>, card.site)}
+        <div className={cn(card.metrics, css.metrics)}>
+          {detail("altitude", <><Cloud aria-hidden="true" />{formatAltitude(2100, units)}</>, card.metric)}
+          {detail("distance", <><Route aria-hidden="true" />{formatDistance(18500, units)}</>, card.metric)}
         </div>
-        {badge("friends", "hidden @min-[560px]/legend:inline-flex")}
-        {badge("trophies", "hidden @min-[508px]/legend:inline-flex")}
-        {badge("privacy", "hidden @min-[456px]/legend:inline-flex")}
-        {badge("source", "hidden @min-[394px]/legend:inline-flex")}
+        <div className={css.badges}>
+          <div className={card.friends}>{badge("friends")}</div>
+          <div className={cn(card.trophies, css.trophySlot)}>{badge("trophies")}</div>
+          <div className={card.extras}>{badge("privacy")}{badge("source")}</div>
+        </div>
+      </div>
       </div>
       <div className="mt-3 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-x-3 text-[11px] leading-relaxed">
         <p className="text-brand-blue-strong">Blue shading increases with altitude gain and duration</p>
         <p className="text-right text-[#43730d]">Green shading increases with flight distance</p>
       </div>
+      <p className="mt-3 text-xs leading-relaxed text-gray-500">Your totals and filters stay visible while you scroll through flights. Use <strong className="font-medium text-gray-600">Edit logbook</strong> to edit individual flights or several selected flights together. Changes stay in a draft until you review and save them.</p>
       {/* Overlapping grid cells reserve the tallest explanation at every width.
           Invisible cells still size the row, so hover never changes page height. */}
       <div id={id} className="mt-3 grid rounded-lg border border-gray-200 bg-white p-3 text-xs leading-relaxed text-gray-600" role="status" aria-live="polite">

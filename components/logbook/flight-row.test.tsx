@@ -128,3 +128,34 @@ it("shows calculation actions only in the owner's logbook", () => {
   rerender(<FlightRow flight={{ ...flight, xcStatus: "unscored" }} compact />);
   expect(screen.queryByRole("button", { name: "Calculate XC" })).not.toBeInTheDocument();
 });
+
+it("shows recorded XC and groups all existing logbook information inside the flight link", () => {
+  const route={shape:"open",distanceM:15300,optimal:true};
+  render(<FlightRow flight={{...flight,recordingKind:"igc",xcScore:{version:1,best:route,candidates:[route]}}} compact logbookLayout friendFlightsFound/>);
+  const link=screen.getByRole('link');
+  expect(within(link).getByLabelText('XC distance',{exact:true})).toHaveTextContent('15.3 km');
+  expect(within(link).getByTitle('Maximum altitude')).toHaveTextContent('1,800 m');
+  expect(within(link).getByLabelText('You flew together')).toBeInTheDocument();
+  expect(within(link).getByLabelText('Visibility: Public')).toBeInTheDocument();
+  expect(within(link).getByRole('img',{name:'Manually uploaded'})).toBeInTheDocument();
+});
+
+it("identifies reported XC and leaves missing or unreadable distances empty", () => {
+  const entry={...flight,recordingKind:'logbook',reportedXcDistanceM:24000,reportedXcType:'fai-triangle'};
+  const {rerender}=render(<FlightRow flight={entry} compact logbookLayout/>);
+  expect(screen.getByLabelText('XC distance',{exact:true})).toHaveTextContent('24.0 km');
+  expect(screen.getByLabelText('XC distance',{exact:true})).toHaveAttribute('title','XC distance · FAI triangle · Reported');
+  rerender(<FlightRow flight={flight} compact logbookLayout/>);
+  expect(screen.getByLabelText('XC distance',{exact:true})).toHaveTextContent('—');
+  rerender(<FlightRow flight={{...entry,status:'failed'}} compact logbookLayout/>);
+  expect(screen.getByLabelText('XC distance',{exact:true})).toHaveTextContent('—');
+  expect(screen.getByTitle('Maximum altitude')).toHaveTextContent('Unreadable');
+});
+
+it("keeps the ambiguous landing prompt scoped to owners in the XC logbook layout", () => {
+  const unresolved={...flight,landingSiteAssignment:'needs_review'};
+  const {rerender}=render(<FlightRow flight={unresolved} compact logbookLayout/>);
+  expect(screen.queryByText(/Choose site|→/)).not.toBeInTheDocument();
+  rerender(<FlightRow flight={unresolved} compact logbookLayout isOwner/>);
+  expect(screen.getByTitle('Woodrat → Choose site')).toBeInTheDocument();
+});

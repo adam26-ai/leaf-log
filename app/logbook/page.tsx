@@ -1,16 +1,17 @@
 import Link from "next/link";
+import { LogbookProfileHeader } from "@/components/logbook/logbook-profile-header";
 import { requireProfile } from "@/lib/profile";
 import { listOwnFlights } from "@/lib/flights/repo";
 import { analysisPending } from "@/lib/flights/analysis-state";
 import { AnalysisNotice } from "@/components/logbook/analysis-notice";
 import { countFriends } from "@/lib/social/friends";
 import { AppHeader } from "@/components/app-header";
-import { Avatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { LogbookList } from "@/components/logbook/logbook-list";
 import { flightTrophies } from "@/lib/flights/trophies";
 import { XcPendingRefresh } from "@/components/flight/xc-pending-refresh";
+import css from "@/components/logbook/logbook-overview.module.css";
 
 export default async function LogbookPage() {
   const profile = await requireProfile();
@@ -23,32 +24,11 @@ export default async function LogbookPage() {
   const renderedAt = Date.now();
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className={css.page}>
       <AppHeader profile={profile} />
       <XcPendingRefresh pending={flights.some(f => analysisPending(f.xcStatus))} />
-      <main className="mx-auto w-full max-w-4xl flex-1 px-2 py-6 sm:px-6 sm:py-10">
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-          <Avatar
-            handle={profile.handle}
-            displayName={profile.displayName}
-            avatarUpdatedAt={profile.avatarUpdatedAt}
-            variant="full"
-            className="h-16 w-16 text-xl sm:h-20 sm:w-20 sm:text-2xl"
-          />
-          <div className="flex min-w-[12rem] flex-1 flex-col gap-0.5">
-            <h1 className="break-words font-condensed text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-              {profile.displayName}
-            </h1>
-            <p className="text-sm text-gray-500">
-              <span className="break-all font-mono text-lg sm:text-xl">@{profile.handle}</span>
-              <span className="mx-2 text-gray-300" aria-hidden="true">·</span>
-              {friendCount} {friendCount === 1 ? "friend" : "friends"}
-            </p>
-          </div>
-          <Button asChild size="sm">
-            <Link href="/upload">Add flight</Link>
-          </Button>
-        </div>
+      <main className={`${css.main} mx-auto w-full max-w-4xl flex-1 px-2 sm:px-6`}>
+        <LogbookProfileHeader ownerId={profile.id} handle={profile.handle} displayName={profile.displayName} avatarUpdatedAt={profile.avatarUpdatedAt} friendCount={friendCount} hasFlights={flights.length > 0} />
         {profile.bio && <p className="mt-3 max-w-2xl text-gray-700">{profile.bio}</p>}
 
         {flights.length === 0 ? (
