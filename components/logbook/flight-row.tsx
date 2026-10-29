@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud } from "lucide-react";
+import { Monitor, ThumbsUp, Globe, Lock, Users, NotebookPen, FileSpreadsheet, Cloud, Route } from "lucide-react";
 import type { FlightTrophy } from "@/lib/flights/trophies";
 import { WingPairIcon } from "@/components/icons/wing-icon";
 import { useFeedLayout } from "./feed-layout-provider";
@@ -11,6 +11,7 @@ import { TrophyPill } from "./trophy-pill";
 import { ResponsiveTrophies } from "./responsive-trophies";
 import {
   formatDuration,
+  formatDistance,
   formatAltitude,
   formatLocalDate,
   formatLocalDateShort,
@@ -20,6 +21,8 @@ import type { FlightListItem } from "@/lib/flights/repo";
 import { formatLocationLabel } from "@/lib/sites/display";
 import { Avatar } from "@/components/avatar";
 import { useUnits } from "@/lib/flights/use-units";
+import { flightXcResults } from "@/lib/flights/recording";
+import logbookCss from "./logbook-flight-card.module.css";
 
 import { AnalysisStatus } from "@/components/flight/analysis-status";
 
@@ -54,6 +57,7 @@ export function FlightRow({
   friendFlightsFound = false,
   prioritizeSiteOnMobile = false,
   feedLayout = false,
+  logbookLayout = false,
 }: {
   flight: FlightListItem;
   owner?: FlightRowOwner;
@@ -68,6 +72,7 @@ export function FlightRow({
   friendFlightsFound?: boolean;
   prioritizeSiteOnMobile?: boolean;
   feedLayout?: boolean;
+  logbookLayout?: boolean;
 }) {
   const { units } = useUnits();
   const layout = useFeedLayout(trophies ?? []);
@@ -119,6 +124,29 @@ export function FlightRow({
           {layout.upload && <span className="inline-flex" style={{gridColumn: layout.hasTrophies ? 6 : 5, gridRow: 1}}><UploadSource source={flight.source} /></span>}
         </Link>
       );
+    }
+    if (logbookLayout) {
+      const distance = flight.status === "failed" ? null : flightXcResults(flight)[0];
+      return <div className={logbookCss.row}>
+        <Link href={`/flights/${flight.id}`} data-logbook-card className={logbookCss.card}
+          style={{ backgroundImage: blueAlpha > 0 && greenAlpha > 0 ? `linear-gradient(to right, ${blue}, ${green})` : undefined, backgroundColor: blueAlpha > 0 && greenAlpha > 0 ? undefined : blueAlpha > 0 ? blue : green }}>
+          <span data-logbook-column="date" className={logbookCss.date}>
+            <span className="font-bold"><span className={logbookCss.dateFull}>{formatLocalDate(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span><span className={logbookCss.dateShort}>{formatLocalDateShort(flight.takeoffAt ?? flight.flightDate, flight.takeoffAt ? flight.localUtcOffsetMinutes : 0)}</span></span>
+            <span>{formatLocalTime(flight.takeoffAt, flight.localUtcOffsetMinutes)} · {formatDuration(flight.durationS)}</span>
+          </span>
+          <span data-logbook-column="site" title={showLanding ? `${site} → ${landing}` : site} className={logbookCss.site}>
+            <span>{site}</span>{showLanding && <span title={`Landing: ${landing}`}>→ {landing}</span>}
+          </span>
+          <span data-logbook-column="metrics" className={logbookCss.metrics}>
+            <span title="Maximum altitude" className={logbookCss.metric}><Cloud aria-hidden="true"/>{flight.status === "failed" ? "Unreadable" : formatAltitude(flight.maxAltM, units)}</span>
+            <span title={distance ? `XC distance · ${distance.name}${distance.reported ? " · Reported" : distance.approximate ? " · Best found" : ""}` : "XC distance · Not recorded"} aria-label="XC distance" className={logbookCss.metric}><Route aria-hidden="true"/>{formatDistance(distance?.distanceM ?? null, units)}</span>
+          </span>
+          <span data-logbook-column="friends" className={logbookCss.friends}>{friendFlightsFound && <span title="You flew together" aria-label="You flew together" className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded-full border border-brand-blue bg-brand-blue text-white"><WingPairIcon aria-hidden="true" className="h-6 w-6"/></span>}</span>
+          <span data-logbook-column="trophies" className={logbookCss.trophies}><ResponsiveTrophies trophies={trophies ?? []} compactWhenTight/></span>
+          <span data-logbook-column="extras" className={logbookCss.extras}><span title={`Visibility: ${visibility.label}`} aria-label={`Visibility: ${visibility.label}`} className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${visibility.className}`}><VisibilityIcon aria-hidden="true" className="h-[15px] w-[15px]"/></span><UploadSource source={process.env.NODE_ENV === "development" && previewAutoUpload ? "device_push" : flight.source}/></span>
+        </Link>
+        {showAnalysis && <AnalysisStatus flight={flight} owner compact/>}
+      </div>;
     }
     return (
       <div className="relative">

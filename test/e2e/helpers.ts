@@ -1,4 +1,127 @@
-import { expect, type FileChooser, type Locator, type Page } from "@playwright/test";
+import { expect, type FileChooser, type Locator, type Page, type TestInfo } from "@playwright/test";
+
+/** Shared logbook entry point, independent of the standard card's contents. */
+export async function openAdvancedLogbook(page: Page) {
+  await page.getByRole("link", { name: "Edit logbook", exact: true }).click();
+  await expect(page.getByRole("main", { name: "Advanced logbook editor" })).toBeVisible();
+  return page.getByRole("main", { name: "Advanced logbook editor" });
+}
+
+/** One scroll area, matching legend tracks and visible sorting state at every size. */
+export async function expectAdvancedLogbookFits(page: Page) {
+  const combined = page.locator('[data-editor-scroll-contents]');
+  const singleArea = await combined.evaluate(element => getComputedStyle(element).display !== 'contents');
+  const bounds = await (singleArea ? combined : page.getByRole("list", { name: "Scrollable flights" })).boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.height).toBeGreaterThan(40);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  await expect(page.getByRole("button", { name: "Review changes", exact: true })).toBeInViewport();
+  expect(await page.locator('[data-editor-footer]').evaluate(footer=>{
+    const button=footer.querySelector(':scope > button')!.getBoundingClientRect(), bounds=footer.getBoundingClientRect(), status=footer.firstElementChild!.getBoundingClientRect();
+    return Math.abs(button.right-bounds.right)<1 && Math.abs(button.bottom-bounds.bottom)<1 && status.right<button.left;
+  })).toBe(true);
+  expect(await page.locator('[data-editor-navigation]').evaluate(nav=>{
+    const filtersWrapped=getComputedStyle(document.querySelector('[data-filter-bottom]')!).display==='flex';
+    return (getComputedStyle(nav).display==='none')===filtersWrapped;
+  })).toBe(true);
+  if (singleArea) await page.getByRole("list", { name:"Scrollable flights" }).getByRole('listitem').first().scrollIntoViewIfNeeded();
+  await expect(page.getByRole("group", { name: "Edit selected flight fields", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Edit selected Date", exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await expect(page.locator('[data-current-sort]')).toBeVisible();
+  expect(await page.locator('[data-filter-summary]').evaluate(summary=>{
+    const filters=summary.closest('[aria-label="Advanced logbook filters and sorting"]')!, bounds=summary.getBoundingClientRect(), filterBounds=filters.getBoundingClientRect();
+    const bottom=summary.parentElement!, tail=bottom.querySelector('[data-trailing-filters]')!.getBoundingClientRect();
+    const sharedRow=getComputedStyle(bottom).display==='flex';
+    const choices=Array.from(filters.querySelectorAll('[data-filter-key]')).filter(filter=>!sharedRow||!filter.closest('[data-trailing-filters]')).map(filter=>filter.getBoundingClientRect());
+    return Math.abs(bounds.left-filterBounds.left)<1 && bounds.bottom<=filterBounds.bottom && choices.every(choice=>choice.bottom<=bounds.top)
+      && (!sharedRow || bounds.right<tail.left && Math.min(bounds.bottom,tail.bottom)>Math.max(bounds.top,tail.top));
+  })).toBe(true);
+  expect(await page.locator('[data-flight-id] [data-editor-column="date"] > div:first-child').evaluateAll(dates => dates.every(date => /\b\d{4}\b/.test(date.textContent || '')))).toBe(true);
+  await expect.poll(() => page.locator('[aria-label="Advanced logbook filters and sorting"]').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  expect(await page.getByRole('group', {name:'Edit selected flight fields',exact:true}).evaluate(element=>element.scrollWidth<=element.clientWidth+1)).toBe(true);
+  expect(await page.locator('[data-editor-scroll-contents], [aria-label="Scrollable flights"]').evaluateAll(elements=>elements.filter(element=>['auto','scroll'].includes(getComputedStyle(element).overflowY)&&element.scrollHeight>element.clientHeight+1).length)).toBe(1);
+  // Fixed badge slots and shared tracks must align even when labels, landing
+  // sites and wing names differ. Compact cards may stack, but never overlap.
+  // The two-row badge stage must reserve both top slots even without awards.
+  await expect.poll(() => page.locator('main [data-editor-column="date"]').evaluateAll(dates => {
+    const cards = dates.map(date => date.parentElement!).filter(card => card.getBoundingClientRect().width > 0);
+    const issues: string[] = [];
+    const positions = new Map<string, number>();
+    for (const card of cards) {
+      const columns = Array.from(card.querySelectorAll<HTMLElement>('[data-editor-column]'));
+      const bounds = card.getBoundingClientRect();
+      if (card.scrollWidth > card.clientWidth + 1) issues.push('Card overflows horizontally');
+      const badge = (name: string) => card.querySelector(`[data-editor-column="${name}"]`)!.getBoundingClientRect();
+      if (Math.abs(badge('friends').top - badge('trophies').top) > 1) issues.push('Friends and trophies are not on the same row');
+      if (['notes', 'upload'].some(name => Math.abs(badge(name).top + badge(name).height / 2 - badge('visibility').top - badge('visibility').height / 2) > 1)) issues.push('Visibility, notes and upload are not on the same row');
+      for (const column of columns) {
+        const name = column.dataset.editorColumn!, box = column.getBoundingClientRect();
+        if (box.left < bounds.left || box.right > bounds.right + 1) issues.push(`${name} is outside the card`);
+        if (positions.has(name) && Math.abs(positions.get(name)! - box.left) > 1) issues.push(`${name} is misaligned`);
+        positions.set(name, box.left);
+        for (const other of columns) {
+          if (column === other) continue;
+          const adjacent = other.getBoundingClientRect();
+          if (Math.min(box.right, adjacent.right) - Math.max(box.left, adjacent.left) > 1
+            && Math.min(box.bottom, adjacent.bottom) - Math.max(box.top, adjacent.top) > 1) {
+            issues.push(`${name} overlaps ${other.dataset.editorColumn}`);
+          }
+        }
+      }
+    }
+    const legend = document.querySelector('[data-editor-legend]')!;
+    if (cards.some(card=>getComputedStyle(card).gridTemplateAreas!==getComputedStyle(legend).gridTemplateAreas)) issues.push('Legend uses a different layout');
+    return [...new Set(issues)];
+  })).toEqual([]);
+}
+
+/** Standard logbook metrics stay readable through the stacked/site-first layouts. */
+export async function expectLogbookCardsFit(page: Page) {
+  await expect.poll(() => page.locator('[data-logbook-card]').evaluateAll(cards => cards.flatMap(card => {
+    const issues: string[]=[];
+    const bounds = card.getBoundingClientRect();
+    const columns = Array.from(card.querySelectorAll<HTMLElement>('[data-logbook-column]')).filter(column => getComputedStyle(column).display !== 'none');
+    if (card.scrollWidth > card.clientWidth + 1 || bounds.right > innerWidth + 1) issues.push(`Card overflows: ${card.scrollWidth}/${card.clientWidth}`);
+    const metrics=card.querySelector('[data-logbook-column="metrics"]')!;
+    if (metrics.scrollWidth>metrics.clientWidth+1) issues.push(`Metrics overflow: ${metrics.scrollWidth}/${metrics.clientWidth}`);
+    columns.forEach((column, i) => {
+      const box = column.getBoundingClientRect();
+      if (box.left < bounds.left || box.right > bounds.right + 1) issues.push(`${column.dataset.logbookColumn} outside card`);
+      columns.slice(i + 1).forEach(other => {
+        const next = other.getBoundingClientRect();
+        if (Math.min(box.right, next.right) - Math.max(box.left, next.left) > 1 && Math.min(box.bottom, next.bottom) - Math.max(box.top, next.top) > 1) issues.push(`${column.dataset.logbookColumn} overlaps ${other.dataset.logbookColumn}`);
+      });
+    });
+    return issues;
+  }))).toEqual([]);
+}
+
+/** Profile actions stay beside the pilot; filter arrows yield before buttons wrap. */
+export async function expectLogbookOverviewFits(page: Page) {
+  await expect.poll(() => page.locator('[data-logbook-flights]').evaluate(list => {
+    const bounds=list.getBoundingClientRect();
+    return list.clientHeight>40 && bounds.bottom<=innerHeight+1 && document.documentElement.scrollHeight<=innerHeight+1
+      && document.documentElement.scrollWidth<=innerWidth+1 && getComputedStyle(list).overflowY==='auto';
+  })).toBe(true);
+  await expect.poll(() => page.locator('[data-logbook-profile]').evaluate(profile => {
+    const bounds=profile.getBoundingClientRect(), actions=profile.querySelector('[data-logbook-actions]')!, identity=profile.querySelector('[data-logbook-identity]')!.getBoundingClientRect();
+    const edit=actions.querySelector('a[href="/logbook/edit"]')!.getBoundingClientRect(), add=actions.querySelector('a[href="/upload"]')!.getBoundingClientRect();
+    const actionBounds=actions.getBoundingClientRect(), stacked=profile.getAttribute('data-action-layout')==='stacked';
+    return actionBounds.right<=bounds.right+1 && actionBounds.left>=identity.right && Math.min(identity.bottom,actionBounds.bottom)>Math.max(identity.top,actionBounds.top)
+      && (stacked ? add.bottom<=edit.top : Math.abs(add.top-edit.top)<1);
+  })).toBe(true);
+  await expect.poll(() => page.locator('[data-logbook-overview]').evaluate(overview => {
+    const filters=overview.querySelector('[aria-label="Logbook filters"]')!, arrows=Array.from(filters.querySelectorAll('[data-filter-chevron]'));
+    const buttons=Array.from(filters.children).map(child=>child.matches('button')?child:child.querySelector('button')!);
+    const wraps=buttons.some(button=>button.getBoundingClientRect().top>buttons[0].getBoundingClientRect().top+1);
+    const stats=overview.querySelector('[data-logbook-stats]')!.getBoundingClientRect(), controls=overview.querySelector('[data-logbook-controls]')!.getBoundingClientRect();
+    return (!wraps||arrows.every(arrow=>getComputedStyle(arrow).visibility==='hidden')) && overview.scrollWidth<=overview.clientWidth+1
+      && (overview.getAttribute('data-stacked')!=='true'||controls.top-stats.bottom<=8);
+  })).toBe(true);
+  return page.locator('[data-logbook-profile]').evaluate(profile=>({actionLayout:profile.getAttribute('data-action-layout'),compactFilters:document.querySelector('[aria-label="Logbook filters"]')!.getAttribute('data-compact')==='true',filterRows:new Set(Array.from(document.querySelector('[aria-label="Logbook filters"]')!.children).map(child=>Math.round(child.getBoundingClientRect().top))).size}));
+}
 
 /** Exercise the XC cell's full hit area, including space outside its distance value. */
 export async function cycleReplayXcMetric(page: Page, target: "icon" | "label" | "padding" | "value") {
@@ -238,6 +361,16 @@ export async function expectSingleRowHeader(page: Page) {
   await expect(logo).toHaveAttribute("href", "/logbook");
   await expect(logo).toHaveAttribute("title", "Your logbook");
   await expect(header.locator('a[href="/logbook"]')).toHaveCount(1);
+  // The account label responds through ResizeObserver. A viewport resize can
+  // finish before that React update; wait for every visible link to fit.
+  await expect.poll(() => header.evaluate(element => {
+    const links = Array.from(element.querySelectorAll("a")).filter(link => link.getBoundingClientRect().width > 0);
+    const boxes = links.map(link => link.getBoundingClientRect());
+    const center = boxes[0].top + boxes[0].height / 2;
+    return boxes.every((box, index) => box.left >= 0 && box.right <= innerWidth &&
+      Math.abs(box.top + box.height / 2 - center) < 2 &&
+      (index === 0 || box.left >= boxes[index - 1].right));
+  })).toBe(true);
   const logoBox = (await logo.boundingBox())!;
   for (const link of await header.getByRole("navigation").getByRole("link").all()) {
     const box = (await link.boundingBox())!;
@@ -265,19 +398,47 @@ export async function expectSingleRowHeader(page: Page) {
   }
 }
 
-/** Badge ejection preserves order, avoids overflow, and keeps help height stable. */
-export async function expectResponsiveLegend(page: Page) {
+/** Legend fields stay separate through layout transitions, with stable help height. */
+export async function expectResponsiveLegend(page: Page, testInfo: TestInfo) {
   const legend = page.getByRole("region", { name: "Logbook legend" });
   const row = legend.getByLabel("Example logbook entry", { exact: true });
-  const symbols = legend.getByLabel("Legend symbols", { exact: true });
   const names = ["Explain friend flights", "Explain personal bests", "Explain flight visibility", "Explain log source"];
-  for (const width of [768, 640, 590, 530, 460, 320]) {
+  const interactionWidths = new Set([768, 640, 592, 528, 464, 320]);
+  for (let width = 768; width >= 320; width -= 8) {
     await page.setViewportSize({ width, height: 900 });
-    const bounds = await legend.boundingBox();
-    const ejected = [560, 508, 456, 394].filter(threshold => bounds!.width < threshold).length;
-    await expect(symbols.getByRole("button")).toHaveCount(ejected);
-    for (const [index, name] of names.entries()) {
-      await expect((index < ejected ? symbols : row).getByRole("button", { name, exact: true })).toBeVisible();
+    const layoutIssues = await row.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const buttons = Array.from(element.querySelectorAll("button"));
+      const issues: string[] = [];
+      if (element.scrollWidth > element.clientWidth + 1) issues.push("card overflows");
+      if (document.documentElement.scrollWidth > window.innerWidth) issues.push("page overflows");
+      for (const [index, button] of buttons.entries()) {
+        const box = button.getBoundingClientRect();
+        const name = button.getAttribute("aria-label");
+        if (box.left < bounds.left || box.right > bounds.right + 1 || box.top < bounds.top || box.bottom > bounds.bottom + 1) {
+          issues.push(`${name} extends outside card`);
+        }
+        if (name !== "Explain flying site" && button.scrollWidth > button.clientWidth + 1) {
+          issues.push(`${name} text overflows`);
+        }
+        for (const other of buttons.slice(index + 1)) {
+          const next = other.getBoundingClientRect();
+          if (Math.min(box.right, next.right) - Math.max(box.left, next.left) > 1 &&
+              Math.min(box.bottom, next.bottom) - Math.max(box.top, next.top) > 1) {
+            issues.push(`${name} overlaps ${other.getAttribute("aria-label")}`);
+          }
+        }
+      }
+      const privacy = document.querySelector('input[name="default_visibility"]')?.closest("label")?.getBoundingClientRect();
+      if (!privacy || Math.abs(privacy.left - bounds.left) > 1 || Math.abs(privacy.right - bounds.right) > 1) {
+        issues.push("legend and privacy cards have different insets");
+      }
+      return issues;
+    });
+    expect(layoutIssues, `Legend layout at ${width}px`).toEqual([]);
+    if (!interactionWidths.has(width)) continue;
+    for (const name of names) {
+      await expect(row.getByRole("button", { name, exact: true })).toBeVisible();
     }
     const friends = legend.getByRole("button", { name: "Explain friend flights", exact: true });
     await expect(friends.locator("svg")).toHaveCount(1);
@@ -287,7 +448,9 @@ export async function expectResponsiveLegend(page: Page) {
     await expect(visibility.locator(".lucide-users")).toHaveCount(1);
     await expect(visibility).toHaveCSS("width", "24px");
     await expect(visibility).toHaveCSS("height", "24px");
-    expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const distance=row.getByRole('button',{name:'Explain xc distance',exact:true});
+    await expect(distance).toHaveText(/\d+(?:\.\d+)? (km|mi|nmi|m|ft)/);
+    await expect(distance.locator('.lucide-route')).toHaveCount(1);
     const initialHeight = (await legend.boundingBox())!.height;
     await friends.hover();
     await expect(legend.getByRole("status").getByText(/^The two-paraglider badge/)).toBeVisible();
@@ -298,6 +461,15 @@ export async function expectResponsiveLegend(page: Page) {
     await legend.getByRole("button", { name: "Explain log source", exact: true }).hover();
     await expect(legend.getByRole("status").getByText("Log source", { exact: true })).toBeVisible();
     expect((await legend.boundingBox())!.height).toBe(initialHeight);
+    await distance.hover();
+    await expect(legend.getByRole('status').getByText(/^The route symbol/)).toBeVisible();
+    expect((await legend.boundingBox())!.height).toBe(initialHeight);
+    await distance.click();
+    await page.mouse.move(0,0);
+    await expect(legend.getByRole('status').getByText('XC distance',{exact:true})).toBeVisible();
+    if([768,320].includes(width)) await legend.screenshot({path:testInfo.outputPath(`logbook-legend-${width}.png`)});
+    await legend.getByRole('button',{name:'Close legend explanation',exact:true}).click();
+    await expect(legend.getByRole('status').getByText(/^Hover over or select/)).toBeVisible();
   }
   await page.setViewportSize({ width: 1280, height: 800 });
 }

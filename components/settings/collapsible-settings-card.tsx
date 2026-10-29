@@ -39,7 +39,7 @@ export function CollapsibleSettingsCard({
         aria-label={`${expanded ? "Collapse" : "Expand"} ${title} settings`}
         onClick={() => setExpanded((value) => !value)}
         style={{ backgroundImage: `linear-gradient(110deg, rgb(0 153 255 / ${blue}), rgb(148 233 30 / ${green}))` }}
-        className="flex min-h-24 w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-white/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-blue sm:px-6"
+        className="flex min-h-24 w-full items-center gap-4 px-2.5 py-4 text-left transition-colors hover:bg-white/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-blue sm:px-6"
       >
         <span className={cn(circleClassName, "text-brand-blue-strong")}>
           {icon}
@@ -51,7 +51,7 @@ export function CollapsibleSettingsCard({
           {expanded ? <ChevronUp className="h-6 w-6" /> : <ChevronDown className="h-6 w-6" />}
         </span>
       </button>
-      <div id={contentId} hidden={!expanded} className="border-t border-gray-200 px-5 pb-6 pt-5 sm:px-6">
+      <div id={contentId} hidden={!expanded} className="border-t border-gray-200 px-2.5 pb-6 pt-5 sm:px-6">
         {children}
       </div>
     </Card>

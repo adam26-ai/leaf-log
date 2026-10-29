@@ -1,0 +1,27 @@
+.page { display:flex; flex-direction:column; height:100dvh; min-height:0; overflow:hidden; }
+.page > header { flex-shrink:0; }
+.main { display:flex; flex-direction:column; min-height:0; padding-block:8px 12px; }
+.main > :not([data-logbook-flights]) { flex-shrink:0; }
+.flightList { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; display:flex; flex-direction:column; gap:4px; margin-top:12px; padding-right:2px; }
+.flightList > li { flex-shrink:0; }
+.main > aside[aria-label="Flight calculations"] { margin-top:8px; }
+.profile { --identity-preferred:192px; display:flex; align-items:center; gap:12px; }
+.identity { display:flex; flex:1; flex-direction:column; gap:2px; min-width:0; }
+.profileActions { display:flex; flex-shrink:0; align-items:center; gap:8px; }
+.profileActions a { position:relative; }
+.profile [data-edit-suffix] { white-space:pre; }
+.profile:not([data-action-layout=full]) [data-edit-suffix] { position:absolute; visibility:hidden; width:max-content; left:0; top:0; }
+.profile[data-action-layout=stacked] .profileActions { flex-direction:column; align-items:stretch; gap:4px; }
+.profile[data-action-layout=stacked] .profileActions > a[href="/upload"] { order:-1; }
+.statsFilters { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-top:12px; }
+.statsFilters[data-stacked=true] { margin-top:8px; row-gap:4px; }
+.stats { max-width:100%; }
+.controls { position:relative; width:max-content; max-width:100%; padding-top:20px; }
+.filters { position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.filters button[aria-label^="Select"] { position:relative; }
+.filters[data-compact=true] [data-filter-chevron] { position:absolute; visibility:hidden; left:0; top:0; }
+@media(min-width:640px) { .main { padding-top:12px; } .profile { gap:16px; } }
+@media(max-width:639px) {
+  .filters { gap:6.48px; }
+  .filters > button, .filters button[aria-label^="Select"] { padding-inline:6.48px; }
+}

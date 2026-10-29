@@ -28,7 +28,7 @@ export default async function SettingsPage() {
   return (
     <div className="flex flex-1 flex-col">
       <AppHeader profile={profile} />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+      <main className="mx-auto w-full max-w-2xl flex-1 px-3 py-10 sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <SectionHeading as="h1">Profile &amp; settings</SectionHeading>
           <Link

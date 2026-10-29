@@ -27,7 +27,10 @@ async function installRasterTiles(page: Page) {
         gl.readPixels(Math.floor(gl.drawingBufferWidth * x), Math.floor(gl.drawingBufferHeight * y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
         samples.push([...pixel]);
       }
-      map.dataset.rasterSamples = JSON.stringify(samples);
+      // A later, unrelated animation callback can see the non-preserved buffer
+      // after compositing cleared it. Keep the last drawn frame; context loss
+      // above still clears it, so restoration must produce fresh opaque pixels.
+      if (samples.some(pixel => pixel[3] > 0)) map.dataset.rasterSamples = JSON.stringify(samples);
     });
   });
   const tile = await sharp({ create: { width: 256, height: 256, channels: 3,
