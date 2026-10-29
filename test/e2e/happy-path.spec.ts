@@ -69,15 +69,20 @@ async function arrangePublicFlight(page: Page, fixedCamera = false) {
   return `/flights/${flightId}`;
 }
 
-// Render-option cases only read this fixture. Reuse its upload and session,
-// with a fresh browser context/page for each case, rather than repeatedly
-// scoring the same IGC and performing unrelated signup journeys.
+// Reuse the immutable recording and session in fresh browser contexts. Arrange
+// only the initial camera preference per case; each transition has its own
+// deadline, independent of an unrelated signup/upload journey.
 let renderOptionsFixture: { url: string; cookies: Cookie[] } | null = null;
-async function arrangeRenderOptions(page: Page) {
+async function arrangeRenderOptions(page: Page, camera: "fixed" | "orbit" = "fixed") {
   if (!renderOptionsFixture) {
     const url = await arrangePublicFlight(page, true);
     renderOptionsFixture = { url, cookies: await page.context().cookies() };
   } else await page.context().addCookies(renderOptionsFixture.cookies);
+  const db = new PrismaClient();
+  try {
+    const flight = await db.flight.findUniqueOrThrow({ where: { id: renderOptionsFixture.url.split("/").at(-1)! }, select: { ownerId: true } });
+    await db.profile.update({ where: { id: flight.ownerId }, data: { mapDefaults: { camera } } });
+  } finally { await db.$disconnect(); }
   return renderOptionsFixture.url;
 }
 
@@ -189,7 +194,7 @@ test("public replay renders the forced depth fallback without diagnostic control
   await anon.close();
 });
 
-for (const mode of ["Follow", "Chase", "Orbit"]) test(`replay switches to ${mode} camera and restores Fixed`, async ({ page }) => {
+for (const mode of ["Follow", "Chase"]) test(`replay switches to ${mode} camera and restores Fixed`, async ({ page }) => {
   const url = await arrangeRenderOptions(page);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -197,16 +202,31 @@ for (const mode of ["Follow", "Chase", "Orbit"]) test(`replay switches to ${mode
   const map = page.locator(".flight-replay-map");
   await waitForMapReady(map);
   for (const choice of [mode, "Fixed"]) {
-    if (mode === "Orbit" && choice === "Fixed") {
-      // The main camera button's documented cycle exits Orbit directly.
-      await page.getByRole("button", { name: /^Camera: Orbit/ }).press("Enter");
-    } else await chooseReplayMapOption(page, /^Camera:/, choice);
+    await chooseReplayMapOption(page, /^Camera:/, choice);
     await expect(page.getByRole("button", { name: new RegExp(`^Camera: ${choice}`) })).toBeVisible();
-    // Orbit continuously animates. Check the rendered canvas/track after
-    // returning to Fixed, rather than spending the scenario's deadline on
-    // multiple driver round trips while the software GPU is rotating.
-    if (choice !== "Orbit") await waitForMapReady(map);
+    await waitForMapReady(map);
   }
+  await expect(map.locator("canvas").first()).toBeVisible();
+  await expect(map).toHaveAttribute("data-track-renderer", /production|line-fallback(?:-depth)?/);
+  expect(errors).toEqual([]);
+});
+
+for (const transition of ["enter", "exit"] as const) test(`replay ${transition}s Orbit camera without losing its track`, async ({ page }) => {
+  const url = await arrangeRenderOptions(page, transition === "exit" ? "orbit" : "fixed");
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(url);
+  const map = page.locator(".flight-replay-map");
+  await waitForMapReady(map);
+  if (transition === "enter") {
+    await chooseReplayMapOption(page, /^Camera:/, "Orbit");
+    await expect(page.getByRole("button", { name: /^Camera: Orbit/ })).toBeVisible();
+  } else {
+    // Exercise the documented Orbit→Fixed cycle from a saved Orbit default.
+    await page.getByRole("button", { name: /^Camera: Orbit/ }).press("Enter");
+    await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
+  }
+  await waitForMapReady(map);
   await expect(map.locator("canvas").first()).toBeVisible();
   await expect(map).toHaveAttribute("data-track-renderer", /production|line-fallback(?:-depth)?/);
   expect(errors).toEqual([]);

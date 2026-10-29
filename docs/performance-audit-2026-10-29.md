@@ -166,14 +166,18 @@ an idle/stable hover animation or relying on coordinates during layout changes.
 
 The final Linux application checks passed type checking, lint, all **1,036
 unit/integration tests across 126 files**, and the production build (Node
-24.14.0, Playwright 1.61.0, four CPUs). The full browser run passed 59 of 60
-scenarios in 19.3 minutes. Orbit selected and returned to Fixed, but redundant
-driver assertions during continuous software rendering consumed its deadline.
-Those canvas/track assertions now run after returning to Fixed, retaining the
-mode assertions, renderer-ready check, 60-second deadline and zero retries. The
-corrected Orbit scenario passed in 47.8 seconds in a fresh Linux production
-build; both zone scenarios passed alongside it (three of three). The draft PR's
-CI checks provide the complete-suite result for the submitted commit.
+24.14.0, Playwright 1.61.0, four CPUs). The final complete browser run passed
+**all 61 scenarios in 19.2 minutes**, with zero failures or skips.
+
+An earlier local run and the initial hosted CI run each passed 59/60: the combined
+Orbit round trip reached the expected modes and completed rendering but exhausted
+its 60-second deadline during software-GPU/driver work. Entry and exit are now
+independent transition scenarios, including exit from a saved Orbit preference.
+Both retain mode assertions, renderer readiness, live canvas/track checks and
+page-error checks; no timeout increase or retry was added. They passed in the
+full run in 48.0/41.0 seconds. Product camera behavior is unchanged. The
+[draft PR's CI checks](https://github.com/adam26-ai/leaf-log/pull/114/checks)
+record the complete-suite results for the submitted commit.
 
 The checks use disposable local services and synthetic accounts. Native focused
 checks, screenshot comparison, cache policy unit tests and navigation privacy
