@@ -361,6 +361,16 @@ export async function expectSingleRowHeader(page: Page) {
   await expect(logo).toHaveAttribute("href", "/logbook");
   await expect(logo).toHaveAttribute("title", "Your logbook");
   await expect(header.locator('a[href="/logbook"]')).toHaveCount(1);
+  // The account label responds through ResizeObserver. A viewport resize can
+  // finish before that React update; wait for every visible link to fit.
+  await expect.poll(() => header.evaluate(element => {
+    const links = Array.from(element.querySelectorAll("a")).filter(link => link.getBoundingClientRect().width > 0);
+    const boxes = links.map(link => link.getBoundingClientRect());
+    const center = boxes[0].top + boxes[0].height / 2;
+    return boxes.every((box, index) => box.left >= 0 && box.right <= innerWidth &&
+      Math.abs(box.top + box.height / 2 - center) < 2 &&
+      (index === 0 || box.left >= boxes[index - 1].right));
+  })).toBe(true);
   const logoBox = (await logo.boundingBox())!;
   for (const link of await header.getByRole("navigation").getByRole("link").all()) {
     const box = (await link.boundingBox())!;

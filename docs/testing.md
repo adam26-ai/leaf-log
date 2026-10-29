@@ -1,5 +1,31 @@
 # Testing and CI reliability
 
+## Follow-up: PR 113, October 29, 2026
+
+The [PR run](https://github.com/adam26-ai/leaf-log/actions/runs/40931197290)
+passed the gates job and 48 browser scenarios, including the new logbook flows.
+The Sites mobile-width assertion measured 411px of document width immediately
+after resizing to 390px. Its diagnostic attachment identifies the account link
+extending to 411px; the failure screenshot shows it back inside the viewport.
+The trace places the measurement before the account's ResizeObserver-driven
+React update. The map canvas also retained its old width at that instant, but
+its clipped parent kept it from expanding the document.
+
+The shared header assertion now waits for visible links to fit in one row
+before checking their individual geometry. Sites uses that assertion after
+resizing, then retains its document-overflow check and diagnostic attachment.
+Admin and Ratings callers retain their authorization, persistence and header
+assertions. No test retries, skips or longer deadlines are added.
+
+The subsequent Linux run passed the Sites resize check but exposed a separate
+pixel-sampler race before the site-map context-loss injection. Its trace records
+five green raster pixels, then five transparent pixels 56ms later; the failure
+screenshot still shows the green map. An unrelated animation callback had read
+the non-preserved WebGL buffer after compositing cleared it, overwriting the
+drawn-frame evidence. The sampler now keeps the last opaque frame and still
+clears samples on context loss, requiring fresh drawn pixels after restoration.
+Both raster assertions, real context loss, pin selection, zoom and pan remain.
+
 ## Follow-up: PR 112, October 26, 2026
 
 The hosted [PR run](https://github.com/adam26-ai/leaf-log/actions/runs/40374977319)

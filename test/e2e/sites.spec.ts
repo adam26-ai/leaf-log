@@ -1,4 +1,4 @@
-import { openSitesPage, createSiteFromFlight, expectSiteEditorFooter, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
+import { openSitesPage, createSiteFromFlight, expectSiteEditorFooter, expectSingleRowHeader, setSiteKind, readSiteKind, setSiteVisibility, uploadFlight } from "./helpers";
 import { test, expect, type Page } from "./fixtures";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { makeIgc, type SynthFix } from "@/test/igc/make-igc";
@@ -121,6 +121,7 @@ test("site map browses public and owned sites, selects the list, and stays visib
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(map.getByRole("button", { name: `Select ${nearLocation.name}`, exact: true })).toBeVisible();
+    await expectSingleRowHeader(page);
     const layout = await page.evaluate(() => ({
       width: innerWidth, scrollWidth: document.documentElement.scrollWidth,
       overflowing: [...document.querySelectorAll<HTMLElement>("body *")].flatMap(element => {
