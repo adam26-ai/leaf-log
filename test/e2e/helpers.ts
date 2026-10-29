@@ -7,6 +7,30 @@ export async function openAdvancedLogbook(page: Page) {
   return page.getByRole("main", { name: "Advanced logbook editor" });
 }
 
+/** Measure real React commits and two animation frames, without network latency. */
+export async function measureLogbookSelection(editor: Locator, count = 5) {
+  return editor.getByRole("list", { name: "Scrollable flights" }).evaluate(async (list, count) => {
+    const values: number[] = [];
+    const boxes = list.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    for (let i = 0; i < count; i++) {
+      const started = performance.now();
+      boxes[i].click();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      values.push(performance.now() - started);
+    }
+    return values;
+  }, count);
+}
+
+/** Exercise the accessible keyboard path independently of continuous camera
+ * animation; no idle-frame requirement or coordinate-based activation. */
+export async function chooseReplayMapOption(page: Page, control: RegExp, choice: string) {
+  await page.getByRole("button", { name: control }).focus();
+  const option = page.getByRole("button", { name: choice, exact: true });
+  await expect(option).toBeVisible();
+  await option.press("Enter");
+}
+
 /** One scroll area, matching legend tracks and visible sorting state at every size. */
 export async function expectAdvancedLogbookFits(page: Page) {
   const combined = page.locator('[data-editor-scroll-contents]');

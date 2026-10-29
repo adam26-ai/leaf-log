@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it, vi } from "vitest";
 import { SiteEditor } from "./site-editor";
 import type { Boundary } from "@/lib/sites/geo";
-vi.mock("./boundary-editor", () => ({ BoundaryEditor: () => null }));
+vi.mock("./lazy-site-maps", () => ({ BoundaryEditor: () => null }));
 vi.mock("@/components/logbook/entry-map-search", () => ({ EntryMapSearch: () => null }));
 vi.mock("@/app/settings/sites/editor-actions", () => ({ getSiteMapReferencesAction: async () => [] }));
 afterEach(cleanup);

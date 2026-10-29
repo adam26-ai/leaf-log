@@ -31,8 +31,7 @@ import { radiusForKind, zoneRadiusForKind } from "@/lib/sites/geo";
 import { Button } from "@/components/ui/button";
 import { SiteDialog } from "./site-dialog";
 import { PersistedSiteEditor } from "./persisted-site-editor";
-import { SiteAreaMap } from "./site-area-map";
-import { BoundaryEditor } from "@/components/flight/boundary-editor";
+import { SiteAreaMap, BoundaryEditor } from "./lazy-site-maps";
 
 function relativeTime(d: Date): string {
   const seconds = Math.max(0, (Date.now() - new Date(d).getTime()) / 1000);

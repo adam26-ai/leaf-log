@@ -3,6 +3,7 @@ import "./globals.css";
 import { fontVariables } from "@/lib/fonts";
 import { getCurrentProfile } from "@/lib/profile";
 import { UnitsProvider } from "@/components/units-provider";
+import { MapTileCache } from "@/components/map-tile-cache";
 
 import { MapDefaultsProvider } from "@/components/map-defaults-provider";
 import { readMapDefaults } from "@/lib/flights/map-defaults";
@@ -25,6 +26,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${fontVariables} h-full antialiased`}>
       <body className="bg-paper text-ink min-h-full flex flex-col overflow-x-hidden font-sans">
+        <MapTileCache />
         <UnitsProvider key={profile?.id ?? "guest"} defaultUnits={defaultUnits} customUnits={customUnits}>
           <MapDefaultsProvider value={readMapDefaults(profile?.mapDefaults)}>
             {children}

@@ -10,6 +10,10 @@ const METERS_PER_MILE = 1609.344;
 const FPM_PER_MS = 196.850394;
 const MPH_PER_KMH = 0.621371;
 const METERS_PER_NAUTICAL_MILE = 1852;
+// Intl formatter construction is costly in long logbooks. These have no user
+// state: offsets are applied to each date before formatting in UTC.
+const fullFlightDate = new Intl.DateTimeFormat("en-US", { weekday: "short", year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+const shortFlightDate = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 
 function toMs(d: DateInput): number | null {
   if (d == null) return null;
@@ -86,23 +90,12 @@ export function formatLocalDate(d: DateInput, offsetMinutes: number | null): str
   const ms = toMs(d);
   if (ms == null) return "—";
   const shifted = new Date(ms + (offsetMinutes ?? 0) * 60_000);
-  return shifted.toLocaleDateString("en-US", {
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return Number.isNaN(shifted.getTime()) ? "Invalid Date" : fullFlightDate.format(shifted);
 }
 
 export function formatLocalDateShort(d: DateInput, offsetMinutes: number | null): string {
   const ms = toMs(d);
   if (ms == null) return "—";
   const shifted = new Date(ms + (offsetMinutes ?? 0) * 60_000);
-  return shifted.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return Number.isNaN(shifted.getTime()) ? "Invalid Date" : shortFlightDate.format(shifted);
 }

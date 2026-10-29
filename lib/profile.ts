@@ -2,21 +2,24 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Profile } from "@prisma/client";
+import { cache } from "react";
 
 export type { Profile };
 
 /** The authenticated user id (== Profile id), or null. */
-export async function getCurrentUserId(): Promise<string | null> {
+export const getCurrentUserId = cache(async (): Promise<string | null> => {
   const session = await auth();
   return session?.user?.id ?? null;
-}
+});
 
 /** The current pilot's profile, or null if signed out / not yet onboarded. */
-export async function getCurrentProfile(): Promise<Profile | null> {
+// Deduplicate layout/header/page reads within this server render only. Never
+// share authentication or profiles between requests or users.
+export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
   const id = await getCurrentUserId();
   if (!id) return null;
   return prisma.profile.findUnique({ where: { id } });
-}
+});
 
 /**
  * For protected pages: ensure the pilot is signed in AND onboarded.
@@ -25,7 +28,7 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 export async function requireProfile(): Promise<Profile> {
   const id = await getCurrentUserId();
   if (!id) redirect("/sign-in");
-  const profile = await prisma.profile.findUnique({ where: { id } });
+  const profile = await getCurrentProfile();
   if (!profile) redirect("/onboarding");
   return profile;
 }

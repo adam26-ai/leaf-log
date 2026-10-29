@@ -3,7 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DEV_MAGIC_LINK_FILE as LINK_FILE } from "@/lib/dev-magic-link";
-import { expectFlightHeaderScrollOrder, expectReplayDragOwnership, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
+import { chooseReplayMapOption, expectFlightHeaderScrollOrder, expectReplayDragOwnership, expectSignedOutHeader, selectTrackDiagnosticRenderer, waitForMapReady } from "./helpers";
+import type { Cookie } from "@playwright/test";
 
 const IGC_PATH = process.env.E2E_IGC ?? join(process.cwd(), "test/e2e/.fixture.igc");
 
@@ -66,6 +67,18 @@ async function arrangePublicFlight(page: Page, fixedCamera = false) {
     }
   } finally { await db.$disconnect(); }
   return `/flights/${flightId}`;
+}
+
+// Render-option cases only read this fixture. Reuse its upload and session,
+// with a fresh browser context/page for each case, rather than repeatedly
+// scoring the same IGC and performing unrelated signup journeys.
+let renderOptionsFixture: { url: string; cookies: Cookie[] } | null = null;
+async function arrangeRenderOptions(page: Page) {
+  if (!renderOptionsFixture) {
+    const url = await arrangePublicFlight(page, true);
+    renderOptionsFixture = { url, cookies: await page.context().cookies() };
+  } else await page.context().addCookies(renderOptionsFixture.cookies);
+  return renderOptionsFixture.url;
 }
 
 test("map drags crossing the profile do not scrub playback", async ({ page }) => {
@@ -174,6 +187,58 @@ test("public replay renders the forced depth fallback without diagnostic control
   await anonPage.getByRole("link", { name: "Sign in", exact: true }).click();
   await expect(anonPage).toHaveURL(/\/sign-in/);
   await anon.close();
+});
+
+for (const mode of ["Follow", "Chase", "Orbit"]) test(`replay switches to ${mode} camera and restores Fixed`, async ({ page }) => {
+  const url = await arrangeRenderOptions(page);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(url);
+  const map = page.locator(".flight-replay-map");
+  await waitForMapReady(map);
+  for (const choice of [mode, "Fixed"]) {
+    if (mode === "Orbit" && choice === "Fixed") {
+      // The main camera button's documented cycle exits Orbit directly.
+      await page.getByRole("button", { name: /^Camera: Orbit/ }).press("Enter");
+    } else await chooseReplayMapOption(page, /^Camera:/, choice);
+    await expect(page.getByRole("button", { name: new RegExp(`^Camera: ${choice}`) })).toBeVisible();
+    // Orbit continuously animates. Check the rendered canvas/track after
+    // returning to Fixed, rather than spending the scenario's deadline on
+    // multiple driver round trips while the software GPU is rotating.
+    if (choice !== "Orbit") await waitForMapReady(map);
+  }
+  await expect(map.locator("canvas").first()).toBeVisible();
+  await expect(map).toHaveAttribute("data-track-renderer", /production|line-fallback(?:-depth)?/);
+  expect(errors).toEqual([]);
+});
+
+test("fixed replay switches between MSL and AGL altitude", async ({ page }) => {
+  const url = await arrangeRenderOptions(page);
+  await page.goto(url);
+  await waitForMapReady(page.locator(".flight-replay-map"));
+  await expect(page.getByRole("button", { name: /^Camera: Fixed/ })).toBeVisible();
+  await page.getByRole("button", { name: /^Altitude: MSL/ }).click();
+  await expect(page.getByRole("button", { name: /^Altitude: AGL/ })).toBeVisible();
+  await page.getByRole("button", { name: /^Altitude: AGL/ }).click();
+  await expect(page.getByRole("button", { name: /^Altitude: MSL/ })).toBeVisible();
+});
+
+for (const style of ["Satellite", "Hybrid", "Topo", "Streets"]) test(`replay switches to ${style} and restores Map without losing its track`, async ({ page }, testInfo) => {
+  const url = await arrangeRenderOptions(page);
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto(url);
+  const map = page.locator(".flight-replay-map");
+  await waitForMapReady(map);
+  for (const choice of [style, "Map"]) {
+    await chooseReplayMapOption(page, /^Basemap:/, choice);
+    await expect(page.getByRole("button", { name: new RegExp(`^Basemap: ${choice} `) })).toBeVisible();
+    await page.mouse.move(0, 0);
+    await waitForMapReady(map);
+    await expect(map).toHaveAttribute("data-track-renderer", /production|line-fallback(?:-depth)?/);
+  }
+  await page.screenshot({ path: testInfo.outputPath(`basemap-${style}.png`), fullPage: true });
+  expect(errors).toEqual([]);
 });
 
 test("unfinished signup can switch email and sign out", async ({ page }) => {
