@@ -1,0 +1,134 @@
+{
+  "baselineCommit": "e0ef9089c7b2dd7c0f3d3eaeea40d2b52ed605aa",
+  "baselineLocalBrowser": {
+    "tests": 61,
+    "failures": 0,
+    "skipped": 0,
+    "errors": 0,
+    "time": 1151.0913730000002
+  },
+  "baselineHostedBrowser": {
+    "tests": 61,
+    "failures": 0,
+    "skipped": 0,
+    "errors": 5,
+    "time": 1652.550982
+  },
+  "baselineHostedRun": "https://github.com/adam26-ai/leaf-log/actions/runs/40975451109",
+  "focusedOrbit": {
+    "command": "corepack pnpm check:linux e2e replay-options.spec.ts --grep \"enters Orbit\"",
+    "wallSeconds": 119.5959692,
+    "exitCode": 0,
+    "browserReport": {
+      "tests": 1,
+      "failures": 0,
+      "skipped": 0,
+      "errors": 0,
+      "time": 82.94453
+    }
+  },
+  "shardPlan": [
+    {
+      "index": 1,
+      "testCount": 37,
+      "priorMeasuredTestSeconds": 572.331,
+      "files": [
+        "admin.spec.ts",
+        "advanced-logbook.spec.ts",
+        "boundaries.spec.ts",
+        "community.spec.ts",
+        "flight-site-polish.spec.ts",
+        "happy-path.spec.ts",
+        "logbook-filters.spec.ts",
+        "logbook-import.spec.ts"
+      ]
+    },
+    {
+      "index": 2,
+      "testCount": 24,
+      "priorMeasuredTestSeconds": 535.022,
+      "files": [
+        "logbook-performance.spec.ts",
+        "map-cache.spec.ts",
+        "map-context.spec.ts",
+        "photos.spec.ts",
+        "ratings.spec.ts",
+        "replay-options.spec.ts",
+        "sites.spec.ts",
+        "social.spec.ts",
+        "zones.spec.ts"
+      ]
+    }
+  ],
+  "coverage": {
+    "allTests": 61,
+    "intersectionCount": 0,
+    "allIdsSha256": "66770bcbb7db9f00c9e7ba698588f2b6cbe223a24f959d2e5a2072e596cf346d",
+    "unionIdsSha256": "66770bcbb7db9f00c9e7ba698588f2b6cbe223a24f959d2e5a2072e596cf346d"
+  },
+  "notes": [
+    "Shard work estimates use the same measured baseline testcase durations, excluding each additional VM/build/setup.",
+    "Focused feedback selects one scenario and is not full pre-PR validation.",
+    "Final hosted timings and conclusions are recorded in PR #114 checks and description."
+  ],
+  "durationUnit": "seconds",
+  "optimizedLocalBrowser": {
+    "tests": 61,
+    "failures": 0,
+    "skipped": 0,
+    "errors": 0,
+    "time": 1116.9753170000001
+  },
+  "optimizedUnitTests": {
+    "tests": "1036",
+    "failures": "0",
+    "errors": "0"
+  },
+  "renderOptionsCaseTimings": [
+    {
+      "name": "replay switches to Follow camera and restores Fixed",
+      "before": 37.766,
+      "after": 29.558
+    },
+    {
+      "name": "replay switches to Chase camera and restores Fixed",
+      "before": 24.134,
+      "after": 21.667
+    },
+    {
+      "name": "replay enters Orbit camera without losing its track",
+      "before": 48.043,
+      "after": 41.72
+    },
+    {
+      "name": "replay exits Orbit camera without losing its track",
+      "before": 41.034,
+      "after": 28.673
+    },
+    {
+      "name": "fixed replay switches between MSL and AGL altitude",
+      "before": 14.378,
+      "after": 12.774
+    },
+    {
+      "name": "replay switches to Satellite and restores Map without losing its track",
+      "before": 35.327,
+      "after": 21.61
+    },
+    {
+      "name": "replay switches to Hybrid and restores Map without losing its track",
+      "before": 35.48,
+      "after": 21.828
+    },
+    {
+      "name": "replay switches to Topo and restores Map without losing its track",
+      "before": 46.585,
+      "after": 42.096
+    },
+    {
+      "name": "replay switches to Streets and restores Map without losing its track",
+      "before": 45.616,
+      "after": 36.842
+    }
+  ]
+}

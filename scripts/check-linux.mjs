@@ -8,8 +8,10 @@ import { setTimeout } from "node:timers/promises";
 
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
 const mode = process.argv[2] ?? "all";
-if (!["all", "gates", "e2e"].includes(mode) || process.argv.length > 3) {
-  throw new Error("Usage: pnpm check:linux [all|gates|e2e]");
+const browserArgs = process.argv.slice(3);
+if (browserArgs[0] === "--") browserArgs.shift();
+if (!["all", "gates", "e2e"].includes(mode) || (mode !== "e2e" && browserArgs.length)) {
+  throw new Error("Usage: pnpm check:linux [all|gates|e2e [Playwright arguments]]");
 }
 const nodeVersion = readFileSync(".node-version", "utf8").trim();
 const require = createRequire(import.meta.url);
@@ -35,6 +37,16 @@ function command(executable, args, capture = false) {
 const sourceFiles = command("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], true)
   .toString().split("\0").filter(path => path && existsSync(path));
 writeFileSync(resolve(artifacts, "source-files.list"), sourceFiles.join("\0") + "\0");
+// Keep patterns/file names as argv, never interpolate user input into Bash.
+writeFileSync(resolve(artifacts, "check-args.json"), JSON.stringify([mode, ...browserArgs]));
+writeFileSync(resolve(artifacts, "invoke-check.cjs"), `const { spawnSync } = require("node:child_process");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = JSON.parse(readFileSync(join(__dirname, "check-args.json"), "utf8"));
+const result = spawnSync(process.execPath, ["scripts/check.mjs", ...args], { stdio: "inherit", env: process.env });
+if (result.error) throw result.error;
+process.exit(result.status ?? 1);
+`);
 // Generate LF regardless of the host's Git line-ending settings.
 writeFileSync(resolve(artifacts, "run.sh"), `set -euo pipefail
 cd /work
@@ -44,7 +56,7 @@ npm install --prefix /opt/leaf-node node@${nodeVersion}
 export PATH=/opt/leaf-node/node_modules/node/bin:$PATH
 node scripts/configure-swiftshader.mjs /ms-playwright
 corepack pnpm install --frozen-lockfile
-corepack pnpm ${mode === "all" ? "check" : `check:${mode}`}
+node /artifacts/invoke-check.cjs
 `);
 
 const cleanup = () => {

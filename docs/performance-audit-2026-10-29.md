@@ -67,6 +67,7 @@ immutable UTC date formatters. This measures date formatting only, under Node
 | Previous/next flight links | Navigation loaded full logbook records and resolved all their locations just to obtain IDs. | Select only flight IDs with the same ordering/status/visibility rules. Integration coverage compares owner/friend/pending/stranger/anonymous results with the original viewer-filtered lists. |
 | Maps across flights/sessions | Separate maps relied on a browser HTTP cache that can evict tiles between screens or sessions; terrain responses supply no explicit cache lifetime. | Add a bounded, persistent, device-local cache for viewed public map resources and open terrain. All map instances can reuse it without changing map URLs. |
 | Local storage management | No app-level way to release saved tiles. | Add **Clear saved maps** under Profile & settings. Browser storage restrictions or quota failures fall back to normal network loading. |
+| Browser test feedback | A serial software-rendered suite takes 20-30 minutes; repeated driver observations and success screenshots add stalls. An admin unit test could also click a still-disabled result. | Add focused Linux selectors, balance full CI over isolated shards, observe render state coherently, retain failure diagnostics, and wait for the admin result to become enabled. See the feedback follow-up below. |
 
 ## Map cache design and provider constraints
 
@@ -156,28 +157,82 @@ requests primarily measured redirects, not authenticated workflow performance.
 
 ## Validation record
 
-The expanded renderer/cache matrix exceeded the original 20-minute aggregate
-browser-job budget (a full 59-case Linux run took 21.4 minutes). The CI job now
-allows 30 minutes for the whole browser job; individual scenario deadlines and
-zero retries remain intact. The old zone test's independent flight-dialog and
-standalone-management journeys are separate cases with all assertions retained.
-Camera selection checks use accessible keyboard activation rather than requiring
-an idle/stable hover animation or relying on coordinates during layout changes.
+### Browser-feedback follow-up (October 30)
 
-The final Linux application checks passed type checking, lint, all **1,036
-unit/integration tests across 126 files**, and the production build (Node
-24.14.0, Playwright 1.61.0, four CPUs). The final complete browser run passed
-**all 61 scenarios in 19.2 minutes**, with zero failures or skips.
+The latest pre-optimization hosted run at `e0ef908` took **27.5 minutes** and
+passed 56/61 browser scenarios. Five camera/style scenarios exceeded their
+60-second deadlines during software-renderer/driver work; traces reached the
+expected modes and in several cases timed out on later visibility reads or a
+success screenshot. An empty received attribute in a timed-out assertion was
+not evidence of a missing track: the product supplies that attribute directly.
+The underlying browser stall is not attributed to a proven worker-count cause;
+the four-worker renderer configuration, camera math and quality remain intact.
 
-An earlier local run and the initial hosted CI run each passed 59/60: the combined
-Orbit round trip reached the expected modes and completed rendering but exhausted
-its 60-second deadline during software-GPU/driver work. Entry and exit are now
-independent transition scenarios, including exit from a saved Orbit preference.
-Both retain mode assertions, renderer readiness, live canvas/track checks and
-page-error checks; no timeout increase or retry was added. They passed in the
-full run in 48.0/41.0 seconds. Product camera behavior is unchanged. The
+Local comparative observations after the feedback changes:
+
+| Local comparative observation | Before | After |
+| --- | ---: | ---: |
+| Complete serial browser suite, 61 cases | 19.2 min | 18.6 min |
+| Same nine options cases, summed testcase work (excludes build/setup) | 328.4 sec | 256.8 sec |
+| One focused Orbit-entry check, complete Docker/build/test wall time | Linux wrapper had no selector passthrough | 119.6 sec |
+
+These are single-run observations with hardware variability. The larger full-CI
+wall-time improvement comes from isolated parallel shards, not a claimed large
+speedup of every unchanged scenario.
+
+The test structure now makes these changes:
+
+- `replay-options.spec.ts` separates the options matrix from the large
+  happy-path file. New options checks use an 800x700 responsive viewport;
+  existing full-size desktop renderer, diagnostics, drag and recovery checks
+  remain. A single browser-side snapshot observes a completed frame, visible
+  canvas, valid track renderer and shader-error state together. Page-error and
+  mode assertions remain. Non-asserting success PNG captures are removed;
+  failure PNGs, trace screenshots, DOM snapshots and network diagnostics remain.
+- Two file-level CI shards run on separate VMs with independent PostgreSQL,
+  schemas, files and XC queues. Each keeps one browser worker and zero retries.
+  Measured baseline test work partitions into **9.54/8.92 minutes** (37/24
+  cases), before per-job setup/build costs. Test-ID sets prove the union is all
+  61 tests with no overlap. The existing required `e2e (Playwright)` check fails
+  unless both shards pass. Extra parallel capacity and duplicate builds are the
+  tradeoff; same-server parallel workers are not enabled.
+- The Linux runner now accepts selectors after `e2e`, with argv passed through
+  JSON rather than shell interpolation. A fresh **Orbit-entry-only** check
+  passed in **119.6 seconds end to end**, including Docker, dependencies,
+  production build and the real renderer (Playwright portion 1.4 minutes).
+  This is selected feedback, not full validation. `all`/`gates` reject browser
+  filters, and the full pre-PR command remains unchanged.
+- Hosted logs print failures inline when a scenario ends, using the installed
+  [list reporter option](https://playwright.dev/docs/test-reporters#list-reporter).
+  The admin unit regression waits for an enabled search result before selecting
+  it, rather than relying on React transition timing.
+
+For a quick iteration:
+
+```sh
+corepack pnpm check:linux e2e replay-options.spec.ts --grep "enters Orbit"
+```
+
+Run `corepack pnpm check:linux` for complete pre-PR validation. See
+[testing instructions](testing.md#default-pre-pr-check) and
+[raw feedback/coverage measurements](performance-2026-10-29/playwright-feedback.json).
+Final hosted timings and conclusions are recorded in the
+[PR description and checks](https://github.com/adam26-ai/leaf-log/pull/114).
+
+The final complete Linux check passed type checking, lint, all **1,036
+unit/integration tests across 126 files**, the production build and **all 61
+browser scenarios in 18.6 minutes**, with zero browser failures or skips and a
+runner exit code of zero (Node 24.14.0, Playwright 1.61.0, four CPUs).
+
+Each CI shard retains a 30-minute aggregate job budget; individual scenarios
+retain their 60-second deadline and zero retries. The independent flight-dialog
+and standalone zone-management journeys are separate cases with all assertions
+retained. Camera choices use accessible keyboard activation rather than waiting
+for idle/stable hover animation during continuous rendering. Orbit entry and
+exit are independent transitions, including exit from a saved Orbit preference.
+Product camera behavior is unchanged. The
 [draft PR's CI checks](https://github.com/adam26-ai/leaf-log/pull/114/checks)
-record the complete-suite results for the submitted commit.
+record results for the submitted commit.
 
 The checks use disposable local services and synthetic accounts. Native focused
 checks, screenshot comparison, cache policy unit tests and navigation privacy
