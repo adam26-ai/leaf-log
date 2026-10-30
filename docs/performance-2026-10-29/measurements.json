@@ -1,0 +1,37 @@
+{
+  "baselineCommit": "ad33072",
+  "browser": "Windows Edge headless; production build; 1280x720; two animation frames",
+  "before": {
+    "flights": 500,
+    "readyMs": 8553,
+    "clickToPaintMs": [
+      651.5,
+      775.5,
+      793.9000000953674,
+      608.0999999046326,
+      778
+    ]
+  },
+  "after": {
+    "flights": 500,
+    "readyMs": 4749,
+    "clickToPaintMs": [
+      33.700000047683716,
+      36.299999952316284,
+      30,
+      33.5,
+      33.60000014305115
+    ]
+  },
+  "intermediateAfter": {
+    "flights": 500,
+    "readyMs": 6354,
+    "clickToPaintMs": [
+      34,
+      50.60000014305115,
+      33.09999990463257,
+      34.200000047683716,
+      34.299999952316284
+    ]
+  }
+}

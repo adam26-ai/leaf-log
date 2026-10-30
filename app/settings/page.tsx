@@ -4,6 +4,7 @@ import { Sparkles } from "lucide-react";
 import { RainCloudIcon } from "@/components/icons/rain-cloud-icon";
 import { signOutAction } from "@/lib/actions";
 import { AppHeader } from "@/components/app-header";
+import { MapCacheSettings } from "@/components/settings/map-cache-settings";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { DevicesSettingsCard } from "@/components/settings/devices-settings-card";
 import { SettingsForm } from "./settings-form";
@@ -53,6 +54,7 @@ export default async function SettingsPage() {
               ratingsTrackingEnabled={profile.ratingsTrackingEnabled}
               afterProfile={<WingEditor wings={wings} tandemEnabled={profile.tandemEnabled} collapsible />}
             />
+          <MapCacheSettings />
           <DevicesSettingsCard
             tokens={tokens.map((token) => {
               const lastFlight = token.lastFlightId

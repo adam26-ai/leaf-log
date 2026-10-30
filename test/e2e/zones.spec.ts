@@ -157,9 +157,10 @@ test("a new flight near a named site auto-associates without showing zones", asy
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
 });
 
-test("re-opening and managing an already-named site never shows zones or spots", async ({
-  page,
-}) => {
+// Both read-only journeys use the same arranged site, in separate contexts.
+let reopenFixture: { url: string; siteName: string; cookies: import("@playwright/test").Cookie[] } | null = null;
+async function arrangeReopenSite(page: Page) {
+  if (reopenFixture) { await page.context().addCookies(reopenFixture.cookies); return reopenFixture; }
   const runOffset = Date.now();
   const suffix = `${runOffset}reopen`;
   const email = `zones_e2e_reopen_${suffix}@test.local`;
@@ -182,6 +183,15 @@ test("re-opening and managing an already-named site never shows zones or spots",
   const siteName = `E2E Reopen Ridge ${suffix}`;
   await arrangeNamedFlight(page, siteName, remoteFlightIgc(runOffset, 5, 1));
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName, { timeout: 10_000 });
+  reopenFixture = { url: page.url(), siteName, cookies: await page.context().cookies() };
+  return reopenFixture;
+}
+
+test("re-opening and managing an already-named site never shows zones or spots", async ({
+  page,
+}) => {
+  const { siteName, url } = await arrangeReopenSite(page);
+  if (page.url() !== url) await page.goto(url);
   await waitForMapReady(page.locator(".flight-replay-map"));
 
   // Re-open on the already-site-bound flight — lands on the read-only
@@ -208,10 +218,17 @@ test("re-opening and managing an already-named site never shows zones or spots",
   await expect(page.getByRole("button", { name: "Create site", exact: true })).toBeVisible();
   const chooserText = await dialog.innerText();
   expect(chooserText.match(/\b(spot|zone)\b/gi) ?? []).toEqual([]);
+});
+
+test("standalone management of an existing site never shows zones or spots", async ({ page }) => {
+  const { siteName } = await arrangeReopenSite(page);
+  const dialog = page.locator(".fixed.inset-0");
   await openSitesPage(page);
   await page.getByRole("button", { name: "Edit site", exact: true }).click();
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue(siteName);
+  await expect(dialog.getByTestId("boundary-editor-map")).toBeVisible();
   const managerText = await dialog.innerText();
   expect(managerText).not.toContain("My spots");
   expect(managerText.match(/\b(spot|zone)\b/gi) ?? []).toEqual([]);
+
 });

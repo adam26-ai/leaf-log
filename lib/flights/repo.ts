@@ -506,6 +506,17 @@ export async function listOwnFlights(ownerId: string): Promise<FlightListItem[]>
   return resolveLocationFields(rows, ownerId);
 }
 
+/** Previous/next links need IDs, not every flight's metrics and site lookups. */
+export async function listFlightNavigation(ownerId: string, viewerId: string | null) {
+  const own = ownerId === viewerId;
+  const visibility = own ? null : await visibleVisibilitiesFor(ownerId, viewerId);
+  return prisma.flight.findMany({
+    where: { ownerId, ...(!own ? { status: "ready", visibility: { in: visibility! } } : {}) },
+    orderBy: own ? [{ flightDate: "desc" }, { takeoffAt: "desc" }] : [{ flightDate: "desc" }, { takeoffAt: "desc" }, { id: "desc" }],
+    select: { id: true },
+  });
+}
+
 /** Export every status, with live authorized location names and no heavy payloads. */
 export async function listOwnFlightsForExport(ownerId: string, afterId?: string) {
   const rows = await prisma.flight.findMany({

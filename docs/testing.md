@@ -347,6 +347,17 @@ files including working edits, installs Linux dependencies, and runs the same
 shared. Reports are retained in `test-results/linux-ci/<run-id>/`; containers
 are removed on completion. `pnpm check:linux e2e` runs just the browser job while
 iterating, and `pnpm check:linux gates` runs the other job. Docker must be running.
+For quick browser feedback, pass file names and Playwright arguments after `e2e`:
+
+```sh
+pnpm check:linux e2e replay-options.spec.ts --grep "enters Orbit"
+pnpm check:linux e2e logbook-performance.spec.ts
+```
+
+Patterns are passed as argv through JSON, not interpolated into a shell. These
+selected runs still use a fresh production build, disposable database, real
+renderer and failure diagnostics. They are not full pre-PR validation. The
+`all`/`gates` modes reject browser filters; plain `pnpm check:linux` remains full.
 The container is pinned to CPUs 0–3, matching the standard Linux runner for this
 [public repository](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 A CPU quota alone permits bursts across all host cores followed by throttling;
@@ -363,7 +374,7 @@ writes it there without touching the host's installed browsers.
    on Linux when system libraries are missing).
    On Windows, stop the local development server before checking: Prisma client
    generation cannot replace a native engine DLL while the server has it open.
-3. Run `pnpm check` after the final edits. This includes both CI jobs. Report the
+3. Run `pnpm check` after the final edits. This includes every gate and browser case. Report the
    result and any checks not run; unit tests alone are not a full pass.
 4. For shared UI changes, inspect the E2E helpers and all their callers. Use
    focused browser runs while iterating, then run the complete suite before
@@ -373,8 +384,25 @@ CI and the local check command use Node 24.14.0, generate Prisma explicitly,
 reject `.only`, require the local database, and preserve failures. No retries
 are configured. Each suite migrates and drops its own random schema, and runs
 files serially because of the shared XC queue, magic-link file, and public sites.
-Do not enable workers/sharding until those shared resources are isolated per
-worker. Test setup, not a redundant migration of the public schema in CI, owns
+Hosted CI uses two [file-level shards](https://playwright.dev/docs/test-sharding),
+each on a separate VM with its own PostgreSQL service, schema, checkout,
+magic-link file and XC worker. Each shard keeps one browser worker and zero
+retries. Do not add same-server workers until those shared resources are isolated.
+Both shard reports are uploaded separately; the existing required **e2e
+(Playwright)** check fails if either shard fails, is skipped or is cancelled.
+The [list reporter](https://playwright.dev/docs/test-reporters#list-reporter)
+prints failure details inline in hosted logs as soon as a case finishes, rather
+than waiting for the entire shard to end.
+This duplicates production-build/setup work across two VMs in exchange for a
+shorter critical path. Splitting replay options into their own spec avoids the
+large happy-path file dominating one shard. The options matrix uses an 800x700
+responsive viewport; existing desktop renderer, diagnostic and drag checks keep
+their full viewport. It observes render readiness, canvas, track and shader
+status together instead of repeatedly stalling the software GPU with driver
+round trips. Non-asserting success PNGs are omitted; failure PNGs, trace
+screenshots, DOM snapshots and network records remain enabled.
+
+Test setup, not a redundant migration of the public schema in CI, owns
 the migration check. Do not run two browser suites simultaneously on port 3100.
 
 ## Browser assertions and diagnostics

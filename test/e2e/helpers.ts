@@ -7,6 +7,64 @@ export async function openAdvancedLogbook(page: Page) {
   return page.getByRole("main", { name: "Advanced logbook editor" });
 }
 
+/** Measure real React commits and two animation frames, without network latency. */
+export async function measureLogbookSelection(editor: Locator, count = 5) {
+  return editor.getByRole("list", { name: "Scrollable flights" }).evaluate(async (list, count) => {
+    const values: number[] = [];
+    const boxes = list.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    for (let i = 0; i < count; i++) {
+      const started = performance.now();
+      boxes[i].click();
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      values.push(performance.now() - started);
+    }
+    return values;
+  }, count);
+}
+
+/** Exercise the accessible keyboard path independently of continuous camera
+ * animation; no idle-frame requirement or coordinate-based activation. */
+export async function chooseReplayMapOption(page: Page, control: RegExp, choice: string) {
+  await page.getByRole("button", { name: control }).focus();
+  const option = page.getByRole("button", { name: choice, exact: true });
+  await expect(option).toBeVisible();
+  await option.press("Enter");
+}
+
+/** Read the post-interaction render state in one browser round trip. Separate
+ * calls each contend with an animating software GPU and repeat trace snapshots. */
+export async function expectReplayRendered(map: Locator) {
+  const state = await map.evaluate(async element => {
+    const visible = (node: Element | null) => {
+      if (!node) return false;
+      const bounds = node.getBoundingClientRect();
+      const visibility = getComputedStyle(node).visibility;
+      return bounds.width > 0 && bounds.height > 0 && visibility !== "hidden" && visibility !== "collapse";
+    };
+    // Like waitForMapReady, this wait is bounded by the unchanged test deadline.
+    // Observe one completed frame coherently; a shader error fails immediately.
+    for (;;) {
+      if (!element.isConnected) throw new Error("Replay map detached while awaiting its frame");
+      const shaderError = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')]
+        .find(heading => /Compilation error in .*shader/i.test(heading.textContent ?? "") && visible(heading));
+      const snapshot = {
+        ready: element.getAttribute("data-render-ready"),
+        renderer: element.getAttribute("data-track-renderer"),
+        canvas: visible(element.querySelector("canvas")),
+        shaderError: shaderError?.textContent ?? null,
+      };
+      if (snapshot.ready === "true" || snapshot.shaderError) return snapshot;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  });
+  expect(state, "Replay has a completed frame, a visible canvas and a valid track renderer without shader errors").toEqual({
+    ready: "true",
+    renderer: expect.stringMatching(/production|line-fallback(?:-depth)?/),
+    canvas: true,
+    shaderError: null,
+  });
+}
+
 /** One scroll area, matching legend tracks and visible sorting state at every size. */
 export async function expectAdvancedLogbookFits(page: Page) {
   const combined = page.locator('[data-editor-scroll-contents]');

@@ -53,10 +53,18 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  e2e:
-    name: e2e (Playwright)
+  e2e-shards:
+    name: e2e shard ${{ matrix.shard }}/2 (Playwright)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_LIST_PRINT_FAILURES_INLINE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    # The expanded renderer/cache matrix exceeds 20 minutes on four CPUs.
+    # Keep each scenario's deadline and zero retries; budget the whole job.
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -87,12 +95,27 @@ jobs:
           node -e "const os = require('node:os'); console.log({ node: process.version, playwright: require('@playwright/test/package.json').version, cpus: os.availableParallelism(), memoryGiB: Math.round(os.totalmem() / 2 ** 30), browser: 'chromium', webgl: 'swiftshader-webgl' })"
       # `pnpm e2e` builds and starts an isolated production server, without HMR.
       # The IGC fixture and local magic-link fallback need no external services.
-      - run: pnpm check:e2e
+      # Each matrix job has its own checkout, PostgreSQL, magic-link file and XC
+      # queue. Keep one browser worker per job; shared test state never crosses VMs.
+      - run: pnpm check:e2e --shard=${{ matrix.shard }}/2
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Preserve the existing required check name and fail if either shard fails.
+  e2e:
+    name: e2e (Playwright)
+    needs: e2e-shards
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every browser shard
+        env:
+          SHARD_RESULT: ${{ needs.e2e-shards.result }}
+        run: test "$SHARD_RESULT" = success

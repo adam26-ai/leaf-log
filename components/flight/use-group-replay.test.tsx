@@ -24,6 +24,49 @@ function server() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("group replay controller", () => {
+  it("does not let an initial photo response overwrite a newer upload/deletion refresh", async () => {
+    let finishInitial!: (response: unknown) => void;
+    let photoReads = 0;
+    const latestPhotos = [{ id: "new-photo" }];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/photos")) {
+        if (++photoReads === 1) return new Promise(resolve => { finishInitial = resolve; });
+        return { ok: true, json: async () => ({ photos: latestPhotos }) };
+      }
+      return { ok: true, json: async () => replay(primary) };
+    }));
+    const { result } = renderHook(() => useGroupReplay(primary, null, 150_000));
+    await waitFor(() => expect(result.current.primaryReplay).not.toBeNull());
+    await act(async () => { await result.current.reloadPhotos(); });
+    expect(result.current.visibleFlights[0].photos).toEqual(latestPhotos);
+    await act(async () => { finishInitial({ ok: true, json: async () => ({ photos: [] }) }); });
+    expect(result.current.visibleFlights[0].photos).toEqual(latestPhotos);
+  });
+
+  it("publishes tracks while photos are pending and retries photos without refetching tracks", async () => {
+    let finishPhotos!: (response: unknown) => void;
+    let pending = true;
+    const fetch = vi.fn(async (url: string) => {
+      if (url.endsWith("/photos")) {
+        if (pending) return new Promise(resolve => { finishPhotos = resolve; });
+        return { ok: true, json: async () => ({ photos: [] }) };
+      }
+      return { ok: true, json: async () => replay(primary) };
+    });
+    vi.stubGlobal("fetch", fetch);
+    const { result } = renderHook(() => useGroupReplay(primary, null, 150_000));
+    await waitFor(() => expect(result.current.primaryReplay).not.toBeNull());
+    const original = result.current.primaryReplay;
+    expect(result.current.visibleFlights[0].photos).toEqual([]);
+    await act(async () => { finishPhotos({ ok: false, status: 500 }); });
+    await waitFor(() => expect(result.current.photoFailures).toEqual([primary.id]));
+    pending = false;
+    act(() => result.current.retry());
+    await waitFor(() => expect(fetch.mock.calls.filter(([url]) => url.endsWith("/photos"))).toHaveLength(2));
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith("/replay"))).toHaveLength(1);
+    expect(result.current.primaryReplay).toBe(original);
+  });
+
   it("fits time bounds to visible pilots while retaining cached tracks", async () => {
     const { fetch } = server();
     const { result } = renderHook(() => useGroupReplay(primary, "self", 150_000));

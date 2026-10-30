@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 
-// The same entry points run locally and in the two CI jobs. Keep failures fatal:
+// The same entry points run locally and in CI. Keep failures fatal:
 // in particular, a successful unit-only run is not a completed pre-PR check.
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
 const mode = process.argv[2] ?? "all";
-if (!["all", "gates", "e2e"].includes(mode) || process.argv.length > 3) {
-  throw new Error("Usage: node scripts/check.mjs [all|gates|e2e]");
+const browserArgs = process.argv.slice(3);
+if (browserArgs[0] === "--") browserArgs.shift();
+if (!["all", "gates", "e2e"].includes(mode) || (mode !== "e2e" && browserArgs.length)) {
+  throw new Error("Usage: node scripts/check.mjs [all|gates|e2e [Playwright arguments]]");
 }
 const expectedNode = readFileSync(".node-version", "utf8").trim();
 if (process.versions.node !== expectedNode) {
@@ -35,5 +37,5 @@ if (mode !== "e2e") {
   run("Unit and integration tests", "node_modules/vitest/vitest.mjs", "run");
   run("Production build", "node_modules/next/dist/bin/next", "build");
 }
-if (mode !== "gates") run("Browser tests", "node_modules/@playwright/test/cli.js", "test");
-console.log(`\n${mode === "all" ? "All pre-PR" : mode} checks passed.`);
+if (mode !== "gates") run("Browser tests", "node_modules/@playwright/test/cli.js", "test", ...browserArgs);
+console.log(`\n${mode === "all" ? "All pre-PR" : browserArgs.length ? "Selected browser" : mode} checks passed.`);

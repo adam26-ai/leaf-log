@@ -34,7 +34,9 @@ it("lets the main admin select a search result and shows a rejected grant", asyn
   expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "pilot" } });
   fireEvent.click(screen.getByRole("button", { name: "Search" }));
-  fireEvent.click(await within(screen.getByRole("list", { name: "User search results" })).findByRole("button"));
+  const result = await within(screen.getByRole("list", { name: "User search results" })).findByRole("button");
+  await waitFor(() => expect(result).toBeEnabled());
+  fireEvent.click(result);
   fireEvent.click(screen.getByRole("button", { name: "Grant site admin access" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Access denied");
   expect(changeSiteAdminAction).toHaveBeenCalledWith("pilot", "grant");

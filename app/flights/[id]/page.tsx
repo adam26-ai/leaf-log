@@ -7,8 +7,7 @@ import { prisma } from "@/lib/prisma";
 import {
   getFlightForViewer,
   trophiesForVisibleFlights,
-  listOwnFlights,
-  listProfileFlightsForViewer,
+  listFlightNavigation,
 } from "@/lib/flights/repo";
 import { normalizeVisibility } from "@/lib/flights/visibility";
 import { kudoSummaryForViewer } from "@/lib/social/kudos";
@@ -46,34 +45,25 @@ export default async function FlightPage({
   const flight = await getFlightForViewer(id, viewerId);
   if (!flight) notFound();
 
-  const trophies = (await trophiesForVisibleFlights([flight]))[flight.id] ?? [];
   const isOwner = viewerId === flight.ownerId;
   const warnings = Array.isArray(flight.parseWarnings)
     ? (flight.parseWarnings as string[])
     : [];
-  const kudoSummary = viewerId
-    ? await kudoSummaryForViewer(flight.id, viewerId)
-    : null;
-  const owner =
-    isOwner && viewer
-      ? viewer
-      : await prisma.profile.findUnique({
+  const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
+  // These reads all depend on the authorized flight, not on each other.
+  const [trophiesByFlight, kudoSummary, owner, instructorNotes, signoffs, navigationFlights] = await Promise.all([
+    trophiesForVisibleFlights([flight]),
+    viewerId ? kudoSummaryForViewer(flight.id, viewerId) : null,
+    isOwner && viewer ? viewer : prisma.profile.findUnique({
           where: { id: flight.ownerId },
           select: { id: true, handle: true, displayName: true, avatarUpdatedAt: true },
-        });
-  const isViewerCurrentInstructor = viewerId !== null && viewerId === flight.instructorId;
-  const instructorNotes = viewerId
-    ? await listInstructorNotesForViewer(flight.id, viewerId)
-    : [];
-  const signedCriterionKeys = new Set<string>();
-  if (isViewerCurrentInstructor && viewerId) {
-    const signoffs = await activeSignoffsFor(flight.ownerId, viewerId);
-    for (const signoff of signoffs) signedCriterionKeys.add(signoff.criterionKey);
-  }
-
-  const navigationFlights = isOwner
-    ? await listOwnFlights(flight.ownerId)
-    : await listProfileFlightsForViewer(flight.ownerId, viewerId);
+        }),
+    viewerId ? listInstructorNotesForViewer(flight.id, viewerId) : [],
+    isViewerCurrentInstructor && viewerId ? activeSignoffsFor(flight.ownerId, viewerId) : [],
+    listFlightNavigation(flight.ownerId, viewerId),
+  ]);
+  const trophies = trophiesByFlight[flight.id] ?? [];
+  const signedCriterionKeys = new Set(signoffs.map(signoff => signoff.criterionKey));
   const navigationIndex = navigationFlights.findIndex((row) => row.id === flight.id);
   // Logs are newest-first: left goes to the previous (older) log and right
   // goes to the next (newer) log.

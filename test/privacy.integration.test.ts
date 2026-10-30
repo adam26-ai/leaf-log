@@ -11,6 +11,12 @@ import { makeRealisticFlight } from "./igc/make-igc";
 const suffix = `${process.pid}${Math.floor(Math.random() * 1e6)}`;
 
 describe("privacy invariant (app-layer repo)", () => {
+  it("keeps slim previous/next navigation identical to each viewer's authorized logbook", async () => {
+    for (const viewerId of [ownerId, friendId, pendingId, strangerId, null]) {
+      const full = viewerId === ownerId ? await repo.listOwnFlights(ownerId) : await repo.listProfileFlightsForViewer(ownerId, viewerId);
+      expect(await repo.listFlightNavigation(ownerId, viewerId)).toEqual(full.map(({ id }) => ({ id })));
+    }
+  });
   let prisma: import("@prisma/client").PrismaClient;
   let repo: typeof import("@/lib/flights/repo");
   let photosRepo: typeof import("@/lib/photos/repo");

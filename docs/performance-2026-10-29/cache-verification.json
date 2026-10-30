@@ -1,0 +1,14 @@
+{
+  "browser": "Windows Edge headless",
+  "date": "2026-10-29",
+  "resource": "https://tiles.openfreemap.org/planet/20261025_080012_pt/10/173/386.pbf",
+  "browserSessions": 2,
+  "providerNetworkResponses": 1,
+  "clientResponsesFromServiceWorker": 3,
+  "decodedBytes": {
+    "firstSessionPage": 2896,
+    "secondSessionPage": 2896,
+    "secondSessionDedicatedWorker": 2896
+  },
+  "method": "Serve the unchanged map-tile-cache.js from a local HTTP origin, fetch the public tile, wait for cache storage, close the persistent browser context, reopen it, and fetch from both the page and a blob-backed dedicated worker. Observe response.fromServiceWorker() and count provider network responses. Temporary browser profile removed afterward."
+}

@@ -12,7 +12,7 @@ const flatTerrainTile = sharp({ create: {
 } }).png().toBuffer();
 
 type Fixtures = {
-  prepareContext: (context: BrowserContext) => Promise<void>;
+  prepareContext: (context: BrowserContext, options?: { observeCache?: boolean }) => Promise<void>;
   newContext: () => Promise<BrowserContext>;
 };
 
@@ -21,7 +21,7 @@ export const test = base.extend<Fixtures>({
     const unexpected = new Set<string>();
     const diagnostics: string[] = [];
     const origin = new URL(baseURL!).origin;
-    await provide(async context => {
+    await provide(async (context, { observeCache = false } = {}) => {
       context.on("requestfailed", request => {
         diagnostics.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`);
       });
@@ -29,6 +29,17 @@ export const test = base.extend<Fixtures>({
         if (response.status() >= 400) diagnostics.push(`${response.status()} ${new URL(response.url()).pathname}`);
       });
       context.on("weberror", error => diagnostics.push(`Page error: ${error.error().message}`));
+      if (observeCache) {
+        // Interception in a restarted persistent context can reject a cached
+        // cross-origin service-worker response in Chromium/Edge. Observe the
+        // same strict dependency boundary instead; the cache spec mocks its
+        // single cold tile and requires zero worker network requests on reuse.
+        context.on("request", request => {
+          const url = new URL(request.url());
+          if (url.origin !== origin && request.url() !== "https://tiles.openfreemap.org/planet-test/10/1/2.pbf") unexpected.add(`${url.origin}${url.pathname}`);
+        });
+        return;
+      }
       await context.route(/^https?:\/\//, async route => {
         const url = new URL(route.request().url());
         if (url.origin === origin) return route.continue();

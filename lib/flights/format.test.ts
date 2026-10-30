@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { formatAltitude, formatDistance, formatSpeed, formatVario } from "./format";
+import { formatAltitude, formatDistance, formatLocalDate, formatLocalDateShort, formatSpeed, formatVario } from "./format";
 import { METRIC_UNITS, IMPERIAL_UNITS, readCustomUnits } from "./units";
 import { buildAltitudeScale } from "./altitude-scale";
 
 describe("display units", () => {
+  it("preserves flight calendar dates across offset/year boundaries and invalid inputs", () => {
+    expect(formatLocalDate("2026-01-01T02:00:00Z", -480)).toBe("Wed, Dec 31, 2025");
+    expect(formatLocalDateShort("2026-12-31T15:00:00Z", 840)).toBe("Fri, Jan 1");
+    expect(formatLocalDate(new Date("2026-01-01T02:00:00Z"), 0)).toBe("Thu, Jan 1, 2026");
+    expect(formatLocalDateShort(null, 0)).toBe("\u2014");
+    expect(formatLocalDate("invalid", 0)).toBe("\u2014");
+    expect(formatLocalDate("2026-01-01T02:00:00Z", NaN)).toBe("Invalid Date");
+  });
   it("keeps the existing metric and imperial measurements", () => {
     expect([formatAltitude(1000), formatSpeed(100), formatDistance(5000), formatVario(-2)])
       .toEqual(["1,000 m", "100 km/h", "5.0 km", "-2.0 m/s"]);

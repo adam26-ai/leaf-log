@@ -29,6 +29,8 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
   const [retryVersion, setRetryVersion] = useState(0);
   const discoveryAbort = useRef<AbortController | null>(null);
+  const photosLoaded = useRef(new Set<string>());
+  const photoVersions = useRef(new Map<string, number>());
 
   const discover = useCallback(async (more = false, expandDay = manifest.dayExpanded ?? false) => {
     if (!viewerId) return;
@@ -84,16 +86,38 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
   useEffect(() => {
     const controller = new AbortController();
     const queue = wantedIds.split(",").filter((id) => id && !payloads[id] && !failures.includes(id));
+    const photoQueue = wantedIds.split(",").filter((id) => id && payloads[id] && !photosLoaded.current.has(id));
+    let activePhotos = 0;
+    function loadPhotos() {
+      while (activePhotos < 3 && photoQueue.length && !controller.signal.aborted) {
+        const id = photoQueue.shift()!;
+        const version = (photoVersions.current.get(id) ?? 0) + 1;
+        photoVersions.current.set(id, version);
+        activePhotos++;
+        void json<{ photos: FlightPhoto[] }>(`/api/flights/${id}/photos`, controller.signal).then(({ photos }) => {
+          if (controller.signal.aborted || photoVersions.current.get(id) !== version) return;
+          photosLoaded.current.add(id);
+          setPayloads((old) => old[id] ? { ...old, [id]: { ...old[id], photos } } : old);
+        }).catch(() => {
+          if (!controller.signal.aborted && photoVersions.current.get(id) === version) {
+            photosLoaded.current.add(id);
+            setPhotoFailures((old) => [...new Set([...old, id])]);
+          }
+        }).finally(() => { activePhotos--; loadPhotos(); });
+      }
+    }
+    loadPhotos();
     async function worker() {
       while (queue.length && !controller.signal.aborted) {
         const id = queue.shift()!;
         try {
           const replay = await json<ReplayResponse>(`/api/flights/${id}/replay`, controller.signal);
           if (replay.samples.length < 2) throw new Error("No track");
-          let photos: FlightPhoto[] = [];
-          try { photos = (await json<{ photos: FlightPhoto[] }>(`/api/flights/${id}/photos`, controller.signal)).photos; }
-          catch { if (!controller.signal.aborted) setPhotoFailures((old) => [...new Set([...old, id])]); }
-          if (!controller.signal.aborted) setPayloads((old) => ({ ...old, [id]: { replay, photos } }));
+          if (!controller.signal.aborted) {
+            setPayloads((old) => ({ ...old, [id]: { replay, photos: [] } }));
+            photoQueue.push(id);
+            loadPhotos();
+          }
         } catch {
           if (!controller.signal.aborted) setFailures((old) => [...new Set([...old, id])]);
         }
@@ -129,16 +153,22 @@ export function useGroupReplay(primary: CompanionFlight, viewerId: string | null
     }
   }, [isVisible, pilots, selected, select, flights]);
   const retry = useCallback(() => {
-    setPayloads((old) => Object.fromEntries(Object.entries(old).filter(([id]) => !photoFailures.includes(id))));
+    // A photo failure must not discard a usable track or reset the camera.
+    photoFailures.forEach(id => photosLoaded.current.delete(id));
     setFailures([]);
     setPhotoFailures([]);
     setRetryVersion((v) => v + 1);
   }, [photoFailures]);
   const reloadPhotos = useCallback(async () => {
+    const version = (photoVersions.current.get(primaryId) ?? 0) + 1;
+    photoVersions.current.set(primaryId, version);
     try {
       const { photos } = await json<{ photos: FlightPhoto[] }>(`/api/flights/${primaryId}/photos`);
+      if (photoVersions.current.get(primaryId) !== version) return;
+      photosLoaded.current.add(primaryId);
+      setPhotoFailures((old) => old.filter(id => id !== primaryId));
       setPayloads((old) => old[primaryId] ? { ...old, [primaryId]: { ...old[primaryId], photos } } : old);
-    } catch { setPhotoFailures((old) => [...new Set([...old, primaryId])]); }
+    } catch { if (photoVersions.current.get(primaryId) === version) setPhotoFailures((old) => [...new Set([...old, primaryId])]); }
   }, [primaryId]);
   const timelineFlights = candidates.filter((f) => isVisible(f.owner.id)).map((f) => flights.find((loaded) => loaded.id === f.id) ?? f);
   const bounds = groupTimeBounds(timelineFlights);
