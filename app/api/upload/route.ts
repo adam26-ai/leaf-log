@@ -4,10 +4,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ingestFlight } from "@/lib/ingest/ingest-flight";
 import { inspectIgcDuplicates } from "@/lib/logbook/igc-duplicates";
+import { MAX_IGC_BYTES } from "@/lib/igc/limits";
 
 export const runtime = "nodejs";
-
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
  * Authenticated IGC upload. A THIN caller of the shared ingestFlight() core —
@@ -50,8 +49,8 @@ export async function POST(request: Request) {
       results.push({ filename: name, error: "Not an .igc file" });
       continue;
     }
-    if (file.size > MAX_BYTES) {
-      results.push({ filename: name, error: "File too large (max 5 MB)" });
+    if (file.size > MAX_IGC_BYTES) {
+      results.push({ filename: name, error: "File too large (max 25 MB)" });
       continue;
     }
     if (file.size === 0) {

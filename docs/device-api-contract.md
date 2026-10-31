@@ -140,7 +140,7 @@ Upload one IGC flight.
   |-------|------|-----------------|
   | `401` | missing/invalid/revoked token | stop uploading; surface **"reconnect your Leaf"** to the pilot (token was revoked or is wrong). |
   | `400` | empty/invalid body | skip this file. |
-  | `413` | body > **5 MB** | skip; flag oversized. |
+  | `413` | body > **25 MiB** (26,214,400 bytes) | skip; flag oversized. |
   | `5xx` | transient server error | retry with backoff. |
 
 **Idempotency:** uploads are de-duplicated by exact file bytes per account, so
@@ -171,7 +171,7 @@ credential after successful re-pairing.
 | Pairing code | **6 chars** from the unambiguous alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no `0 O 1 I L`). Case-insensitive on entry. |
 | Pairing TTL | **10 minutes** from `pair/start`. |
 | Device token | opaque string, prefix `llk_`, ~43 url-safe base64 chars after the prefix. Treat as a secret; store it verbatim. |
-| Max upload size | **5 MB** per IGC. |
+| Max upload size | **25 MiB** (26,214,400 bytes) per IGC, for both device and manual uploads (including attachments). |
 
 ---
 

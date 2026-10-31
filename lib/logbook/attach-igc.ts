@@ -14,9 +14,10 @@ import { lockFlightRow } from "@/lib/sites/locks";
 import { EntryError } from "./service";
 import { duplicateKey } from "./duplicates";
 import { lockWingSettings, tandemFlightData, wingIsTandem } from "@/lib/flights/tandem";
+import { MAX_IGC_BYTES } from "@/lib/igc/limits";
 
 export async function attachIgc(ownerId: string, flightId: string, bytes: Uint8Array, commit: boolean, expectedUpdatedAt?: string, expectedHash?: string) {
-  if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new EntryError("Choose a non-empty IGC file of 5 MB or less.");
+  if (!bytes.length || bytes.length > MAX_IGC_BYTES) throw new EntryError("Choose a non-empty IGC file of 25 MB or less.");
   const hash = sha256Hex(bytes);
   const flight = await prisma.flight.findFirst({ where: { id: flightId, ownerId } });
   if (!flight) throw new EntryError("Flight not found.", 404);
