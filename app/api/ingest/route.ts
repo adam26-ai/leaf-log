@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { ingestFlight } from "@/lib/ingest/ingest-flight";
 import { parseBearer } from "@/lib/devices/token";
 import { resolveDeviceTokenOwner, touchDeviceToken } from "@/lib/devices/repo";
+import { MAX_IGC_BYTES } from "@/lib/igc/limits";
 
 export const runtime = "nodejs";
-
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /**
  * Device IGC ingest. Auth is a scoped, revocable bearer token, not a browser
@@ -40,8 +39,8 @@ export async function POST(request: Request) {
   if (bytes.length === 0) {
     return NextResponse.json({ error: "Empty file" }, { status: 400 });
   }
-  if (bytes.length > MAX_BYTES) {
-    return NextResponse.json({ error: "File too large (max 5 MB)" }, { status: 413 });
+  if (bytes.length > MAX_IGC_BYTES) {
+    return NextResponse.json({ error: "File too large (max 25 MB)" }, { status: 413 });
   }
 
   const filename = request.headers.get("x-filename")?.trim() || "device.igc";
