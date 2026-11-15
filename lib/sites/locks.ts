@@ -11,6 +11,11 @@ export async function lockFlightRow(tx: LockDb, id: string, ownerId: string) {
   await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "id" = ${id} AND "ownerId" = ${ownerId} FOR UPDATE`;
 }
 
+export async function lockFlightRows(tx: LockDb, ids: string[], ownerId: string) {
+  await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Flight" WHERE "ownerId" = ${ownerId}
+    AND "id" IN (${Prisma.join(ids)}) ORDER BY "id" FOR UPDATE`);
+}
+
 /** Lock the caller's linked flights after locking the affected site rows. */
 export async function lockSiteFlights(tx: LockDb, ownerId: string, siteId: string) {
   await tx.$queryRaw`SELECT "id" FROM "Flight" WHERE "ownerId" = ${ownerId}

@@ -4,6 +4,7 @@ import { afterAll, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/profile";
 import { getSiteEditorAction, getSiteMapReferencesAction, saveSiteEditorAction } from "@/app/settings/sites/editor-actions";
+import { assignSiteFlightsAction, previewSiteFlightsAction } from "@/app/settings/sites/actions";
 import { boundaryColumns } from "@/lib/sites/boundary";
 import type { Boundary } from "@/lib/sites/geo";
 
@@ -66,6 +67,52 @@ it("saves a site after background scoring without overwriting analysis or unrela
     takeoffSiteId: site.id, takeoffSiteAssignment: "user_selected", takeoffLat: 37, takeoffLon: -122,
     xcStatus: "ready", xcScore: { complete: true }, notes: "Keep this note",
   });
+});
+
+it("offers older matches after creation and rechecks them before bulk assignment", async () => {
+  const { flight: source, request } = await openEditor();
+  const { flight: otherPilot } = await openEditor();
+  const ownerId = source.ownerId;
+  vi.mocked(getCurrentUserId).mockResolvedValue(ownerId);
+  const base = { ownerId, status: "ready", recordingKind: "igc", takeoffLat: 37, takeoffLon: -122 };
+  const [clear, changed, overlapping, named, removed, noGps] = await Promise.all([
+    prisma.flight.create({ data: base }),
+    prisma.flight.create({ data: base }),
+    prisma.flight.create({ data: { ...base, takeoffLon: -121.9987 } }),
+    prisma.flight.create({ data: { ...base, takeoffSiteName: "Reported launch", takeoffSiteAssignment: "custom_name" } }),
+    prisma.flight.create({ data: { ...base, takeoffSiteAssignment: "cleared" } }),
+    prisma.flight.create({ data: { ...base, takeoffLat: null, takeoffLon: null } }),
+  ]);
+  const competitor = { name: "Nearby Ridge", normalizedName: "nearby ridge", kind: "takeoff", lat: 37, lon: -121.997 };
+  await prisma.site.create({ data: { ...competitor, visibility: "public", ownerId: otherPilot.ownerId } });
+  await prisma.site.create({ data: { ...competitor, visibility: "private", ownerId: otherPilot.ownerId, lon: -122 } });
+
+  const site = await saveSite(request);
+  expect(site.matchingFlightCount).toBe(5);
+  const preview = await previewSiteFlightsAction(site.id, true);
+  if (!preview.ok) throw new Error(preview.error);
+  const matches = new Map(preview.value.map(row => [row.id, row]));
+  expect([...matches.keys()]).toEqual(expect.arrayContaining([clear.id, changed.id, overlapping.id, named.id, removed.id]));
+  for (const id of [source.id, otherPilot.id, noGps.id]) expect(matches.has(id)).toBe(false);
+  const recommended = preview.value.filter(row => row.recommended);
+  expect(new Set(recommended.map(row => row.id))).toEqual(new Set([clear.id, changed.id]));
+  expect((await prisma.flight.findUniqueOrThrow({ where: { id: clear.id } })).takeoffSiteId).toBeNull();
+
+  await prisma.flight.update({ where: { id: changed.id }, data: { takeoffSiteAssignment: "cleared" } });
+  expect(await assignSiteFlightsAction({ siteId: site.id, selections: recommended })).toMatchObject({ ok: false, error: expect.stringMatching(/changed/) });
+  expect((await prisma.flight.findUniqueOrThrow({ where: { id: clear.id } })).takeoffSiteId).toBeNull();
+
+  const confirmed = [matches.get(clear.id)!];
+  vi.mocked(getCurrentUserId).mockResolvedValue(otherPilot.ownerId);
+  expect(await assignSiteFlightsAction({ siteId: site.id, selections: confirmed })).toMatchObject({ ok: false });
+  vi.mocked(getCurrentUserId).mockResolvedValue(ownerId);
+  expect(await assignSiteFlightsAction({ siteId: site.id, selections: confirmed })).toMatchObject({ ok: true, value: { updated: 1 } });
+  expect(await prisma.flight.findUniqueOrThrow({ where: { id: clear.id } })).toMatchObject({
+    takeoffSiteId: site.id, takeoffSiteAssignment: "user_selected", takeoffLat: 37, takeoffLon: -122, landingSiteId: null,
+  });
+  for (const id of [changed.id, overlapping.id, named.id, removed.id, otherPilot.id]) {
+    expect((await prisma.flight.findUniqueOrThrow({ where: { id } })).takeoffSiteId).toBeNull();
+  }
 });
 
 it.each([

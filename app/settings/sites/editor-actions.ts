@@ -10,6 +10,7 @@ import { flightSiteRevision, saveSiteDraft, SiteEditorExpectedError } from "@/li
 import { hasSitePoint, newSiteDraft, siteDraftSchema, type SiteEditorValue } from "@/lib/sites/model";
 import { isValidBoundaryShape, radiusForKind } from "@/lib/sites/geo";
 import { lockFlightRow } from "@/lib/sites/locks";
+import { previewFlightsForSite } from "@/lib/sites/manage";
 
 const contextSchema = z.object({ siteId: z.string().max(100).optional(), flightId: z.string().max(100).optional(),
   endpoint: z.enum(["takeoff", "landing"]).optional(), create: z.boolean().optional() }).strict();
@@ -20,8 +21,9 @@ async function requireOwner() {
   return id;
 }
 
+export type SavedSite = { id: string; name: string; updatedAt: string; matchingFlightCount?: number | null };
 export type SiteEditorSaveResult =
-  | { ok: true; value: { id: string; name: string; updatedAt: string } }
+  | { ok: true; value: SavedSite }
   | { ok: false; error: string };
 
 /** Reference geometry only; the editor must never receive another pilot's private sites. */
@@ -78,11 +80,22 @@ export async function saveSiteEditorAction(value: { draft: z.infer<typeof siteDr
           [`${endpoint}SiteAssignment`]: "user_selected",
         } });
       }
-      return { id: site.id, name: site.name, updatedAt: site.updatedAt.toISOString() };
+      return site;
     }, { maxWait: 10000, timeout: 30000 });
     revalidatePath("/sites"); revalidatePath("/settings/sites"); revalidatePath("/logbook"); revalidatePath("/feed");
     revalidatePath("/flights/[id]", "page"); revalidatePath("/[handle]", "page");
-    return { ok: true, value: result };
+    const savedSite: SavedSite = { id: result.id, name: result.name, updatedAt: result.updatedAt.toISOString() };
+    if (!input.draft.id && hasSitePoint(result)) {
+      try {
+        const matches = await previewFlightsForSite(ownerId, result.id);
+        savedSite.matchingFlightCount = new Set(matches.map(match => match.id)).size;
+      } catch (error) {
+        // The site is already saved. Let the pilot open the review and retry.
+        console.error("Could not find earlier flights for the saved site", error);
+        savedSite.matchingFlightCount = null;
+      }
+    }
+    return { ok: true, value: savedSite };
   } catch (error) {
     if (error instanceof SiteEditorExpectedError) return { ok: false, error: error.message };
     console.error("Site editor save failed", error);

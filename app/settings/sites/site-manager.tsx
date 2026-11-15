@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SiteDialog } from "@/components/flight/site-dialog";
 import { PersistedSiteEditor } from "@/components/flight/persisted-site-editor";
+import { SiteCreatedNotice } from "@/components/sites/site-created-notice";
+import type { SavedSite } from "./editor-actions";
 import { siteLinkLabel } from "@/lib/sites/display";
 import { hasSitePoint } from "@/lib/sites/model";
 import { Globe, Lock } from "lucide-react";
@@ -19,10 +21,14 @@ import type { SitePoint } from "@/lib/sites/model";
 type ManagedSiteView = { id: string; name: string; kind: "takeoff" | "landing" | "both"; visibility: string;
   lat: number | null; lon: number | null; updatedAt: string; hasBoundary: boolean; boundary?: Boundary | null; hasLocationEvidence?: boolean; ownFlightCount: number; canDelete?: boolean; inLogbook?: boolean };
 const candidateKey = (row: SiteFlightCandidate) => row.id + ":" + row.endpoint;
+const recommendedKeys = (rows: SiteFlightCandidate[]) => new Set(rows.filter(row => row.recommended).slice(0, 200).map(candidateKey));
+type InitialReview = { siteId: string; candidates: SiteFlightCandidate[] | null };
 
-export function SiteManager({ sites, initialPoint = null, includePublicSites = false }: { sites: ManagedSiteView[]; initialPoint?: SitePoint | null; includePublicSites?: boolean }) {
+export function SiteManager({ sites, initialPoint = null, includePublicSites = false, initialReview }: {
+  sites: ManagedSiteView[]; initialPoint?: SitePoint | null; includePublicSites?: boolean; initialReview?: InitialReview;
+}) {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<string | null>(sites.find(site => site.inLogbook !== false)?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialReview?.siteId ?? sites.find(site => site.inLogbook !== false)?.id ?? null);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState("all");
   const [location, setLocation] = useState("all");
@@ -32,35 +38,40 @@ export function SiteManager({ sites, initialPoint = null, includePublicSites = f
     && (location === "all" || (location === "mapped" ? hasSitePoint(site) : !hasSitePoint(site))));
   const selected = filteredSites.find(site => site.id === selectedId) ?? filteredSites[0] ?? null;
   const [editor, setEditor] = useState<"create" | "edit" | null>(null);
-  const [candidates, setCandidates] = useState<SiteFlightCandidate[] | null>(null);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [savedSite, setSavedSite] = useState<SavedSite | null>(null);
+  const [candidates, setCandidates] = useState<SiteFlightCandidate[] | null>(initialReview?.candidates ?? null);
+  const [checked, setChecked] = useState(() => recommendedKeys(initialReview?.candidates ?? []));
   const [page, setPage] = useState(0);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [assignedCount, setAssignedCount] = useState<number | null>(null);
   const [revision, setRevision] = useState(0);
   const [management, setManagement] = useState<{ kind: "delete" | "replace"; site: ManagedSiteView } | null>(null);
-  function choose(id: string) { setSelectedId(id); setCandidates(null); setChecked(new Set()); setPage(0); setError(null); setMessage(null); }
+  const recommend = !!initialReview && selected?.id === initialReview.siteId;
+  function choose(id: string) { setSelectedId(id); setCandidates(null); setChecked(new Set()); setPage(0); setError(null); setMessage(null); setAssignedCount(null); }
+  function closeEditor() { setEditor(null); setSavedSite(null); }
   function preview() {
     if (!selected) return;
     startTransition(async () => {
       setError(null);
-      try { const result = await previewSiteFlightsAction(selected.id);
+      try { const result = await previewSiteFlightsAction(selected.id, recommend);
         if (!result.ok) { setError(result.error); return; }
-        setCandidates(result.value); setPage(0); setChecked(new Set());
+        setCandidates(result.value); setPage(0); setChecked(recommendedKeys(result.value));
       } catch { setError("Could not load matching flights. Please try again."); }
     });
   }
   function assign() {
     if (!selected || !candidates) return;
-    const selections = candidates.filter(row => checked.has(candidateKey(row))).map(({id,endpoint}) => ({id,endpoint}));
+    const selections = candidates.filter(row => checked.has(candidateKey(row))).map(({ id, endpoint, revision, recommended }) => ({ id, endpoint, revision, recommended }));
     startTransition(async () => {
       setError(null);
       try { const result = await assignSiteFlightsAction({siteId:selected.id,selections});
         if (!result.ok) { setError(result.error); return; }
         setCandidates(null); setChecked(new Set()); setRevision(n => n+1);
-        setMessage(`${selected.name} assigned to ${result.value.updated} flights. Flight coordinates were preserved.`); router.refresh();
-        const refreshed = await previewSiteFlightsAction(selected.id); if (refreshed.ok) setCandidates(refreshed.value);
+        setAssignedCount(result.value.updated); router.refresh();
+        const refreshed = await previewSiteFlightsAction(selected.id);
+        if (refreshed.ok) { setCandidates(refreshed.value); setPage(0); }
       } catch { setError("Could not save these selections. Please try again."); }
     });
   }
@@ -96,7 +107,6 @@ export function SiteManager({ sites, initialPoint = null, includePublicSites = f
       </Card>
     </div>
     <div id="site-details" className="flex min-w-0 scroll-mt-24 flex-col gap-5 lg:w-[70%]">
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       {message && <p role="status" className="text-sm text-green-800">{message}</p>}
       <SiteMapPanel sites={sites} selectedId={selected?.id ?? null} initialPoint={initialPoint} heading={selected?.name ?? "Site map"}
         onSelect={id => { if (pending) return; setSearch(""); setVisibility("all"); setLocation("all"); choose(id); }}
@@ -111,12 +121,15 @@ export function SiteManager({ sites, initialPoint = null, includePublicSites = f
       {selected && <>
         <SiteFlightList key={selected.id + ":" + revision} siteId={selected.id} count={selected.ownFlightCount} revision={revision} onReplace={() => setManagement({ kind: "replace", site: selected })} />
         <Card className="p-5">
-            <section aria-labelledby="review-flights-heading">
+            <section id="review-matching-flights" tabIndex={-1} className="scroll-mt-24" aria-labelledby="review-flights-heading">
             <h3 id="review-flights-heading" className="font-condensed text-xl font-bold text-ink">Review matching flights</h3>
             <p className="mt-1 text-sm text-gray-600">Find other flights using coordinates inside this site’s boundary or matching radius. Flights that use this site appear above.</p>
+            {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+            {assignedCount !== null && <p role="status" className="mt-2 text-sm text-green-800">{selected.name} assigned to {assignedCount} {assignedCount === 1 ? "flight" : "flights"}. Flight coordinates were preserved.</p>}
             <Button type="button" variant="outline" className="mt-4" onClick={preview} disabled={pending || selected.lat === null}>{candidates ? "Refresh matches" : "Find matching flights"}</Button>
             {candidates?.length === 0 && <p className="mt-4 text-sm text-gray-500">No additional flights match this site’s boundary or radius. Flights with only a name and no coordinates cannot be matched here.</p>}
             {candidates && candidates.length > 0 && <div className="mt-4 flex flex-col gap-2">
+              {candidates.some(row => row.recommended) && <p className="text-sm text-gray-600">Clear matches without a site are preselected. Review the selection before assigning.</p>}
               <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
                 <span>{candidateFlights.length} matching flight{candidateFlights.length === 1 ? "" : "s"}</span>
                 <button type="button" className="underline disabled:opacity-50" disabled={pending || new Set([...checked, ...shownKeys]).size > 200} onClick={() => setChecked(current => new Set([...current, ...shownKeys]))}>Select all on this page</button>
@@ -134,6 +147,7 @@ export function SiteManager({ sites, initialPoint = null, includePublicSites = f
                           <span className="block font-medium">{candidate.endpoint === "takeoff" ? "Takeoff" : "Landing"} <span className="font-normal text-gray-500">· {Math.round(candidate.distanceM)} m from site pin</span></span>
                           <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">{label && <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${candidate.currentSiteState === "linked" ? "bg-blue-100 text-brand-blue-strong" : "bg-gray-200 text-gray-700"}`}>{label}</span>}<span className="break-words text-xs text-gray-600">{candidate.currentSiteName}</span></span>
                           {candidate.currentSiteState === "linked" && <span className="mt-1 block text-xs text-gray-500">Currently uses a different site{candidate.currentSiteName === selected.name ? " with the same name" : ""}. Selecting this changes the site for this flight.</span>}
+                          {candidate.assignment === "cleared" && <span className="mt-1 block text-xs text-gray-500">Site previously removed</span>}
                         </span>
                       </label>;
                     })}
@@ -153,8 +167,15 @@ export function SiteManager({ sites, initialPoint = null, includePublicSites = f
           </Card>
       </>}
     </div>
-    {editor && <SiteDialog onClose={()=>setEditor(null)}><PersistedSiteEditor context={editor === "create" ? {create:true} : {siteId:selected?.id}}
-      onCancel={()=>setEditor(null)} onSaved={site=>{setSearch("");setVisibility("all");setLocation("all");choose(site.id);setEditor(null);setRevision(n=>n+1);router.refresh();}} /></SiteDialog>}
+    {editor && <SiteDialog onClose={closeEditor}>
+      {savedSite ? <SiteCreatedNotice site={savedSite} onClose={closeEditor} /> : <PersistedSiteEditor
+        context={editor === "create" ? { create: true } : { siteId: selected?.id }} onCancel={closeEditor}
+        onSaved={site => {
+          setSearch(""); setVisibility("all"); setLocation("all"); choose(site.id); setRevision(n => n + 1);
+          if (site.matchingFlightCount !== undefined && site.matchingFlightCount !== 0) setSavedSite(site);
+          else closeEditor();
+        }} />}
+    </SiteDialog>}
     {management?.kind === "delete" && <DeleteSiteDialog key={management.site.id} site={management.site} onClose={() => setManagement(null)} onDeleted={() => {
       const name = management.site.name;
       choose(sites.find(site => site.id !== management.site.id)?.id ?? "");

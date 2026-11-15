@@ -35,7 +35,8 @@ import { useHydrated } from "@/lib/use-hydrated";
 import { siteLinkLabel } from "@/lib/sites/display";
 import { hasSitePoint } from "@/lib/sites/model";
 import { PersistedSiteEditor, type SiteEditorData } from "./persisted-site-editor";
-import { clearFlightSiteAction } from "@/app/settings/sites/editor-actions";
+import { clearFlightSiteAction, type SavedSite } from "@/app/settings/sites/editor-actions";
+import { SiteCreatedNotice } from "@/components/sites/site-created-notice";
 
 /**
  * Click-to-edit control for a flight's takeoff/landing site+zone label.
@@ -262,6 +263,7 @@ function NameSiteDialog({
   const [suggestions, setSuggestions] = useState<SiteSuggestion[] | null>(null);
   const [boundInfo, setBoundInfo] = useState<BoundLocationInfo | null>(null);
   const [createEditor, setCreateEditor] = useState<SiteEditorData>();
+  const [savedSite, setSavedSite] = useState<SavedSite | null>(null);
   // A bound-flight opens on a read-only overview first (SPRINT-008: bug
   // report — typing a new name while a site was pre-selected could still
   // silently create a site from stale text). An unknown site has nothing
@@ -494,6 +496,10 @@ function NameSiteDialog({
     );
   }
 
+  if (savedSite) return <SiteDialog onClose={onClose}>
+    <SiteCreatedNotice site={savedSite} onClose={onClose} />
+  </SiteDialog>;
+
   return (
     <SiteDialog onClose={() => { if (!pending) onClose(); }}>
         {step === "site-overview" && (
@@ -517,7 +523,11 @@ function NameSiteDialog({
           key={step} initialData={step === "site-create" ? createEditor : undefined}
           context={{ flightId, endpoint, create: step === "site-create" }} initialName={step === "site-create" ? siteNameInput : undefined}
           onCancel={() => setStep(currentSiteName ? "site-overview" : "site")}
-          onSaved={site => { onCommunityRenamed(site.name, "site"); onClose(); }} /> }
+          onSaved={site => {
+            onCommunityRenamed(site.name, "site");
+            if (site.matchingFlightCount !== undefined && site.matchingFlightCount !== 0) setSavedSite(site);
+            else onClose();
+          }} /> }
         {step === "site" && !boundInfo && <>
           <h2 className="font-condensed text-xl font-bold text-ink">Choose a site</h2>
           <p className="text-sm text-gray-500">{error ?? "Loading site details..."}</p>

@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { DEV_MAGIC_LINK_FILE } from "@/lib/dev-magic-link";
 import { createHash } from "node:crypto";
 import { makeIgc, makeRealisticFlight } from "../igc/make-igc";
-import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady, cycleReplayXcMetric } from "./helpers";
+import { openSitesPage, logbookEntry, expectReplaySpaceShortcut, expectReplayLandingHidden, expectSiteVisibility, openSettingsCard, setSiteVisibility, openSiteChooser, readFlightCardShading, uploadFlight, setNewFlightTypes, waitForMapReady, cycleReplayXcMetric, createSiteFromFlight } from "./helpers";
 import { METRICS_VERSION } from "@/lib/flights/analysis-state";
 import type { XcCandidate } from "@/lib/igc/xc-types";
 
@@ -70,6 +70,37 @@ test("tandem wing controls preserve flight overrides and expose the merged defau
     await expect(enable).not.toBeChecked();
     expect((await db.profile.findUniqueOrThrow({ where: { id: owner.id } })).tandemWings).toEqual(["Merged Wing"]);
     expect(await db.flight.findUniqueOrThrow({ where: { id: manual.id } })).toMatchObject({ occupancy: "solo", tandemOverride: false });
+  } finally {
+    const owner = await db.profile.findUnique({ where: { handle } });
+    if (owner) await db.user.delete({ where: { id: owner.id } });
+    await db.$disconnect();
+  }
+});
+
+test("creating a mapped site offers matching flights and requires confirmation before assigning", async ({ page }) => {
+  const handle = await signUp(page);
+  const db = new PrismaClient();
+  try {
+    const owner = await db.profile.findUniqueOrThrow({ where: { handle } });
+    const base = { ownerId: owner.id, status: "ready", recordingKind: "logbook", source: "manual_entry", takeoffLat: 37.4, takeoffLon: -121.9 };
+    const source = await db.flight.create({ data: base });
+    const earlier = await db.flight.create({ data: { ...base, flightDate: new Date("2025-06-01") } });
+    const labeled = await db.flight.create({ data: { ...base, flightDate: new Date("2025-05-01"), takeoffSiteName: "Recorded launch", takeoffSiteAssignment: "custom_name" } });
+    await page.goto(`/flights/${source.id}`);
+    await createSiteFromFlight(page, "New Test Ridge", "private", 2);
+
+    const site = await db.site.findFirstOrThrow({ where: { ownerId: owner.id, name: "New Test Ridge" } });
+    const review = page.getByRole("region", { name: "Review matching flights", exact: true });
+    await expect(review.getByRole("listitem").filter({ hasText: "2025-06-01" }).getByRole("checkbox")).toBeChecked();
+    await expect(review.getByRole("listitem").filter({ hasText: "2025-05-01" }).getByRole("checkbox")).not.toBeChecked();
+    expect((await db.flight.findUniqueOrThrow({ where: { id: earlier.id } })).takeoffSiteId).toBeNull();
+    await review.getByRole("button", { name: "Assign site to 1 selected flight", exact: true }).click();
+    await expect(review.getByRole("status")).toContainText("New Test Ridge assigned to 1 flight.");
+    await expect(review.getByRole("listitem")).toHaveCount(1);
+    await expect(review.getByRole("listitem")).toContainText("Recorded launch");
+    expect((await db.flight.findUniqueOrThrow({ where: { id: source.id } })).takeoffSiteId).toBe(site.id);
+    expect(await db.flight.findUniqueOrThrow({ where: { id: earlier.id } })).toMatchObject({ takeoffSiteId: site.id, takeoffLat: base.takeoffLat, takeoffLon: base.takeoffLon });
+    expect(await db.flight.findUniqueOrThrow({ where: { id: labeled.id } })).toMatchObject({ takeoffSiteId: null, takeoffSiteName: "Recorded launch" });
   } finally {
     const owner = await db.profile.findUnique({ where: { handle } });
     if (owner) await db.user.delete({ where: { id: owner.id } });

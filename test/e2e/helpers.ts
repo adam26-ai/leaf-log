@@ -695,7 +695,7 @@ export async function openSiteChooser(page: Page, endpoint: "primary" | "landing
 }
 
 /** Creating uses the chooser's loaded draft immediately; new sites start private. */
-export async function createSiteFromFlight(page: Page, siteName: string, visibility: "private" | "public" = "private") {
+export async function createSiteFromFlight(page: Page, siteName: string, visibility: "private" | "public" = "private", expectedMatches?: number) {
   const { dialog, name } = await openSiteChooser(page);
   await name.fill(siteName);
   await dialog.getByRole("button", { name: "Create site", exact: true }).click();
@@ -704,8 +704,15 @@ export async function createSiteFromFlight(page: Page, siteName: string, visibil
   await expectSiteVisibility(dialog, "private");
   if (visibility === "public") await setSiteVisibility(dialog, "public");
   await dialog.getByRole("button", { name: "Save site", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(siteName);
+  if (expectedMatches === undefined) {
+    await expect(dialog).toHaveCount(0);
+    return;
+  }
+  await expect(dialog.getByRole("heading", { name: `${siteName} saved` })).toBeVisible();
+  await expect(dialog.getByText(new RegExp(`^${expectedMatches} older flights? may match`))).toBeVisible();
+  await dialog.getByRole("link", { name: "Review matches", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Review matching flights", exact: true })).toBeVisible();
 }
 
 /** Opening the real picker waits for the client event handler; setting the
