@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSiteEditorAction, saveSiteEditorAction, type SiteEditorContext } from "@/app/settings/sites/editor-actions";
+import { getSiteEditorAction, saveSiteEditorAction, type SavedSite, type SiteEditorContext } from "@/app/settings/sites/editor-actions";
 import { SiteEditor } from "./site-editor";
 import { Button } from "@/components/ui/button";
 
 export type SiteEditorData = Awaited<ReturnType<typeof getSiteEditorAction>>;
 
 export function PersistedSiteEditor({ context, initialName, initialData, onSaved, onCancel }: {
-  context: SiteEditorContext; initialName?: string; onSaved: (site: { id: string; name: string }) => void; onCancel: () => void;
+  context: SiteEditorContext; initialName?: string; onSaved: (site: SavedSite) => void; onCancel: () => void;
   initialData?: SiteEditorData;
 }) {
   const router = useRouter();

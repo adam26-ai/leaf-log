@@ -93,9 +93,9 @@ export async function setSiteVisibilityAction(input: {
   }
 }
 
-export async function previewSiteFlightsAction(siteId: string): Promise<SiteManagerResult<SiteFlightCandidate[]>> {
+export async function previewSiteFlightsAction(siteId: string, recommend = false): Promise<SiteManagerResult<SiteFlightCandidate[]>> {
   try {
-    return { ok: true, value: await previewFlightsForSite(await ownerId(), siteId) };
+    return { ok: true, value: await previewFlightsForSite(await ownerId(), siteId, { recommend: recommend === true }) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Something went wrong." };
   }
@@ -111,10 +111,14 @@ export async function listSiteFlightsAction(siteId: string, page = 1): Promise<S
 
 export async function assignSiteFlightsAction(input: {
   siteId: string;
-  selections: Array<{ id: string; endpoint: SiteEndpoint }>;
+  selections: Array<{ id: string; endpoint: SiteEndpoint; revision: string; recommended: boolean }>;
 }): Promise<SiteManagerResult<{ updated: number }>> {
   try {
-    const updated = await assignFlightsToSite(await ownerId(), input.siteId, input.selections);
+    const parsed = z.object({ siteId: siteIdSchema, selections: z.array(z.object({
+      id: siteIdSchema, endpoint: z.enum(["takeoff", "landing"]), revision: revisionSchema, recommended: z.boolean(),
+    })).min(1).max(200) }).safeParse(input);
+    if (!parsed.success) return { ok: false, error: "Refresh matches and choose up to 200 flight locations." };
+    const updated = await assignFlightsToSite(await ownerId(), parsed.data.siteId, parsed.data.selections);
     refreshSitePages();
     revalidatePath("/flights/[id]", "page");
     return { ok: true, value: { updated } };

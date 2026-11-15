@@ -8,12 +8,13 @@ import { validateSiteName } from "./name";
 import { normalizeSiteVisibility, canSeeSite, type SiteVisibility } from "./visibility";
 import { locationCachePatch, type SiteEndpoint } from "./associate";
 import { assignmentPatch } from "./assignment";
-import { boundaryContains, isValidBoundaryShape, locationMatches, radiusForKind, SUGGEST_RADIUS_M } from "./geo";
+import { boundaryContains, isValidBoundaryShape, kindMatches, locationMatches, radiusForKind, SUGGEST_RADIUS_M, zoneRadiusForKind } from "./geo";
 import { writeAuditEntry } from "./audit";
 import { DAILY_CREATE_CAP, siteVisibleWhere } from "./repo";
 import { flightCalendarDate } from "@/lib/flights/logbook-filters";
 import { formatLocalTime } from "@/lib/flights/format";
-import { lockSiteRows, lockSiteFlights } from "./locks";
+import { lockFlightRows, lockSiteRows, lockSiteFlights } from "./locks";
+import { zonesEnabled } from "./zones-enabled";
 
 export type ManagedSite = Pick<Site, "id" | "name" | "visibility" | "lat" | "lon" | "updatedAt"> & {
   kind: "takeoff" | "landing" | "both";
@@ -212,15 +213,27 @@ export interface SiteFlightCandidate extends SiteFlightDetails {
   lat: number;
   lon: number;
   distanceM: number;
+  revision: string;
+  recommended: boolean;
 }
 
-export async function previewFlightsForSite(ownerId: string, siteId: string): Promise<SiteFlightCandidate[]> {
-  const site = await prisma.site.findFirst({ where: { id: siteId, ...siteVisibleWhere(ownerId) } });
+type SiteFlightSelection = Pick<SiteFlightCandidate, "id" | "endpoint"> & Partial<Pick<SiteFlightCandidate, "revision" | "recommended">>;
+type SiteFlightDb = Pick<typeof prisma, "site" | "flight">;
+
+export async function previewFlightsForSite(
+  ownerId: string,
+  siteId: string,
+  { recommend = false, flightIds }: { recommend?: boolean; flightIds?: string[] } = {},
+  db: SiteFlightDb = prisma,
+): Promise<SiteFlightCandidate[]> {
+  const site = await db.site.findFirst({ where: { id: siteId, archivedAt: null, ...siteVisibleWhere(ownerId) } });
   if (!site) throw new Error("Site not found or not owned by caller.");
+  if (!hasSitePoint(site)) return [];
   const endpoints: SiteEndpoint[] = site.kind === "takeoff" ? ["takeoff"] : site.kind === "landing" ? ["landing"] : ["takeoff", "landing"];
-  const rows = await prisma.flight.findMany({
+  const rows = await db.flight.findMany({
     where: {
       ownerId, status: "ready",
+      ...(flightIds && { id: { in: flightIds } }),
       // A flight already shown in Flights at this site must not also appear for review.
       AND: [
         { OR: [{ takeoffSiteId: null }, { takeoffSiteId: { not: siteId } }] },
@@ -229,8 +242,8 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
     },
     select: {
       ...flightDetailsSelect,
-      takeoffLat: true, takeoffLon: true, takeoffSiteId: true, takeoffSiteName: true, takeoffSiteAssignment: true,
-      landingLat: true, landingLon: true, landingSiteId: true, landingSiteName: true, landingSiteAssignment: true,
+      takeoffLat: true, takeoffLon: true, takeoffSiteId: true, takeoffSiteName: true, takeoffSiteAssignment: true, takeoffZoneId: true,
+      landingLat: true, landingLon: true, landingSiteId: true, landingSiteName: true, landingSiteAssignment: true, landingZoneId: true,
       takeoffSite: { select: { id: true, name: true, visibility: true, ownerId: true, lat: true, lon: true } },
       landingSite: { select: { id: true, name: true, visibility: true, ownerId: true, lat: true, lon: true } },
     },
@@ -247,6 +260,11 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
       const currentSite = row[`${endpoint}Site`];
       const visible = currentSite && canSeeSite(normalizeSiteVisibility(currentSite.visibility), currentSite.ownerId, ownerId);
       const savedName = row[`${endpoint}SiteName`];
+      const assignment = row[`${endpoint}SiteAssignment`];
+      const revision = createHash("sha256").update(JSON.stringify([
+        site.id, site.updatedAt, row.id, endpoint, lat, lon,
+        row[`${endpoint}SiteId`], row[`${endpoint}ZoneId`], savedName, assignment,
+      ])).digest("hex");
       candidates.push({
         ...flightDetails(row),
         endpoint,
@@ -254,25 +272,63 @@ export async function previewFlightsForSite(ownerId: string, siteId: string): Pr
         currentSiteName: currentSite ? (visible ? currentSite.name : null) : savedName,
         currentSiteMapped: Boolean(currentSite && visible && hasSitePoint(currentSite)),
         currentSiteState: currentSite ? (visible ? "linked" : "unavailable") : savedName ? "name_only" : "unassigned",
-        assignment: row[`${endpoint}SiteAssignment`],
+        assignment,
         lat,
         lon,
         distanceM: match.distanceM,
+        revision,
+        recommended: recommend && validKind(site.kind) && assignment === "unassigned" &&
+          !currentSite && !savedName && !row[`${endpoint}ZoneId`],
       });
+    }
+  }
+  if (candidates.some(candidate => candidate.recommended)) {
+    // Read visible geometry once for the whole logbook. Any other plausible
+    // site (including a legacy spot) leaves that endpoint unchecked.
+    const reviewZones = zonesEnabled();
+    const others = await db.site.findMany({
+      where: { id: { not: siteId }, archivedAt: null, ...siteVisibleWhere(ownerId), lat: { not: null }, lon: { not: null } },
+      select: { lat: true, lon: true, kind: true, boundary: true, zones: reviewZones ? {
+        where: { OR: [{ visibility: "public" }, { visibility: "private", ownerId }] },
+        select: { lat: true, lon: true, kind: true, boundary: true },
+      } : false },
+    });
+    for (const candidate of candidates) {
+      if (!candidate.recommended) continue;
+      const { endpoint, lat, lon } = candidate;
+      candidate.recommended = !others.some(other =>
+        (kindMatches(other.kind, endpoint) && locationMatches(other, lat, lon, radiusForKind(endpoint)).matched) ||
+        (reviewZones && other.zones.some(zone => kindMatches(zone.kind, endpoint) &&
+          locationMatches(zone, lat, lon, zoneRadiusForKind(endpoint)).matched)),
+      );
     }
   }
   return candidates;
 }
 
-export async function assignFlightsToSite(ownerId: string, siteId: string, selections: Array<{ id: string; endpoint: SiteEndpoint }>): Promise<number> {
+export async function assignFlightsToSite(ownerId: string, siteId: string, selections: SiteFlightSelection[]): Promise<number> {
   if (selections.some((item) => item.endpoint !== "takeoff" && item.endpoint !== "landing")) {
     throw new Error("Invalid flight location selection.");
   }
   const unique = [...new Map(selections.map((item) => [`${item.id}:${item.endpoint}`, item])).values()];
   if (unique.length === 0 || unique.length > 200) throw new Error("Choose between 1 and 200 flight locations.");
   return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`logbook:${ownerId}`}, 0))`;
+    await lockSiteRows(tx, [siteId]);
     let site = await tx.site.findFirst({ where: { id: siteId, ...siteVisibleWhere(ownerId) } });
     if (!site || !canSeeSite(normalizeSiteVisibility(site.visibility), site.ownerId, ownerId)) throw new Error("Site is not available.");
+    const flightIds = [...new Set(unique.map(item => item.id))];
+    await lockFlightRows(tx, flightIds, ownerId);
+    if (unique.some(item => item.revision)) {
+      const fresh = await previewFlightsForSite(ownerId, siteId, { flightIds, recommend: unique.some(item => item.recommended) }, tx);
+      const byEndpoint = new Map(fresh.map(row => [`${row.id}:${row.endpoint}`, row]));
+      for (const item of unique) {
+        const row = byEndpoint.get(`${item.id}:${item.endpoint}`);
+        if (!row || row.revision !== item.revision || (item.recommended && !row.recommended)) {
+          throw new Error("These matches changed. Refresh matches and review your selections again.");
+        }
+      }
+    }
     const endpointKinds = new Set(unique.map((item) => item.endpoint));
     if (site.kind !== "both" && (endpointKinds.size > 1 || !endpointKinds.has(site.kind as SiteEndpoint))) {
       site = await tx.site.update({ where: { id: site.id }, data: { kind: "both" } });
